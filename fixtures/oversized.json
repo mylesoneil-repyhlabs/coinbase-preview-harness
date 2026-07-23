@@ -1,0 +1,11 @@
+{
+  "name": "oversized",
+  "description": "Agent proposes more principal than the mandate authorizes.",
+  "order": {
+    "product_id": "ETH-USDC",
+    "side": "BUY",
+    "type": "market",
+    "quote_size": "50.00"
+  },
+  "expected_precheck": "BLOCK"
+}

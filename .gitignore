@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+credentials/
+runtime/
+*.pem
+*.key
+*key*.json
+*api_key*.json
+*cdp_key*.json
+*.jwk
+*.p12
+*.pfx
+artifacts/private/
+artifacts/live-preview-*
+artifacts/dry-run-*

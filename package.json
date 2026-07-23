@@ -1,0 +1,21 @@
+{
+  "name": "delta-coinbase-preview-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "doctor": "node src/cli.js doctor",
+    "dry-run": "node src/cli.js dry-run",
+    "sandbox": "node src/cli.js sandbox",
+    "configure": "node src/cli.js configure",
+    "preview": "node src/cli.js preview",
+    "fixtures": "node src/cli.js fixtures",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@coinbase/coinbase-cli": "0.0.4"
+  }
+}

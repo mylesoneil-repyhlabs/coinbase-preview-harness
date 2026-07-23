@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+  NODE_BINARY="$HARNESS_NODE_BINARY"
+elif command -v node >/dev/null 2>&1; then
+  NODE_BINARY="$(command -v node)"
+else
+  echo "Node.js 22+ is required. Install Node or set HARNESS_NODE_BINARY to its executable path." >&2
+  exit 1
+fi
+
+exec "$NODE_BINARY" "$HARNESS_DIR/src/cli.js" "$@"

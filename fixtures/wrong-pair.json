@@ -1,0 +1,11 @@
+{
+  "name": "wrong-pair",
+  "description": "Agent substitutes ETH-USD for the authorized ETH-USDC pair.",
+  "order": {
+    "product_id": "ETH-USD",
+    "side": "BUY",
+    "type": "market",
+    "quote_size": "20.00"
+  },
+  "expected_precheck": "BLOCK"
+}
