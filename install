@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SKILL_SOURCE="$REPOSITORY_ROOT/skills/delta-coinbase-guard"
+
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+  NODE_BINARY="$HARNESS_NODE_BINARY"
+elif command -v node >/dev/null 2>&1; then
+  NODE_BINARY="$(command -v node)"
+else
+  echo "Delta Coinbase Guard requires Node.js 22 or newer." >&2
+  echo "Install Node.js, then rerun: $REPOSITORY_ROOT/install" >&2
+  exit 1
+fi
+
+NODE_MAJOR="$("$NODE_BINARY" -p 'Number(process.versions.node.split(".")[0])')"
+if (( NODE_MAJOR < 22 )); then
+  echo "Delta Coinbase Guard requires Node.js 22 or newer; found $("$NODE_BINARY" --version)." >&2
+  exit 1
+fi
+
+NODE_BINARY="$("$NODE_BINARY" -p 'require("node:fs").realpathSync(process.execPath)')"
+NODE_PATH_FILE="$REPOSITORY_ROOT/.delta-coinbase-guard-node"
+if [[ -L "$NODE_PATH_FILE" ]]; then
+  echo "Refusing to write the Node path through a symlink: $NODE_PATH_FILE" >&2
+  exit 1
+fi
+umask 077
+printf '%s\n' "$NODE_BINARY" > "$NODE_PATH_FILE"
+
+if [[ -n "${CODEX_HOME:-}" ]]; then
+  SKILLS_ROOT="$CODEX_HOME/skills"
+elif [[ -n "${HOME:-}" ]]; then
+  SKILLS_ROOT="$HOME/.codex/skills"
+else
+  echo "Set CODEX_HOME or HOME so the installer can locate your Codex skills directory." >&2
+  exit 1
+fi
+
+SKILL_TARGET="$SKILLS_ROOT/delta-coinbase-guard"
+mkdir -p "$SKILLS_ROOT"
+
+if [[ -e "$SKILL_TARGET" || -L "$SKILL_TARGET" ]]; then
+  if [[ -e "$SKILL_TARGET/SKILL.md" ]] && [[ "$SKILL_TARGET/SKILL.md" -ef "$SKILL_SOURCE/SKILL.md" ]]; then
+    echo "Delta Coinbase Guard is already installed at $SKILL_TARGET"
+  else
+    echo "Refusing to replace the existing path: $SKILL_TARGET" >&2
+    echo "Move or remove that path yourself, then rerun this installer." >&2
+    exit 1
+  fi
+else
+  ln -s "$SKILL_SOURCE" "$SKILL_TARGET"
+  echo "Installed Delta Coinbase Guard at $SKILL_TARGET"
+fi
+
+env HARNESS_NODE_BINARY="$NODE_BINARY" "$REPOSITORY_ROOT/run" doctor
+
+cat <<'NEXT_STEPS'
+
+Installation complete.
+
+1. Keep this repository in its current location; the installed skill links to it.
+2. Start a new Codex session.
+3. Ask:
+
+   Use $delta-coinbase-guard to turn my Coinbase trade request into a
+   reviewable policy and run a credential-free simulation.
+
+No Coinbase or Delta credentials are required for the simulation.
+NEXT_STEPS

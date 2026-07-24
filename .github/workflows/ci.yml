@@ -51,5 +51,11 @@ jobs:
       - name: Validate installable skill
         run: pnpm check:skill
 
+      - name: Smoke test the public installer
+        run: |
+          export CODEX_HOME="$RUNNER_TEMP/delta-coinbase-guard-codex-home"
+          ./install
+          "$CODEX_HOME/skills/delta-coinbase-guard/scripts/run" doctor
+
       - name: Check local documentation links
         run: pnpm check:links

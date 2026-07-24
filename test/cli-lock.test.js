@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +10,10 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(TEST_DIR, "../src/cli.js");
+const EXAMPLE_INTENT_PATH = path.resolve(
+  TEST_DIR,
+  "../examples/first-live-intent.txt",
+);
 const MISSING_KEY_PATH = "/definitely/missing/delta-coinbase-guard-key.json";
 
 async function runLockedCommand(command, args) {
@@ -58,4 +64,23 @@ test("reconciliation is also locked before reading credentials", async () => {
   assert.match(result.stderr, /ENGINEERING_INTEGRATION_REQUIRED/);
   assert.doesNotMatch(result.stderr, /missing|credential|key\.json/i);
   assert.equal(result.stdout, "");
+});
+
+test("plan prints an absolute artifact path for an installed skill handoff", async () => {
+  const result = await execFileAsync(
+    process.execPath,
+    [
+      CLI_PATH,
+      "plan",
+      "--intent-file",
+      EXAMPLE_INTENT_PATH,
+      "--compiler",
+      "deterministic",
+    ],
+    { cwd: tmpdir() },
+  );
+  const match = result.stdout.match(/^Plan: (.+)$/m);
+  assert.ok(match, "CLI did not print the plan path");
+  assert.equal(path.isAbsolute(match[1]), true);
+  await access(match[1]);
 });

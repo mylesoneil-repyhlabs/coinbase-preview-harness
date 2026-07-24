@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SKILL_DIRECTORY="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPOSITORY_ROOT="$(cd "$SKILL_DIRECTORY/../.." && pwd -P)"
+
+if [[ ! -x "$REPOSITORY_ROOT/run" ]]; then
+  echo "Delta Coinbase Guard harness not found at $REPOSITORY_ROOT" >&2
+  echo "Reinstall from the complete coinbase-preview-harness repository." >&2
+  exit 1
+fi
+
+exec "$REPOSITORY_ROOT/run" "$@"

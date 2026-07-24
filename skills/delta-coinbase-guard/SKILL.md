@@ -12,22 +12,18 @@ Invoke this workflow explicitly as `$delta-coinbase-guard`.
 
 ## Initialize
 
-1. Require `DELTA_COINBASE_GUARD_ROOT` to contain the absolute path to the
-   `coinbase-preview-harness` checkout.
-2. Verify that
-   `$DELTA_COINBASE_GUARD_ROOT/skills/delta-coinbase-guard/SKILL.md` and
-   `$DELTA_COINBASE_GUARD_ROOT/run` exist. Do not search for or substitute
-   another checkout.
+1. Resolve `scripts/run` relative to this `SKILL.md` and keep its absolute path
+   as `GUARD_RUN`. Do not search for or substitute another checkout.
+2. Verify that `GUARD_RUN` is executable. It resolves the installed skill link
+   back to the complete, matching repository harness.
 3. Read [workflow.md](references/workflow.md).
 4. Before accepting a credential path or calling Coinbase, also read
    [security-boundary.md](references/security-boundary.md).
-5. Run all harness commands from `$DELTA_COINBASE_GUARD_ROOT` and run
-   `./run doctor` before the first workflow in a checkout.
+5. Run `"$GUARD_RUN" doctor` before the first workflow in a checkout.
 
-If the environment variable or checkout is unavailable, ask the user to
-install the repository and set the variable. Do not clone, install
-dependencies, edit another repository, or bypass the harness unless the user
-explicitly asks.
+If the wrapper or complete checkout is unavailable, ask the user to install
+the repository with its root `install` script. Do not clone, edit another
+repository, or bypass the harness unless the user explicitly asks.
 
 ## Respect the V1 boundary
 
@@ -56,8 +52,7 @@ cap or term, let `plan` request clarification rather than filling it.
 Preserve the user's source text verbatim. Prefer an absolute intent-file path:
 
 ```sh
-cd "$DELTA_COINBASE_GUARD_ROOT"
-./run plan \
+"$GUARD_RUN" plan \
   --intent-file <absolute-request-path> \
   --compiler deterministic
 ```
@@ -82,7 +77,7 @@ as authorization.
 For a credential-free demonstration after policy confirmation:
 
 ```sh
-./run simulate \
+"$GUARD_RUN" simulate \
   --plan <absolute-plan-path> \
   --confirm-policy <authorized-policy-digest>
 ```
@@ -100,7 +95,7 @@ Transfer and Receive disabled.
 Bind the confirmed policy:
 
 ```sh
-./run bind-execution \
+"$GUARD_RUN" bind-execution \
   --plan <absolute-plan-path> \
   --confirm-policy <authorized-policy-digest> \
   --key-file <absolute-key-path>
@@ -111,7 +106,7 @@ receives a new user-authored message naming that exact execution digest. Then
 create one immutable receipt:
 
 ```sh
-./run confirm-execution \
+"$GUARD_RUN" confirm-execution \
   --bound-execution <absolute-bound-execution-path> \
   --confirm-execution <authorized-execution-digest> \
   --key-file <absolute-key-path>
@@ -124,7 +119,7 @@ it expires, stop and create a new bound execution plus a new user confirmation.
 Use that same unexpired receipt for the non-executing probe:
 
 ```sh
-./run probe-execution \
+"$GUARD_RUN" probe-execution \
   --bound-execution <absolute-bound-execution-path> \
   --confirmation-receipt <absolute-confirmation-receipt-path> \
   --key-file <absolute-key-path>
@@ -143,7 +138,7 @@ or otherwise move value.
 
 If the tool schema advertises any mutating operation, do not test it. Stop with
 `STOP_UNSAFE_TOOL_TOPOLOGY`, require the owner to remove the tool or replace
-the credential/surface, rerun `./run doctor`, and restart from `plan`.
+the credential/surface, rerun `"$GUARD_RUN" doctor`, and restart from `plan`.
 
 ## Report
 

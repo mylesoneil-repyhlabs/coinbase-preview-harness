@@ -44,14 +44,10 @@ function optionValue(args, name) {
   return index === -1 ? undefined : args[index + 1];
 }
 
-function relativeToRoot(filePath) {
-  return path.relative(HARNESS_ROOT, filePath);
-}
-
 function printPaths(paths) {
   process.stdout.write(
-    `JSON: ${relativeToRoot(paths.jsonPath)}\n` +
-      `HTML: ${relativeToRoot(paths.htmlPath)}\n`,
+    `JSON: ${path.resolve(paths.jsonPath)}\n` +
+      `HTML: ${path.resolve(paths.htmlPath)}\n`,
   );
 }
 
@@ -119,7 +115,7 @@ async function createPlanCommand(args) {
   const plan = await createExecutionPlan(intent, { compiler });
   const filePath = await writeExecutionPlan(plan);
   process.stdout.write(`${plan.status}\n`);
-  process.stdout.write(`Plan: ${relativeToRoot(filePath)}\n`);
+  process.stdout.write(`Plan: ${path.resolve(filePath)}\n`);
   if (plan.policy_digest) {
     process.stdout.write(
       `\nCompiled policy:\n${JSON.stringify(plan.policy, null, 2)}\n\n`,
@@ -171,7 +167,7 @@ async function bindExecution(args) {
   );
   const filePath = await writeBoundExecution(boundExecution);
   process.stdout.write("AWAITING_HUMAN_CONFIRMATION\n");
-  process.stdout.write(`Bound execution: ${relativeToRoot(filePath)}\n`);
+  process.stdout.write(`Bound execution: ${path.resolve(filePath)}\n`);
   process.stdout.write(
     `Portfolio fingerprint: ${boundExecution.authorization_scope.credential_binding.portfolio_fingerprint}\n`,
   );
@@ -203,7 +199,7 @@ async function confirmExecution(args) {
   const receiptPath = await writeExecutionConfirmation(receipt);
   process.stdout.write("EXECUTION_CONFIRMATION_RECORDED\n");
   process.stdout.write(
-    `Confirmation receipt: ${relativeToRoot(receiptPath)}\n`,
+    `Confirmation receipt: ${path.resolve(receiptPath)}\n`,
   );
   process.stdout.write(`Expires at: ${receipt.expires_at}\n`);
   process.stdout.write(

@@ -1,4 +1,5 @@
 node_modules/
+.delta-coinbase-guard-node
 .env
 .env.*
 credentials/
