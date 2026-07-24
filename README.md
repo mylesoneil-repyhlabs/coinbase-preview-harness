@@ -1,8 +1,8 @@
 # Delta Coinbase Guard
 
 > Turn a natural-language Coinbase trade request into an explicit policy,
-> require human authorization, and deterministically gate the proposed action
-> before money can move.
+> surface its exact digest for host-mediated authorization, and
+> deterministically gate the proposed action before money can move.
 
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
@@ -16,9 +16,9 @@
 
 Delta Coinbase Guard is an installable Codex skill and local Coinbase Advanced
 Trade harness. It turns a one-off request such as “buy exactly 5 USDC of ETH”
-into a closed, reviewable policy; records the user’s exact authorization;
-proposes a policy-compliant order; and makes the execute-or-stop decision
-outside the agent.
+into a closed, reviewable policy; records the exact digest supplied by the
+calling host; deterministically proposes a policy-compliant order; and makes
+the execute-or-stop decision outside model-controlled logic.
 
 The included V1 lets anyone run the complete workflow as a credential-free
 simulation. With an isolated Coinbase API key, it can also call Coinbase’s
@@ -94,10 +94,11 @@ The skill will:
 1. preserve the source request;
 2. compile every material term into a closed policy or fail for clarification;
 3. display the complete policy and its digest;
-4. pause for a new user-authored confirmation of that exact digest;
-5. propose and evaluate one candidate through the production-shaped Delta
-   lifecycle;
-6. return a deterministic pass, fail, retry, or stop result; and
+4. pause while the calling host obtains and supplies a new user-authored
+   confirmation of that exact digest;
+5. deterministically propose and evaluate one candidate through the
+   production-shaped Delta lifecycle;
+6. return a deterministic pass, fail, or stop result; and
 7. report that Coinbase Create was unreachable and uninvoked.
 
 The simulation uses synthetic signatures, evidence, and proof. They are
@@ -115,7 +116,7 @@ clearly labeled and must never be described as a production Delta verdict.
 | Slippage | At most `50 bps` above fresh best ask |
 | Commission | At most `0.50 USDC` |
 | All-in debit | At most `5.50 USDC` |
-| Authorization | One candidate, one use, fixed 120-second confirmation |
+| Confirmation artifact | One candidate, one use, fixed 120-second window |
 | Default mode | Credential-free simulation |
 | Optional mode | Coinbase reads + real Preview, then stop |
 
@@ -128,29 +129,41 @@ orders, and on-chain actions are rejected.
 ```mermaid
 flowchart LR
   U["Natural-language request"] --> P["Closed policy"]
-  P --> H["Human authorizes digest"]
-  H --> A["Agent proposes action"]
-  A --> D["Delta evaluates outside agent"]
-  D -->|"verified pass"| E["Deterministic execute gate"]
-  D -->|"constraint failure"| R["Bounded retry or fail"]
+  P --> H["Host supplies confirmed digest"]
+  H --> A["Deterministic proposer"]
+  A --> D["Mandate adapter evaluates outside model"]
+  D -->|"verified simulated pass"| V["SIMULATED_RESULT"]
   D -->|"anything else"| S["STOP"]
-  E --> V["V1: simulation or Coinbase Preview only"]
+  A --> C["Optional Coinbase Preview"]
+  C -->|"local checks pass"| Q["PREVIEW_PROBE_PASS, then STOP"]
 ```
 
-The model may interpret words and propose a candidate. It cannot authorize the
-policy, evaluate its own action, decide to execute, mint the private execution
-capability, or possess the Coinbase Trade credential.
+The default V1 compiler and order proposer are deterministic. An optional model
+compiler can draft the policy, but its output still passes the same closed
+local validator and remains unconfirmed.
 
-The deterministic rule is:
+The CLI verifies that a supplied digest equals the displayed artifact. It
+cannot prove who supplied that digest. The calling host must authenticate the
+human confirmation; production should replace this procedural boundary with a
+Delta-native signer or approval session.
+
+Similarly, the skill instructs the model not to read or receive a Coinbase
+private key and the harness accepts only an absolute key-file path. Public V1
+does not provide OS- or process-level credential isolation from a local Codex
+session. Production must keep the Trade credential behind a separate broker or
+service boundary.
+
+The public V1 decision rule is:
 
 ```text
-verified Delta success + matching independent proof -> EXECUTE
-constraint failure + supported retry semantics      -> RETRY
-anything else                                       -> STOP
+verified simulated success + matching synthetic proof -> SIMULATED_RESULT
+Coinbase Preview and every local check pass            -> PREVIEW_PROBE_PASS, then STOP
+anything else                                          -> STOP
 ```
 
-In the public V1, the `EXECUTE` branch is replaced with either a clearly
-labeled simulation result or a Coinbase Preview response followed by `STOP`.
+Public V1 evaluates exactly one candidate. Automatic multi-attempt retry is not
+implemented. Engineering can add bounded retry only after defining how each
+new candidate receives a fresh authorized intent and attempt history.
 
 ## Optional Coinbase Preview probe
 
