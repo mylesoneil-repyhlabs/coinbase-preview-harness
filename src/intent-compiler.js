@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { digest } from "./evidence.js";
-import { HARNESS_ROOT } from "./coinbase-cli.js";
+import {
+  findRepeatedMaterialConstraints,
+  findSourceConstraintIssues,
+  findUnrecognizedConstraints,
+} from "./intent-source-validator.js";
+import { HARNESS_ROOT } from "./paths.js";
 import { validateCompilation } from "./policy-validator.js";
 
 const SCHEMA_PATH = path.join(
@@ -22,6 +27,7 @@ Rules:
 - V1 supports only one exact-size SOR_LIMIT_IOC order. BUY must be quote-sized. SELL must be base-sized.
 - The TTL starts only when the human supplies the final credential-scoped execution digest.
 - Transfers, conversions, leverage, margin, derivatives, recurring orders, balance percentages, GTC orders, conditional strategies, unrestricted market orders, and on-chain network instructions are unsupported.
+- Every material constraint must appear exactly once in the source, including when repeated statements have the same value.
 - Every material policy field must have one grounding item whose source_quote is copied exactly from the input.
 - If any material value is absent or ambiguous, return NEEDS_CLARIFICATION with policy null.
 - If any clause is unsupported or conflicts with another clause, return UNSUPPORTED with policy null.
@@ -41,14 +47,18 @@ function unsupported(code, sourceText, reason) {
 }
 
 function parseExplicitProduct(intent) {
-  const match = intent.match(/\b([A-Z0-9]{2,12})-([A-Z0-9]{2,12})\b/i);
-  if (!match) return null;
-  return {
-    product_id: `${match[1].toUpperCase()}-${match[2].toUpperCase()}`,
-    base_asset: match[1].toUpperCase(),
-    quote_asset: match[2].toUpperCase(),
-    quote: match[0],
-  };
+  for (const match of intent.matchAll(
+    /\b([A-Z0-9]{2,12})-([A-Z0-9]{2,12})\b/gi,
+  )) {
+    if (match[0].toLowerCase() === "price-bounded") continue;
+    return {
+      product_id: `${match[1].toUpperCase()}-${match[2].toUpperCase()}`,
+      base_asset: match[1].toUpperCase(),
+      quote_asset: match[2].toUpperCase(),
+      quote: match[0],
+    };
+  }
+  return null;
 }
 
 function parseExactSize(intent) {
@@ -111,7 +121,7 @@ export function compileDeterministicIntent(intent) {
     throw new Error("intent must be a non-empty string");
   }
   const ambiguities = [];
-  const unsupportedConstraints = [];
+  const unsupportedConstraints = findRepeatedMaterialConstraints(intent);
   const product = parseExplicitProduct(intent);
   const exactSize = parseExactSize(intent);
   const lower = intent.toLowerCase();
@@ -148,6 +158,9 @@ export function compileDeterministicIntent(intent) {
   for (const [code, expression, reason] of unsupportedPatterns) {
     const quote = matchQuote(intent, expression);
     if (quote) unsupportedConstraints.push(unsupported(code, quote, reason));
+  }
+  if (!unsupportedConstraints.length) {
+    unsupportedConstraints.push(...findUnrecognizedConstraints(intent));
   }
 
   if (!side) {
@@ -366,10 +379,30 @@ export async function compileIntentWithOpenAI(
     fetchImpl = fetch,
   } = {},
 ) {
-  if (!apiKey) throw new Error("OPENAI_API_KEY is required for the OpenAI compiler");
   if (typeof intent !== "string" || !intent.trim()) {
     throw new Error("intent must be a non-empty string");
   }
+  const sourceConstraintIssues = findSourceConstraintIssues(intent);
+  if (sourceConstraintIssues.length) {
+    const compilation = validateCompilation(
+      {
+        schema_version: "delta.coinbase.compilation.v1",
+        taxonomy_version: "digital-asset-spot-order.v1",
+        status: "UNSUPPORTED",
+        policy: null,
+        ambiguities: [],
+        unsupported_constraints: sourceConstraintIssues,
+        grounding: [],
+      },
+      intent,
+    );
+    return {
+      compilation,
+      model: null,
+      response_id: null,
+    };
+  }
+  if (!apiKey) throw new Error("OPENAI_API_KEY is required for the OpenAI compiler");
   const schema = await loadStructuredOutputSchema();
   const response = await fetchImpl("https://api.openai.com/v1/responses", {
     method: "POST",

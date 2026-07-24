@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { HARNESS_ROOT } from "./coinbase-cli.js";
+import { HARNESS_ROOT } from "./paths.js";
 import { digest } from "./evidence.js";
 import { JWT_PROFILE } from "./permissions.js";
 

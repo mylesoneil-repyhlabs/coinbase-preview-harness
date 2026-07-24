@@ -1,5 +1,4 @@
 import { digest, digestBytes } from "./evidence.js";
-import { markExecutionPlan } from "./authorization-store.js";
 import { reconcileSubmittedOrder } from "./reconciliation.js";
 import { sanitize } from "./sanitize.js";
 
@@ -37,6 +36,8 @@ function validStoredExecution(stored, planId, attestation) {
     stored?.create_payload_digest ===
       digestBytes(stored.create_payload_serialized) &&
     stored?.create_payload?.client_order_id === stored.client_order_id &&
+    typeof stored?.intent_id === "string" &&
+    stored.intent_id.length > 0 &&
     stored?.portfolio_fingerprint === attestation?.portfolio_fingerprint &&
     stored?.credential_fingerprint === attestation?.key_fingerprint &&
     typeof stored?.market?.observed_at === "string"
@@ -65,6 +66,7 @@ function recoveryRecord(stored, now) {
     preview_check: null,
     delta: {
       decision_id: stored.decision_id,
+      intent_id: stored.intent_id,
     },
     reconciliation: null,
     execution: {
@@ -146,8 +148,11 @@ export async function recoverExecution({
   getOrderAdapter,
   listFillsAdapter,
   now = () => new Date(),
-  markPlan = markExecutionPlan,
+  markGrant,
 }) {
+  if (typeof markGrant !== "function") {
+    throw new Error("Recovery requires an injected durable markGrant() port");
+  }
   if (!validStoredExecution(stored, planId, attestation)) {
     throw new Error(
       "Consumed execution state is corrupt or does not match this credential-scoped portfolio",
@@ -252,7 +257,7 @@ export async function recoverExecution({
     }
   }
   try {
-    await markPlan(planId, {
+    await markGrant(planId, {
       status: record.status,
       order_id: orderId,
       reconciliation: record.reconciliation,

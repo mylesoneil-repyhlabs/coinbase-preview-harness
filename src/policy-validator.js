@@ -1,4 +1,9 @@
 import { compareDecimals, isPositiveDecimal, parseDecimal } from "./decimal.js";
+import {
+  assertPolicyAndGroundingMatchSource,
+  findSourceConstraintIssues,
+  MATERIAL_SOURCE_PATHS,
+} from "./intent-source-validator.js";
 
 const TOP_LEVEL_FIELDS = Object.freeze([
   "schema_version",
@@ -27,18 +32,7 @@ const POLICY_FIELDS = Object.freeze([
   "usage",
 ]);
 
-export const MATERIAL_POLICY_PATHS = Object.freeze([
-  "policy.product_id",
-  "policy.side",
-  "policy.order_type",
-  "policy.size.value",
-  "policy.partial_fill_policy",
-  "policy.limits.max_slippage_bps",
-  "policy.limits.max_commission.value",
-  "policy.limits.max_all_in_debit.value",
-  "policy.validity.ttl_seconds",
-  "policy.usage.max_executions",
-]);
+export const MATERIAL_POLICY_PATHS = MATERIAL_SOURCE_PATHS;
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -78,7 +72,6 @@ function assertDecimal(value, name, { positive = true } = {}) {
 
 function assertGrounding(compilation, sourceIntent) {
   if (!Array.isArray(compilation.grounding)) throw new Error("grounding must be an array");
-  const source = sourceIntent.toLocaleLowerCase("en-US");
   const groundedPaths = new Set();
   for (const item of compilation.grounding) {
     assertExactFields(item, ["field", "source_quote"], "grounding item");
@@ -88,8 +81,14 @@ function assertGrounding(compilation, sourceIntent) {
     if (typeof item.source_quote !== "string" || !item.source_quote.trim()) {
       throw new Error(`grounding quote for ${item.field} is empty`);
     }
-    if (!source.includes(item.source_quote.toLocaleLowerCase("en-US"))) {
+    if (!sourceIntent.includes(item.source_quote)) {
       throw new Error(`grounding quote for ${item.field} is not present in the source intent`);
+    }
+    if (!MATERIAL_POLICY_PATHS.includes(item.field)) {
+      throw new Error(`grounding contains an unknown material field: ${item.field}`);
+    }
+    if (groundedPaths.has(item.field)) {
+      throw new Error(`material field has duplicate grounding: ${item.field}`);
     }
     groundedPaths.add(item.field);
   }
@@ -228,8 +227,21 @@ export function validateCompilation(compilation, sourceIntent) {
     if (compilation.ambiguities.length || compilation.unsupported_constraints.length) {
       throw new Error("ready compilation cannot contain ambiguity or unsupported items");
     }
+    const sourceConstraintIssues = findSourceConstraintIssues(sourceIntent);
+    if (sourceConstraintIssues.length) {
+      throw new Error(
+        `source intent contains unsupported or repeated constraints: ${sourceConstraintIssues
+          .map((item) => item.source_text)
+          .join("; ")}`,
+      );
+    }
     validatePolicy(compilation.policy);
     assertGrounding(compilation, sourceIntent);
+    assertPolicyAndGroundingMatchSource(
+      compilation.policy,
+      compilation.grounding,
+      sourceIntent,
+    );
   } else if (compilation.policy !== null) {
     throw new Error("non-ready compilation must set policy to null");
   }

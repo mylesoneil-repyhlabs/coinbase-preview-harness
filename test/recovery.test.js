@@ -51,6 +51,7 @@ async function recoveryFixture(overrides = {}) {
     status: "SUBMISSION_UNCERTAIN",
     plan_id: plan.plan_id,
     consumed_at: fixed.toISOString(),
+    intent_id: "intent-1",
     policy: plan.policy,
     policy_digest: plan.policy_digest,
     market,
@@ -132,7 +133,7 @@ test("read-only recovery finds an uncertain submission by client_order_id", asyn
       cursor: "",
     }),
     now: () => new Date(fixed),
-    markPlan: async (_planId, patch) => {
+    markGrant: async (_planId, patch) => {
       marked = patch;
     },
   });
@@ -156,6 +157,7 @@ test("no visible client_order_id remains uncertain and never implies no order", 
       cursor: "",
     }),
     now: () => new Date(fixed),
+    markGrant: async () => {},
   });
   assert.equal(record.status, "SUBMISSION_UNCERTAIN");
   assert.equal(record.execution.order_submitted, null);
@@ -181,7 +183,7 @@ test("recovery uses a known order_id directly and fails closed on credential dri
       cursor: "",
     }),
     now: () => new Date(fixed),
-    markPlan: async () => {},
+    markGrant: async () => {},
   });
   assert.equal(record.status, "FILLED");
   assert.equal(listOrdersCalls, 0);
@@ -194,6 +196,7 @@ test("recovery uses a known order_id directly and fails closed on credential dri
         ...fixture.attestation,
         key_fingerprint: "different-key",
       },
+      markGrant: async () => {},
     }),
     /does not match this credential-scoped portfolio/,
   );
@@ -206,6 +209,7 @@ test("recovery uses a known order_id directly and fails closed on credential dri
         status: "PRE_SUBMISSION_ABORTED",
       },
       attestation: fixture.attestation,
+      markGrant: async () => {},
     }),
     /has no unresolved Coinbase submission/,
   );

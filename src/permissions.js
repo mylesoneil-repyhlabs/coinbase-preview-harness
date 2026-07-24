@@ -7,21 +7,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import {
-  CONFIG_DIR,
-  ENVIRONMENT_NAME,
-  EXECUTION_ENVIRONMENT_NAME,
-  HARNESS_ROOT,
-  runPinnedCli,
-} from "./coinbase-cli.js";
-import { sanitize } from "./sanitize.js";
+import { HARNESS_ROOT, RUNTIME_DIR } from "./paths.js";
 
 const PERMISSIONS_URL = "https://api.coinbase.com/api/v3/brokerage/key_permissions";
 const PERMISSIONS_PATH = "/api/v3/brokerage/key_permissions";
-export const ATTESTATION_PATH = path.join(HARNESS_ROOT, "runtime", "permission-attestation.json");
+const EXECUTION_ENVIRONMENT_NAME = "live-delta-execution";
+const ATTESTATION_DIR = path.join(RUNTIME_DIR, "attestations");
 export const TRADE_ATTESTATION_PATH = path.join(
-  HARNESS_ROOT,
-  "runtime",
+  ATTESTATION_DIR,
   "trade-permission-attestation.json",
 );
 export const JWT_PROFILE = "CDP_URIS_V1";
@@ -204,37 +197,12 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
   return JSON.parse(responseText);
 }
 
-export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) {
-  const { resolvedPath, keyId, privateKey } = await readExternalKeyFile(keyFilePath);
-  const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
-  assertViewOnlyPermissions(permissions);
-
-  await runPinnedCli(["env", ENVIRONMENT_NAME, "--key-file", resolvedPath], { timeout: 30_000 });
-
-  const attestation = {
-    schema: "delta.coinbase.permission_attestation.v1",
-    verified_at: new Date().toISOString(),
-    environment: ENVIRONMENT_NAME,
-    jwt_profile: JWT_PROFILE,
-    can_view: true,
-    can_trade: false,
-    can_transfer: false,
-    can_receive: false,
-    portfolio_fingerprint: createHash("sha256").update(permissions.portfolio_uuid).digest("hex"),
-    key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
-  };
-  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  await writeFile(ATTESTATION_PATH, `${JSON.stringify(attestation, null, 2)}\n`, { mode: 0o600 });
-
-  return sanitize(attestation);
-}
-
 export async function verifyTradeKeyFileAndConfigure(
   keyFilePath,
   fetchImpl = fetch,
   { persistAttestation = true } = {},
 ) {
-  const { resolvedPath, keyId, privateKey } = await readExternalKeyFile(keyFilePath);
+  const { keyId, privateKey } = await readExternalKeyFile(keyFilePath);
   const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
   assertTradeOnlyPermissions(permissions);
 
@@ -253,7 +221,7 @@ export async function verifyTradeKeyFileAndConfigure(
     key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
   };
   if (persistAttestation) {
-    await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    await mkdir(ATTESTATION_DIR, { recursive: true, mode: 0o700 });
     await writeFile(
       TRADE_ATTESTATION_PATH,
       `${JSON.stringify(attestation, null, 2)}\n`,
@@ -267,31 +235,6 @@ export async function verifyTradeKeyFileAndConfigure(
       privateKey,
     },
   };
-}
-
-export async function loadPermissionAttestation() {
-  const raw = await readFile(ATTESTATION_PATH, "utf8");
-  const attestation = JSON.parse(raw);
-  if (
-    attestation.can_view !== true ||
-    attestation.can_trade !== false ||
-    attestation.can_transfer !== false ||
-    attestation.can_receive !== false ||
-    attestation.jwt_profile !== JWT_PROFILE ||
-    typeof attestation.portfolio_fingerprint !== "string"
-  ) {
-    throw new Error("Permission attestation is missing or unsafe; rerun credential configuration");
-  }
-
-  const config = JSON.parse(await readFile(path.join(CONFIG_DIR, "config.json"), "utf8"));
-  const configuredKeyId = config?.environments?.[ENVIRONMENT_NAME]?.auth?.key_id;
-  if (
-    typeof configuredKeyId !== "string" ||
-    createHash("sha256").update(configuredKeyId).digest("hex") !== attestation.key_fingerprint
-  ) {
-    throw new Error("Configured Coinbase key no longer matches the verified permission attestation");
-  }
-  return attestation;
 }
 
 export async function loadAndVerifyTradeCredentials(keyFilePath, fetchImpl = fetch) {

@@ -55,6 +55,7 @@ export function normalizeCoinbaseMarketData(product, bestBidAsk, productId) {
   return {
     product_id: productId,
     product_type: product.product_type,
+    status: product.status.toLowerCase(),
     base_asset: requiredString(product.base_currency_id, "base_currency_id"),
     quote_asset: requiredString(product.quote_currency_id, "quote_currency_id"),
     base_increment: product.base_increment,

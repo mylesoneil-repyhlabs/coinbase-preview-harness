@@ -1,4 +1,6 @@
 import { createRequestJwt } from "./permissions.js";
+import { digestBytes } from "./evidence.js";
+import { assertProductionExecutionCapability } from "./integration/production-composition.js";
 import { sanitize } from "./sanitize.js";
 
 export const COINBASE_API_ORIGIN = "https://api.coinbase.com";
@@ -72,7 +74,7 @@ function safeErrorMessage(body, status) {
   return sanitize(String(message));
 }
 
-export function createCoinbaseRestAdapter(
+function createCoinbaseRequest(
   credentials,
   {
     fetchImpl = fetch,
@@ -81,7 +83,7 @@ export function createCoinbaseRestAdapter(
 ) {
   assertCredential(credentials);
 
-  async function request(
+  return async function request(
     method,
     requestPath,
     { query, body, serializedBody } = {},
@@ -155,9 +157,15 @@ export function createCoinbaseRestAdapter(
         host: COINBASE_API_HOST,
         path: requestPath,
         query: query ?? {},
+        sent_body_digest:
+          typeof bodyText === "string" ? digestBytes(bodyText) : null,
       },
     };
-  }
+  };
+}
+
+export function createCoinbaseRestAdapter(credentials, options = {}) {
+  const request = createCoinbaseRequest(credentials, options);
 
   return Object.freeze({
     getProduct(productId) {
@@ -175,12 +183,6 @@ export function createCoinbaseRestAdapter(
     previewOrder(requestBody) {
       return request("POST", `${BROKERAGE_PATH}/orders/preview`, {
         body: requestBody,
-      });
-    },
-    createOrder(requestBody, serializedBody) {
-      return request("POST", `${BROKERAGE_PATH}/orders`, {
-        body: requestBody,
-        serializedBody,
       });
     },
     getOrder(orderId) {
@@ -224,6 +226,26 @@ export function createCoinbaseRestAdapter(
       return request("GET", `${BROKERAGE_PATH}/orders/historical/fills`, {
         query: { order_ids: safeId, limit: "100" },
       }).then((result) => result.response);
+    },
+  });
+}
+
+export function createCoinbaseExecutionAdapter(
+  credentials,
+  executionCapability,
+  options = {},
+) {
+  // Check the non-forgeable composition capability before validating or using
+  // credentials. The checked-in public build cannot obtain this value.
+  assertProductionExecutionCapability(executionCapability);
+  const request = createCoinbaseRequest(credentials, options);
+
+  return Object.freeze({
+    createOrder(requestBody, serializedBody) {
+      return request("POST", `${BROKERAGE_PATH}/orders`, {
+        body: requestBody,
+        serializedBody,
+      });
     },
   });
 }

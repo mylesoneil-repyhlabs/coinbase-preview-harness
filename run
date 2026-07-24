@@ -2,13 +2,21 @@
 set -euo pipefail
 
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SAVED_NODE_PATH="$HARNESS_DIR/.delta-coinbase-guard-node"
 
 if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
   NODE_BINARY="$HARNESS_NODE_BINARY"
+elif [[ -f "$SAVED_NODE_PATH" ]] && [[ ! -L "$SAVED_NODE_PATH" ]]; then
+  IFS= read -r NODE_BINARY < "$SAVED_NODE_PATH"
+  if [[ ! -x "$NODE_BINARY" ]]; then
+    echo "The Node.js executable saved by the installer is no longer available." >&2
+    echo "Rerun $HARNESS_DIR/install to refresh it." >&2
+    exit 1
+  fi
 elif command -v node >/dev/null 2>&1; then
   NODE_BINARY="$(command -v node)"
 else
-  echo "Node.js 22+ is required. Install Node or set HARNESS_NODE_BINARY to its executable path." >&2
+  echo "Node.js 22+ is required. Install Node or rerun $HARNESS_DIR/install." >&2
   exit 1
 fi
 

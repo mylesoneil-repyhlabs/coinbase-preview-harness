@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import {
   BROKERAGE_PATH,
+  createCoinbaseExecutionAdapter,
   createCoinbaseRestAdapter,
 } from "../src/coinbase-rest.js";
 
@@ -49,7 +50,7 @@ test("direct adapter binds a fresh JWT to the exact product path without query",
   assert.equal(calls[0].options.headers["Cache-Control"], "no-cache");
 });
 
-test("direct adapter sends the exact delta-bindable preview and Create bodies", async () => {
+test("public adapter sends the exact Preview body and exposes no Create method", async () => {
   const calls = [];
   const adapter = createCoinbaseRestAdapter(credentials(), {
     fetchImpl: async (url, options) => {
@@ -67,31 +68,29 @@ test("direct adapter sends the exact delta-bindable preview and Create bodies", 
       },
     },
   };
-  const create = {
-    client_order_id: "00000000-0000-4000-8000-000000000001",
-    ...preview,
-    preview_id: "preview-1",
-  };
   await adapter.previewOrder(preview);
-  const serializedCreate = JSON.stringify(create);
-  await adapter.createOrder(create, serializedCreate);
 
   assert.deepEqual(JSON.parse(calls[0].options.body), preview);
-  assert.equal(calls[1].options.body, serializedCreate);
   assert.deepEqual(jwtPayload(calls[0].options.headers.Authorization).uris, [
     `POST api.coinbase.com${BROKERAGE_PATH}/orders/preview`,
   ]);
-  assert.deepEqual(jwtPayload(calls[1].options.headers.Authorization).uris, [
-    `POST api.coinbase.com${BROKERAGE_PATH}/orders`,
-  ]);
-  assert.notEqual(
-    calls[0].options.headers.Authorization,
-    calls[1].options.headers.Authorization,
+  assert.equal(Object.hasOwn(adapter, "createOrder"), false);
+  assert.equal(calls.length, 1);
+});
+
+test("Create transport cannot be constructed without the private production capability", () => {
+  let fetchCalls = 0;
+  assert.throws(
+    () =>
+      createCoinbaseExecutionAdapter(credentials(), Symbol("forged"), {
+        fetchImpl: async () => {
+          fetchCalls += 1;
+          return response({ success: true });
+        },
+      }),
+    /ENGINEERING_INTEGRATION_REQUIRED/,
   );
-  await assert.rejects(
-    adapter.createOrder(create, `${serializedCreate} `),
-    /does not match the authorized payload/,
-  );
+  assert.equal(fetchCalls, 0);
 });
 
 test("direct adapter fails closed on redirects, non-JSON, and HTTP errors", async () => {

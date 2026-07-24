@@ -1,6 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { HARNESS_ROOT } from "./coinbase-cli.js";
+import { HARNESS_ROOT } from "./paths.js";
+
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
 
 function escapeHtml(value) {
   return String(value)
@@ -50,15 +54,17 @@ export function renderExecutionHtml(record) {
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}.card{padding:21px}.card h2{margin:0 0 14px;font-size:18px}
     dl{display:grid;grid-template-columns:1fr auto;gap:9px 16px;margin:0}dt{color:var(--muted)}dd{margin:0;font-weight:750;font-variant-numeric:tabular-nums}
     .wide{grid-column:1/-1}details summary{cursor:pointer;font-weight:800}pre{overflow:auto;margin:14px 0 0;padding:16px;border-radius:10px;background:#101827;color:#e7ecff;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+    .simulation-banner{padding:14px 24px;background:#7d210e;color:#fff;text-align:center;font-size:14px;font-weight:900;letter-spacing:.08em}
     .notice{margin-top:22px;padding:13px 15px;border-left:4px solid var(--amber);background:#fff6df;color:#694600;font-size:13px}footer{margin-top:22px;color:var(--muted);font-size:12px;word-break:break-all}
     @media(max-width:820px){h1{font-size:36px}.flow{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.status{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
+${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO REAL ORDER · COINBASE AND PRODUCTION DELTA NOT CONTACTED</div>' : ""}
 <main>
   <div class="eyebrow">delta × Coinbase · mandate-gated execution</div>
   <h1>From human intent to one authorized action.</h1>
-  <p class="lede">Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh evidence; delta authorizes the exact payload; only then can the executor submit it.</p>
+  <p class="lede">Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh evidence; delta evaluates it and an independent verifier confirms the proof; only then can the executor submit the exact bytes.</p>
   <section class="status">
     <span class="pill ${statusClass}">${escapeHtml(statusLabel)}</span>
     <strong>${simulated ? "NO REAL ORDER CREATED · SIMULATED RESPONSE" : probePassed ? "COINBASE PREVIEW VERIFIED · CREATE NOT CALLED" : completed ? "COINBASE OUTCOME RECONCILED" : submitted ? "ORDER SUBMITTED · OUTCOME NEEDS ATTENTION" : submissionUnknown ? "SUBMISSION STATUS UNKNOWN · RECONCILE BEFORE ANY RETRY" : "NO ORDER SUBMITTED"}</strong>
@@ -68,7 +74,7 @@ export function renderExecutionHtml(record) {
     <div class="step"><b>2 · Confirm</b><span>Human confirms policy digest.</span></div>
     <div class="step"><b>3 · Propose</b><span>Price-bounded IOC action.</span></div>
     <div class="step"><b>4 · Preview</b><span>Fresh fees, fill and preview ID.</span></div>
-    <div class="step"><b>5 · delta gate</b><span>Signed, payload-bound ALLOW.</span></div>
+    <div class="step"><b>5 · delta verify</b><span>Orchestrator success + independently verified proof.</span></div>
     <div class="step"><b>6 · Submit</b><span>One-time idempotent Create Order.</span></div>
     <div class="step"><b>7 · Reconcile</b><span>Read actual fill, fees and terminal status.</span></div>
   </section>
@@ -96,8 +102,10 @@ export function renderExecutionHtml(record) {
       <dt>Preview check</dt><dd>${escapeHtml(record.preview_check?.verdict ?? "—")}</dd>
     </dl></article>
     <article class="card"><h2>Authorization and outcome</h2><dl>
-      <dt>delta decision</dt><dd>${escapeHtml(record.delta?.decision ?? "—")}</dd>
-      <dt>Decision ID</dt><dd>${escapeHtml(record.delta?.decision_id ?? "—")}</dd>
+      <dt>delta status</dt><dd>${escapeHtml(record.delta?.status ?? record.delta?.decision ?? "—")}</dd>
+      <dt>Intent ID</dt><dd>${escapeHtml(record.delta?.intent_id ?? record.delta?.decision_id ?? "—")}</dd>
+      <dt>Verifier confirmed</dt><dd>${escapeHtml(record.delta?.verifier_confirmed === true ? "YES" : "NO")}</dd>
+      <dt>Proof digest</dt><dd>${escapeHtml(record.delta?.proof_digest ?? "—")}</dd>
       <dt>Create invoked</dt><dd>${escapeHtml(execution.adapter_invoked === true ? "YES" : "NO")}</dd>
       <dt>Order submitted</dt><dd>${escapeHtml(execution.order_submitted === true ? "YES" : execution.order_submitted == null ? "UNKNOWN" : "NO")}</dd>
       <dt>Order ID</dt><dd>${escapeHtml(execution.order_id ?? "—")}</dd>
@@ -117,12 +125,81 @@ export function renderExecutionHtml(record) {
 </html>`;
 }
 
-export async function writeExecutionReport(record, baseName) {
-  const outputDir = path.join(HARNESS_ROOT, "artifacts");
-  await mkdir(outputDir, { recursive: true });
-  const jsonPath = path.join(outputDir, `${baseName}.json`);
-  const htmlPath = path.join(outputDir, `${baseName}.html`);
-  await writeFile(jsonPath, `${JSON.stringify(record, null, 2)}\n`);
-  await writeFile(htmlPath, renderExecutionHtml(record));
+function safeBaseName(value) {
+  const normalized = String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 64);
+  return normalized || "execution-record";
+}
+
+async function ensurePrivateDirectory(directoryPath) {
+  try {
+    const existing = await lstat(directoryPath);
+    if (existing.isSymbolicLink() || !existing.isDirectory()) {
+      throw new Error(`Refusing unsafe report directory: ${directoryPath}`);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    await mkdir(directoryPath, {
+      mode: PRIVATE_DIRECTORY_MODE,
+      recursive: false,
+    });
+  }
+  await chmod(directoryPath, PRIVATE_DIRECTORY_MODE);
+}
+
+function reportStem(baseName, now, uniqueId) {
+  const timestamp = now
+    .toISOString()
+    .replaceAll("-", "")
+    .replaceAll(":", "")
+    .replace(".", "");
+  const nonce = String(uniqueId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 16);
+  if (!nonce) {
+    throw new Error("Report unique ID must contain an alphanumeric character");
+  }
+  return `${safeBaseName(baseName)}-${timestamp}-${nonce}`;
+}
+
+export async function writeExecutionReport(
+  record,
+  baseName,
+  {
+    harnessRoot = HARNESS_ROOT,
+    now = () => new Date(),
+    uniqueId = randomUUID,
+  } = {},
+) {
+  const runtimeDir = path.join(harnessRoot, "runtime");
+  const outputDir = path.join(runtimeDir, "artifacts");
+  await ensurePrivateDirectory(runtimeDir);
+  await ensurePrivateDirectory(outputDir);
+
+  const stem = reportStem(baseName, now(), uniqueId());
+  const jsonPath = path.join(outputDir, `${stem}.json`);
+  const htmlPath = path.join(outputDir, `${stem}.html`);
+  await writeFile(jsonPath, `${JSON.stringify(record, null, 2)}\n`, {
+    flag: "wx",
+    mode: PRIVATE_FILE_MODE,
+  });
+  try {
+    await writeFile(htmlPath, renderExecutionHtml(record), {
+      flag: "wx",
+      mode: PRIVATE_FILE_MODE,
+    });
+  } catch (error) {
+    await unlink(jsonPath).catch(() => {});
+    throw error;
+  }
+
+  // Some platforms apply a permissive umask to pre-existing files. `wx`
+  // prevents replacement; explicit chmod makes the privacy invariant visible.
+  await chmod(jsonPath, PRIVATE_FILE_MODE);
+  await chmod(htmlPath, PRIVATE_FILE_MODE);
+
   return { jsonPath, htmlPath };
 }

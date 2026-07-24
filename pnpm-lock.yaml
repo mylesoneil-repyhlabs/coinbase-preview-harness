@@ -6,19 +6,4 @@ settings:
 
 importers:
 
-  .:
-    devDependencies:
-      '@coinbase/coinbase-cli':
-        specifier: 0.0.4
-        version: 0.0.4
-
-packages:
-
-  '@coinbase/coinbase-cli@0.0.4':
-    resolution: {integrity: sha512-f5WD7Jz98weM7Ds8tbwCk8jA1iLijRfUshGy29EjlTVksjSXAGhnwlASRjgcNWGIoKp3jbdyeAjYcYLfYHwReA==}
-    engines: {node: '>=22'}
-    hasBin: true
-
-snapshots:
-
-  '@coinbase/coinbase-cli@0.0.4': {}
+  .: {}

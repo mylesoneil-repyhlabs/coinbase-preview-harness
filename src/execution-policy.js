@@ -1,4 +1,5 @@
 import {
+  addDecimals,
   compareDecimals,
   isIncrementAligned,
   isPositiveDecimal,
@@ -108,7 +109,6 @@ export function selectExecutionPreviewEvidence(preview) {
     "est_average_filled_price",
     "best_bid",
     "best_ask",
-    "slippage",
     "preview_id",
     "errs",
     "warning",
@@ -155,7 +155,10 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
   ]) {
     try {
       const parsed = parseDecimal(preview[field], field);
-      if (field !== "commission_total" && parsed.coefficient <= 0n) {
+      if (
+        (field === "commission_total" && parsed.coefficient < 0n) ||
+        (field !== "commission_total" && parsed.coefficient <= 0n)
+      ) {
         throw new Error("not positive");
       }
     } catch {
@@ -183,17 +186,30 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
       ),
     );
   }
+  let conservativeAllInDebit = null;
+  try {
+    const quotePlusCommission = addDecimals(
+      proposal.quote_size,
+      preview.commission_total,
+    );
+    conservativeAllInDebit =
+      compareDecimals(preview.order_total, quotePlusCommission) >= 0
+        ? preview.order_total
+        : quotePlusCommission;
+  } catch {}
   if (
-    typeof preview.order_total === "string" &&
-    isPositiveDecimal(preview.order_total) &&
-    compareDecimals(preview.order_total, policy.limits.max_all_in_debit.value) > 0
+    conservativeAllInDebit !== null &&
+    compareDecimals(
+      conservativeAllInDebit,
+      policy.limits.max_all_in_debit.value,
+    ) > 0
   ) {
     failures.push(
       failure(
         "ALL_IN_CAP_EXCEEDED",
-        "Preview all-in debit exceeds the policy",
+        "Conservative Preview all-in debit exceeds the policy",
         policy.limits.max_all_in_debit.value,
-        preview.order_total,
+        conservativeAllInDebit,
       ),
     );
   }

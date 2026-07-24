@@ -1,8 +1,10 @@
 node_modules/
+.delta-coinbase-guard-node
 .env
 .env.*
 credentials/
 runtime/
+tmp/
 *.pem
 *.key
 *key*.json

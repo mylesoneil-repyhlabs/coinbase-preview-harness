@@ -4,6 +4,7 @@ import { compileDeterministicIntent } from "../src/intent-compiler.js";
 import {
   evaluateExecutionPreview,
   evaluateExecutionProposal,
+  selectExecutionPreviewEvidence,
 } from "../src/execution-policy.js";
 import { proposeSpotOrder } from "../src/proposer.js";
 
@@ -55,6 +56,34 @@ test("preview evidence passes only when bound economics remain within policy", (
   };
   assert.equal(
     evaluateExecutionPreview(policy, proposal, market, preview).verdict,
+    "ALLOW",
+  );
+});
+
+test("canonical evidence ignores Coinbase's optional self-reported slippage", () => {
+  const preview = {
+    order_total: "5.25",
+    commission_total: "0.25",
+    quote_size: "5",
+    base_size: "0.00166",
+    est_average_filled_price: "3010.00",
+    best_bid: "2999.00",
+    best_ask: "3000.00",
+    slippage: "999999",
+    preview_id: "preview-1",
+    errs: [],
+    warning: [],
+  };
+
+  const selected = selectExecutionPreviewEvidence(preview);
+  assert.equal(Object.hasOwn(selected, "slippage"), false);
+  assert.equal(
+    evaluateExecutionPreview(
+      policy,
+      proposeSpotOrder(policy, market).action,
+      market,
+      preview,
+    ).verdict,
     "ALLOW",
   );
 });
