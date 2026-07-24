@@ -14,3 +14,6 @@ runtime/
 artifacts/private/
 artifacts/live-preview-*
 artifacts/dry-run-*
+artifacts/live-execution-*
+artifacts/execution-probe-*
+artifacts/execution-reconciliation-*

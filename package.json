@@ -12,6 +12,12 @@
     "sandbox": "node src/cli.js sandbox",
     "configure": "node src/cli.js configure",
     "preview": "node src/cli.js preview",
+    "plan": "node src/cli.js plan",
+    "simulate": "node src/cli.js simulate",
+    "configure-execution": "node src/cli.js configure-execution",
+    "probe-execution": "node src/cli.js probe-execution",
+    "execute": "node src/cli.js execute",
+    "reconcile-execution": "node src/cli.js reconcile-execution",
     "fixtures": "node src/cli.js fixtures",
     "test": "node --test test/*.test.js"
   },
