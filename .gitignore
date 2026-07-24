@@ -3,6 +3,7 @@ node_modules/
 .env.*
 credentials/
 runtime/
+tmp/
 *.pem
 *.key
 *key*.json
@@ -14,3 +15,6 @@ runtime/
 artifacts/private/
 artifacts/live-preview-*
 artifacts/dry-run-*
+artifacts/live-execution-*
+artifacts/execution-probe-*
+artifacts/execution-reconciliation-*
