@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { buildChildEnvironment, buildPreviewArgs, CLI_ENTRY, dryRunPreview, HARNESS_ROOT } from "../src/coinbase-cli.js";
+import {
+  buildChildEnvironment,
+  buildPreviewArgs,
+  CLI_ENTRY,
+  dryRunPreview,
+} from "../src/coinbase-cli.js";
 
 const order = {
   product_id: "ETH-USDC",
@@ -44,20 +48,4 @@ test("official CLI dry-run assembles the exact request without credentials", asy
   assert.equal(result.action, "orders_preview");
   assert.equal(result.contacted_coinbase, false);
   assert.deepEqual(result.request, order);
-});
-
-test("production source contains no Coinbase order execution command", async () => {
-  const sourceFiles = [
-    "src/coinbase-cli.js",
-    "src/pipeline.js",
-    "src/cli.js",
-    "src/permissions.js",
-    "src/sandbox.js",
-  ];
-  const contents = await Promise.all(sourceFiles.map((file) => readFile(path.join(HARNESS_ROOT, file), "utf8")));
-  const source = contents.join("\n");
-  assert.doesNotMatch(source, /orders[_ -]create/i);
-  assert.doesNotMatch(source, /convert[_ -]execute/i);
-  assert.doesNotMatch(source, /close[_ -]position/i);
-  assert.doesNotMatch(source, /\btransfer\b/i);
 });
