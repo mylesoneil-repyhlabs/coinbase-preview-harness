@@ -17,10 +17,12 @@ export const CLI_ENTRY = path.join(
   "index.js",
 );
 export const CONFIG_DIR = path.join(HARNESS_ROOT, "runtime", "coinbase-cli");
-export const ENVIRONMENT_NAME = "live-delta-preview";
+export const PREVIEW_ENVIRONMENT_NAME = "live-delta-preview";
+export const EXECUTION_ENVIRONMENT_NAME = "live-delta-execution";
+export const ENVIRONMENT_NAME = PREVIEW_ENVIRONMENT_NAME;
 export const CLI_VERSION = "0.0.4";
 
-export function buildChildEnvironment() {
+export function buildChildEnvironment(environment = PREVIEW_ENVIRONMENT_NAME) {
   return {
     HOME: process.env.HOME ?? "",
     LANG: process.env.LANG ?? "en_US.UTF-8",
@@ -28,7 +30,7 @@ export function buildChildEnvironment() {
     PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
     TMPDIR: process.env.TMPDIR ?? "/tmp",
     COINBASE_CONFIG_DIR: CONFIG_DIR,
-    COINBASE_ENV: ENVIRONMENT_NAME,
+    COINBASE_ENV: environment,
     COINBASE_NO_HISTORY: "1",
     COINBASE_NO_UPDATE_CHECK: "1",
     FORCE_COLOR: "0",
@@ -49,14 +51,17 @@ export function buildPreviewArgs(order, { dryRun = false } = {}) {
   return args;
 }
 
-export async function runPinnedCli(args, { timeout = 15_000 } = {}) {
+export async function runPinnedCli(
+  args,
+  { timeout = 15_000, environment = PREVIEW_ENVIRONMENT_NAME } = {},
+) {
   await access(CLI_ENTRY);
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
 
   try {
     const result = await execFileAsync(process.execPath, [CLI_ENTRY, ...args], {
       cwd: HARNESS_ROOT,
-      env: buildChildEnvironment(),
+      env: buildChildEnvironment(environment),
       encoding: "utf8",
       maxBuffer: 256 * 1024,
       timeout,
@@ -92,8 +97,8 @@ export async function getPreviewTemplate() {
   return JSON.parse(result.stdout);
 }
 
-export function parseDryRun(stdout, stderr = "") {
-  const marker = "would execute orders_preview";
+export function parseDryRun(stdout, stderr = "", action = "orders_preview") {
+  const marker = `would execute ${action}`;
   if (!stderr.startsWith(marker) && !stdout.startsWith(marker)) {
     throw new Error("Unexpected Coinbase dry-run output");
   }

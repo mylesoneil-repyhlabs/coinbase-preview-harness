@@ -1,12 +1,30 @@
 import { createHash, createPrivateKey, createSign, randomBytes } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
-import { CONFIG_DIR, ENVIRONMENT_NAME, HARNESS_ROOT, runPinnedCli } from "./coinbase-cli.js";
+import {
+  CONFIG_DIR,
+  ENVIRONMENT_NAME,
+  EXECUTION_ENVIRONMENT_NAME,
+  HARNESS_ROOT,
+  runPinnedCli,
+} from "./coinbase-cli.js";
 import { sanitize } from "./sanitize.js";
 
 const PERMISSIONS_URL = "https://api.coinbase.com/api/v3/brokerage/key_permissions";
 const PERMISSIONS_PATH = "/api/v3/brokerage/key_permissions";
 export const ATTESTATION_PATH = path.join(HARNESS_ROOT, "runtime", "permission-attestation.json");
+export const TRADE_ATTESTATION_PATH = path.join(
+  HARNESS_ROOT,
+  "runtime",
+  "trade-permission-attestation.json",
+);
+export const JWT_PROFILE = "CDP_URIS_V1";
 
 function base64url(value) {
   return Buffer.from(value).toString("base64url");
@@ -43,6 +61,20 @@ function toJoseSignature(derSignature) {
 }
 
 export function createRequestJwt(keyId, privateKey, method = "GET", host = "api.coinbase.com", requestPath = PERMISSIONS_PATH) {
+  if (!["GET", "POST"].includes(method)) {
+    throw new Error("Coinbase JWT method must be GET or POST");
+  }
+  if (host !== "api.coinbase.com") {
+    throw new Error("Coinbase JWT host must be api.coinbase.com");
+  }
+  if (
+    typeof requestPath !== "string" ||
+    !requestPath.startsWith("/api/v3/brokerage/") ||
+    requestPath.includes("?") ||
+    requestPath.includes("..")
+  ) {
+    throw new Error("Coinbase JWT path is invalid");
+  }
   if (!privateKey.includes("BEGIN EC PRIVATE KEY")) {
     throw new Error("Advanced Trade requires an ECDSA/ES256 CDP key");
   }
@@ -83,31 +115,85 @@ export function assertViewOnlyPermissions(response) {
   return true;
 }
 
-export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) {
-  const resolvedPath = path.resolve(keyFilePath);
-  const relative = path.relative(HARNESS_ROOT, resolvedPath);
+export function assertTradeOnlyPermissions(response) {
+  const failures = [];
+  if (response?.can_view !== true) failures.push("can_view must be true");
+  if (response?.can_trade !== true) failures.push("can_trade must be true");
+  if (response?.can_transfer !== false) failures.push("can_transfer must be false");
+  if (response?.can_receive !== false) failures.push("can_receive must be false");
+  if (!response?.portfolio_uuid) failures.push("portfolio_uuid must be present");
+  if (failures.length) {
+    throw new Error(`Key is not safe for the execution harness: ${failures.join("; ")}`);
+  }
+  return true;
+}
+
+async function readExternalKeyFile(keyFilePath) {
+  if (typeof keyFilePath !== "string" || !path.isAbsolute(keyFilePath)) {
+    throw new Error("CDP key path must be absolute");
+  }
+  const linkInfo = await lstat(keyFilePath);
+  if (linkInfo.isSymbolicLink()) throw new Error("CDP key file must not be a symlink");
+  if (!linkInfo.isFile()) throw new Error("CDP key path must be a regular file");
+  if (linkInfo.size <= 0 || linkInfo.size > 32 * 1024) {
+    throw new Error("CDP key file size is outside the safety limit");
+  }
+  if ((linkInfo.mode & 0o077) !== 0) {
+    throw new Error("CDP key file permissions must be 0600");
+  }
+  if (typeof process.getuid === "function" && linkInfo.uid !== process.getuid()) {
+    throw new Error("CDP key file must be owned by the current user");
+  }
+
+  const resolvedPath = await realpath(keyFilePath);
+  const harnessRealPath = await realpath(HARNESS_ROOT);
+  const relative = path.relative(harnessRealPath, resolvedPath);
   if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
     throw new Error("Keep the downloaded CDP key file outside this repository");
   }
-
   const raw = await readFile(resolvedPath, "utf8");
   const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("CDP key JSON must be an object");
+  }
+  const allowedFields = ["name", "privateKey", "id", "secret"];
+  const unknownFields = Object.keys(parsed).filter(
+    (field) => !allowedFields.includes(field),
+  );
+  if (unknownFields.length) {
+    throw new Error(`CDP key JSON contains unknown fields: ${unknownFields.join(", ")}`);
+  }
   const keyId = parsed.name ?? parsed.id;
   const privateKey = parsed.privateKey ?? parsed.secret;
-  if (!keyId || !privateKey) {
+  if (
+    typeof keyId !== "string" ||
+    !/^organizations\/[^/\s]+\/apiKeys\/[^/\s]+$/.test(keyId) ||
+    typeof privateKey !== "string"
+  ) {
     throw new Error("CDP key JSON must contain name/privateKey");
   }
+  const parsedKey = createPrivateKey(privateKey);
+  if (
+    parsedKey.asymmetricKeyType !== "ec" ||
+    parsedKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+  ) {
+    throw new Error("This harness currently requires an ECDSA P-256 CDP key");
+  }
+  return { resolvedPath, keyId, privateKey };
+}
 
+async function fetchPermissions(keyId, privateKey, fetchImpl) {
   const jwt = createRequestJwt(keyId, privateKey);
   const response = await fetchImpl(PERMISSIONS_URL, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${jwt}`,
+      "Cache-Control": "no-cache",
       "Content-Type": "application/json",
     },
+    redirect: "error",
     signal: AbortSignal.timeout(10_000),
   });
-
   const responseText = await response.text();
   if (responseText.length > 64 * 1024) {
     throw new Error("Coinbase permission response exceeded the safety limit");
@@ -115,7 +201,12 @@ export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) 
   if (!response.ok) {
     throw new Error(`Coinbase permission check failed with HTTP ${response.status}`);
   }
-  const permissions = JSON.parse(responseText);
+  return JSON.parse(responseText);
+}
+
+export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) {
+  const { resolvedPath, keyId, privateKey } = await readExternalKeyFile(keyFilePath);
+  const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
   assertViewOnlyPermissions(permissions);
 
   await runPinnedCli(["env", ENVIRONMENT_NAME, "--key-file", resolvedPath], { timeout: 30_000 });
@@ -124,6 +215,7 @@ export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) 
     schema: "delta.coinbase.permission_attestation.v1",
     verified_at: new Date().toISOString(),
     environment: ENVIRONMENT_NAME,
+    jwt_profile: JWT_PROFILE,
     can_view: true,
     can_trade: false,
     can_transfer: false,
@@ -137,6 +229,46 @@ export async function verifyKeyFileAndConfigure(keyFilePath, fetchImpl = fetch) 
   return sanitize(attestation);
 }
 
+export async function verifyTradeKeyFileAndConfigure(
+  keyFilePath,
+  fetchImpl = fetch,
+  { persistAttestation = true } = {},
+) {
+  const { resolvedPath, keyId, privateKey } = await readExternalKeyFile(keyFilePath);
+  const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
+  assertTradeOnlyPermissions(permissions);
+
+  const attestation = {
+    schema: "delta.coinbase.trade_permission_attestation.v1",
+    verified_at: new Date().toISOString(),
+    environment: EXECUTION_ENVIRONMENT_NAME,
+    jwt_profile: JWT_PROFILE,
+    can_view: true,
+    can_trade: true,
+    can_transfer: false,
+    can_receive: false,
+    portfolio_fingerprint: createHash("sha256")
+      .update(permissions.portfolio_uuid)
+      .digest("hex"),
+    key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
+  };
+  if (persistAttestation) {
+    await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    await writeFile(
+      TRADE_ATTESTATION_PATH,
+      `${JSON.stringify(attestation, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  }
+  return {
+    attestation,
+    credentials: {
+      keyId,
+      privateKey,
+    },
+  };
+}
+
 export async function loadPermissionAttestation() {
   const raw = await readFile(ATTESTATION_PATH, "utf8");
   const attestation = JSON.parse(raw);
@@ -145,6 +277,7 @@ export async function loadPermissionAttestation() {
     attestation.can_trade !== false ||
     attestation.can_transfer !== false ||
     attestation.can_receive !== false ||
+    attestation.jwt_profile !== JWT_PROFILE ||
     typeof attestation.portfolio_fingerprint !== "string"
   ) {
     throw new Error("Permission attestation is missing or unsafe; rerun credential configuration");
@@ -159,4 +292,12 @@ export async function loadPermissionAttestation() {
     throw new Error("Configured Coinbase key no longer matches the verified permission attestation");
   }
   return attestation;
+}
+
+export async function loadAndVerifyTradeCredentials(keyFilePath, fetchImpl = fetch) {
+  const result = await verifyTradeKeyFileAndConfigure(keyFilePath, fetchImpl);
+  return {
+    attestation: result.attestation,
+    credentials: result.credentials,
+  };
 }
