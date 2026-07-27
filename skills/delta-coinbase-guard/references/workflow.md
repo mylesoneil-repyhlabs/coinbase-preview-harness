@@ -41,6 +41,30 @@ authenticate the author of a chat message. The calling host owns that control.
 Production should use an authenticated Delta-native authorization UX and
 signer session.
 
+## Conditional partner showcase
+
+The separate `coinbase-demo` command is a presentation fixture for showing the
+verification gap in a meaningful delegated trade. It does not compile the
+3,000-USDC scenario into the public V1 live policy and cannot contact Coinbase
+or production delta.
+
+1. Display the simulated human mandate and its digest.
+2. Let the agent fixture propose candidate one.
+3. Evaluate allocation, reference price, slippage, fee, exposure, and expiry.
+4. Return `BLOCK` with every failed constraint and a receipt bound to the
+   candidate payload digest.
+5. Let the deterministic controller classify only that failure as `RETRY`,
+   within the fixed two-attempt budget.
+6. Let the agent fixture produce candidate two.
+7. Return `PASS` with a receipt bound to candidate two's exact payload digest.
+8. Compare the passed digest with the execution-boundary digest.
+9. Mark those exact bytes eligible for one simulated execution.
+10. Report that Coinbase Create was unreachable and uninvoked.
+
+This sequence uses labeled market, fee, exposure, and decision fixtures. Its
+content-addressed receipts make tampering evident within the artifact; they are
+not production delta signatures or trusted identities.
+
 When clarification is required, request one complete replacement instruction
 and compile it as a new source intent. Do not merge fragments on the user's
 behalf. If the original request was for execution, obtain separate permission
@@ -85,3 +109,8 @@ multiple failed proposals requires one explicit design:
 
 Do not describe “retry until pass under one authorization” as implemented
 until engineering selects and tests one of these semantics.
+
+The conditional showcase therefore demonstrates controller behavior, not an
+authoritative multi-proposal production-delta lifecycle. Its two simulated
+receipts are separate fixture decisions. Preserve that qualification in every
+demo and partner explanation.

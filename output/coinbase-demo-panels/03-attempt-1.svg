@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080">
+<rect width="720" height="1080" fill="#f8fafc"/>
+<rect width="12" height="1080" fill="#b42318"/>
+<text x="54" y="72" fill="#b42318" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">ATTEMPT 1</text>
+<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="42" font-weight="800">
+  <tspan x="54" dy="0">BLOCK — five constraints fail</tspan>
+  <tspan x="54" dy="52"></tspan>
+</text>
+<rect x="54" y="259" width="74" height="7" rx="3.5" fill="#b42318"/>
+<g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Allocation</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">3,300 &gt; 3,000 USDC</text>
+</g>
+<g transform="translate(54 442)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Reference price</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">3,035 &gt; 3,000 USDC</text>
+</g>
+<g transform="translate(54 554)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Slippage</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">60 &gt; 35 bps</text>
+</g>
+<g transform="translate(54 666)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Fee</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">18 &gt; 15 USDC</text>
+</g>
+<g transform="translate(54 778)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Exposure</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">10,500 &gt; 10,000 USDC</text>
+</g>
+<text x="54" y="958" fill="#475467" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="1">BOUND RECEIPT · CONTROLLER ALLOWS ONE RETRY</text>
+<text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">03 / 06</text>
+<circle cx="282" cy="1018" r="5" fill="#d0d5dd"/><circle cx="313" cy="1018" r="5" fill="#d0d5dd"/><circle cx="344" cy="1018" r="7" fill="#b42318"/><circle cx="375" cy="1018" r="5" fill="#d0d5dd"/><circle cx="406" cy="1018" r="5" fill="#d0d5dd"/><circle cx="437" cy="1018" r="5" fill="#d0d5dd"/>
+</svg>

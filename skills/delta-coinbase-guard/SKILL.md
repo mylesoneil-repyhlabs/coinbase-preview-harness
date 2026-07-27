@@ -1,6 +1,6 @@
 ---
 name: delta-coinbase-guard
-description: Turn a one-off natural-language Coinbase Advanced Trade request into a closed reviewable policy, pause for exact digest confirmation, safely simulate the mandate-gated flow, or run a credentialed Coinbase Preview probe that cannot create an order. Use for Coinbase spot trade planning, policy review, credential-free demonstrations, Preview compatibility checks, and tests of the delta-to-Coinbase boundary. The public V1 never executes trades and must not be used for transfers, withdrawals, sends, conversions, leverage, derivatives, recurring trades, conditional actions, or long-running strategies.
+description: Turn a one-off natural-language Coinbase Advanced Trade request into a closed reviewable policy, pause for exact digest confirmation, safely simulate the mandate-gated flow, run a labeled conditional-allocation partner showcase, or run a credentialed Coinbase Preview probe that cannot create an order. Use for Coinbase spot trade planning, policy review, credential-free demonstrations, Preview compatibility checks, and tests of the delta-to-Coinbase boundary. The public V1 never executes trades and must not be used for transfers, withdrawals, sends, conversions, leverage, derivatives, recurring trades, live conditional actions, or long-running strategies.
 ---
 
 # Delta Coinbase Guard V1
@@ -30,6 +30,8 @@ repository, or bypass the harness unless the user explicitly asks.
 Choose one workflow:
 
 - Policy draft or demo: **plan → policy confirmation → simulate**.
+- Conditional-allocation partner showcase: **showcase fixture → BLOCK/RETRY
+  receipt → revised exact proposal → PASS receipt → simulated eligibility**.
 - Coinbase API compatibility check: **plan → policy confirmation → bind →
   execution confirmation receipt → probe**.
 
@@ -46,6 +48,31 @@ user authorizes, up to `5 USDC`, using a quote-sized SOR limit IOC with at most
 into an exact spend or silently narrow a different request. These limits are a
 safety ceiling, not defaults: if the user's source request omits any material
 cap or term, let `plan` request clarification rather than filling it.
+
+The partner showcase is a separate, credential-free presentation mode. It is
+not a live conditional-order feature and does not expand the public V1 safety
+profile. Use it only when the user explicitly asks for a simulation,
+showcase, or partner demo of a conditional ETH allocation. Run:
+
+```sh
+"$GUARD_RUN" coinbase-demo
+```
+
+The checked-in fixture represents a user mandate to allocate up to 3,000 USDC
+to ETH only at or below 3,000 USDC, with a 35 bps slippage cap, 15 USDC fee
+cap, 10,000 USDC post-trade exposure cap, fifteen-minute expiry, and one
+execution. The first proposal intentionally violates the allocation, price,
+slippage, fee, and exposure constraints. The external controller retries once
+with a revised exact proposal. Report the first `BLOCK → RETRY` receipt, the
+second `PASS → EXECUTE` receipt, and the equality between the passed proposal
+digest and simulated execution-eligibility digest.
+
+Always label every market, fee, exposure, delta decision, receipt, and
+execution result in this showcase as fixture-based simulation. Coinbase and
+production delta are not contacted, Coinbase Create is not invoked, and no
+money moves. Do not use the future 5-USDC live-test ceiling as the economic
+story; mention it only when discussing credentialed setup or future live-test
+safety.
 
 ## Plan and review
 
@@ -153,6 +180,23 @@ Return:
 - whether Coinbase Create was reachable or invoked;
 - sanitized artifact links; and
 - the current blocker or next safe step.
+
+For the conditional partner showcase, lead with the human mandate and then
+separate the actors explicitly:
+
+1. the agent proposed candidate one;
+2. the simulated delta evaluator returned specific failures and a bound
+   `BLOCK` receipt;
+3. the external controller, not the model, allowed one retry;
+4. the agent proposed candidate two;
+5. the simulated evaluator returned `PASS` with a receipt bound to the exact
+   payload digest; and
+6. the controller marked only those exact bytes eligible for one simulated
+   execution, while Coinbase Create remained unreachable.
+
+Do not present the generated HTML report as a Coinbase or delta product UI.
+The primary user experience is the Codex conversation; the report is only a
+sanitized inspection artifact.
 
 Never expose raw Coinbase or Delta responses, account identifiers, portfolio
 labels, credential material, authorization headers, or local home-directory

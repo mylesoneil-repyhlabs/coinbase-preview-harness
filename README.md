@@ -31,33 +31,41 @@ real read and **Preview** endpoints to validate the exact prospective order.
 
 This is an independent Delta prototype, not a Coinbase product or endorsement.
 
-## Run the complete Coinbase demo
+## Record the complete Coinbase demo in Codex
 
-The fastest way to see the credential-ready, end-to-end proof is:
+Install the skill, start a fresh Codex chat, and use the single prompt in the
+[Coinbase Codex recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md). The
+direct normal-user download is:
+
+[**Download and install Delta Coinbase Guard V1 (.zip)**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip)
+
+For a terminal-only check from the repository:
 
 ```sh
 ./run credential-readiness
 ./run coinbase-demo
 ```
 
-`coinbase-demo` turns the pinned natural-language request into a closed policy,
-runs the production-shaped Delta policy → intent → proposal → verifier → proof
-lifecycle, binds the exact prospective Create payload to the simulated proof,
-reaches the simulated execution boundary only after verification, and
-reconciles the synthetic result. It also exercises the real deterministic
-attempt-loop controller: one constraint failure is retried once, the second
-candidate verifies, and only the external controller executes.
+`coinbase-demo` presents a meaningful simulated mandate: allocate up to 3,000
+USDC to ETH only at or below a target price, within fee, slippage, portfolio
+exposure, expiry, and one-use constraints. The first agent proposal violates
+five constraints. The simulated Delta evaluator returns a bound `BLOCK`
+receipt; the external deterministic controller permits one retry; a revised
+exact proposal receives `PASS`; and only the passed payload digest becomes
+eligible for one simulated execution.
 
-The command writes private JSON and visual HTML artifacts under
-`runtime/artifacts/` and prints their absolute paths. It uses no credential,
-contacts neither Coinbase nor production delta, invokes no Coinbase Create
-endpoint, and moves no money. The adapter and evidence contracts are the same
-replacement seams documented for engineering; the demo is a working flow, not
-a separate UI mock.
+The skill returns the mandate, authorization status, both exact proposals,
+constraint failures, `BLOCK → RETRY → PASS`, receipt verification, payload
+digest equality, and no-live-order status directly in Codex. A browser or
+separate product UI is not part of the recording. Six aligned right-side
+[companion panels](output/coinbase-demo-panels/) explain the flow without
+pretending to be a live Coinbase or delta interface.
 
-[Watch the short seven-step screen demo](output/video/delta-coinbase-guard-demo.avi)
-or open the [workflow PDF](output/pdf/delta-coinbase-guard-v1-workflow.pdf).
-Both artifacts are credential-free and show only the simulation.
+The command also writes private JSON and visual HTML inspection artifacts under
+`runtime/artifacts/`, but they are optional. It uses no credential, contacts
+neither Coinbase nor production delta, invokes no Coinbase Create endpoint,
+and moves no money. The 5-USDC ceiling belongs only to the separate future
+live-test safety profile; it is not the economic story in this simulation.
 
 See [Coinbase credential setup](docs/COINBASE-CREDENTIAL-SETUP.md) for the
 optional public Advanced Trade API path. A normal user-created CDP ECDSA key can

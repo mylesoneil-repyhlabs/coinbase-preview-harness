@@ -1,0 +1,32 @@
+[
+  {
+    "panel": "01",
+    "suggested_duration_seconds": 15,
+    "title": "A bounded $3,000 ETH allocation"
+  },
+  {
+    "panel": "02",
+    "suggested_duration_seconds": 12,
+    "title": "The agent proposes. Delta decides."
+  },
+  {
+    "panel": "03",
+    "suggested_duration_seconds": 18,
+    "title": "BLOCK — five constraints fail"
+  },
+  {
+    "panel": "04",
+    "suggested_duration_seconds": 14,
+    "title": "The decision is bound to exact bytes"
+  },
+  {
+    "panel": "05",
+    "suggested_duration_seconds": 17,
+    "title": "PASS — the revised action fits"
+  },
+  {
+    "panel": "06",
+    "suggested_duration_seconds": 15,
+    "title": "Only a verified PASS unlocks eligibility"
+  }
+]

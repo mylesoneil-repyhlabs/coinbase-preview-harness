@@ -119,8 +119,9 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
     </dl></article>
     ${retry ? `<article class="card wide"><h2>Bounded deterministic retry</h2><dl>
       <dt>Maximum attempts</dt><dd>${escapeHtml(retry.max_attempts)}</dd>
-      <dt>Attempt 1</dt><dd>${escapeHtml(retry.attempts?.[0]?.disposition ?? "—")} · constraint failure</dd>
-      <dt>Attempt 2</dt><dd>${escapeHtml(retry.attempts?.[1]?.disposition ?? "—")} · verified proof</dd>
+      <dt>Simulated mandate</dt><dd>Up to 3,000 USDC · price, cost, exposure and expiry bounded</dd>
+      <dt>Attempt 1</dt><dd>BLOCK → ${escapeHtml(retry.attempts?.[0]?.disposition ?? "—")} · specific violations</dd>
+      <dt>Attempt 2</dt><dd>PASS → ${escapeHtml(retry.attempts?.[1]?.disposition ?? "—")} · exact payload verified</dd>
       <dt>Controller outcome</dt><dd>${escapeHtml(retry.terminal_status ?? "—")}</dd>
       <dt>Real Coinbase Create</dt><dd>NOT INVOKED</dd>
     </dl><div class="notice">${escapeHtml(retry.note ?? "")}</div></article>` : ""}

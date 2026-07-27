@@ -63,8 +63,8 @@ test("showcase HTML surfaces the bounded external-controller retry", () => {
   };
   const html = renderExecutionHtml(showcase);
   assert.match(html, /Bounded deterministic retry/);
-  assert.match(html, /RETRY · constraint failure/);
-  assert.match(html, /EXECUTE · verified proof/);
+  assert.match(html, /BLOCK → RETRY · specific violations/);
+  assert.match(html, /PASS → EXECUTE · exact payload verified/);
   assert.match(html, /Real Coinbase Create/);
 });
 

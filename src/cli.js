@@ -263,15 +263,63 @@ async function simulate(args) {
 async function coinbaseDemo() {
   const record = await runCoinbaseDemo();
   const paths = await writeExecutionReport(record, "coinbase-complete-demo");
+  const retry = record.demo.bounded_retry;
+  const first = retry.attempts[0];
+  const second = retry.attempts[1];
   process.stdout.write("SIMULATION_ONLY\n");
-  process.stdout.write("COINBASE_DEMO=COMPLETE\n");
-  process.stdout.write(`DELTA_DECISION=${record.delta.status.toUpperCase()}\n`);
+  process.stdout.write("CONDITIONAL_MANDATE_SHOWCASE=COMPLETE\n");
+  process.stdout.write(`HUMAN_MANDATE=${retry.human_mandate_text}\n`);
   process.stdout.write(
-    `VERIFIED_SIMULATED_PROOF=${record.delta.verifier_confirmed ? "true" : "false"}\n`,
+    `AUTHORIZED_POLICY=${JSON.stringify(retry.human_mandate)}\n`,
   );
   process.stdout.write(
-    `BOUNDED_RETRY=${record.demo.bounded_retry.attempts.map(({ disposition }) => disposition).join("->")}\n`,
+    "AUTHORIZATION_INSTRUCTION=Treat the checked-in mandate as an explicitly labeled demo fixture; do not infer live-trade authorization.\n",
   );
+  process.stdout.write(`MANDATE_DIGEST=${first.receipt.mandate_digest}\n`);
+  process.stdout.write(
+    `AGENT_PROPOSAL_1=${JSON.stringify(first.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1=${first.receipt.verdict}->${first.disposition} ` +
+      `PROPOSAL_DIGEST=${first.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_FAILURES=${first.constraint_failures
+      .map(({ id }) => id)
+      .join(",")}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_RECEIPT_DIGEST=${first.receipt.receipt_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_RECEIPT_VERIFIED=${first.receipt.verified}\n`,
+  );
+  process.stdout.write("CONTROLLER_ACTION=RETRY_ONCE_WITHIN_FIXED_BUDGET\n");
+  process.stdout.write(
+    `AGENT_PROPOSAL_2=${JSON.stringify(second.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2=${second.receipt.verdict}->${second.disposition} ` +
+      `PROPOSAL_DIGEST=${second.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_RECEIPT_DIGEST=${second.receipt.receipt_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_RECEIPT_VERIFIED=${second.receipt.verified}\n`,
+  );
+  process.stdout.write(
+    `EXECUTION_ELIGIBILITY=${retry.execution.status}\n`,
+  );
+  process.stdout.write(
+    `EXECUTION_PAYLOAD_DIGEST=${retry.execution.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `EXACT_PAYLOAD_MATCH=${
+      retry.execution.exact_payload_digest === second.exact_payload_digest
+    }\n`,
+  );
+  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
   process.stdout.write("COINBASE_CONTACTED=false\n");
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
   printPaths(paths);

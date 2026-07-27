@@ -24,7 +24,7 @@
     "check:links": "node scripts/check-local-links.mjs",
     "check:skill": "node scripts/validate-skill.mjs",
     "visuals": "node scripts/generate-workflow-screenshots.mjs",
-    "video": "python3 scripts/build-demo-video.py",
+    "coinbase:panels": "node scripts/generate-coinbase-demo-panels.mjs",
     "test": "node --test test/*.test.js"
   }
 }
