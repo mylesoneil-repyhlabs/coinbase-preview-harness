@@ -12,6 +12,7 @@
     "doctor": "node src/cli.js doctor",
     "credential-readiness": "node src/cli.js credential-readiness",
     "configure-credentials": "node src/cli.js configure-credentials",
+    "coinbase-demo": "node src/cli.js coinbase-demo",
     "plan": "node src/cli.js plan",
     "simulate": "node src/cli.js simulate",
     "configure-execution": "node src/cli.js configure-execution",

@@ -5,6 +5,7 @@ import {
   createCoinbaseExecutionAdapter,
   createCoinbaseRestAdapter,
 } from "./coinbase-rest.js";
+import { runCoinbaseDemo } from "./coinbase-demo.js";
 import { runExecutionPipeline } from "./execution-pipeline.js";
 import {
   assertBoundExecutionForRecovery,
@@ -259,6 +260,23 @@ async function simulate(args) {
   }
 }
 
+async function coinbaseDemo() {
+  const record = await runCoinbaseDemo();
+  const paths = await writeExecutionReport(record, "coinbase-complete-demo");
+  process.stdout.write("SIMULATION_ONLY\n");
+  process.stdout.write("COINBASE_DEMO=COMPLETE\n");
+  process.stdout.write(`DELTA_DECISION=${record.delta.status.toUpperCase()}\n`);
+  process.stdout.write(
+    `VERIFIED_SIMULATED_PROOF=${record.delta.verifier_confirmed ? "true" : "false"}\n`,
+  );
+  process.stdout.write(
+    `BOUNDED_RETRY=${record.demo.bounded_retry.attempts.map(({ disposition }) => disposition).join("->")}\n`,
+  );
+  process.stdout.write("COINBASE_CONTACTED=false\n");
+  process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
+  printPaths(paths);
+}
+
 async function probeExecution(args) {
   const boundPath = optionValue(args, "--bound-execution");
   const receiptPath = optionValue(args, "--confirmation-receipt");
@@ -437,6 +455,7 @@ Commands:
   doctor
   credential-readiness
   configure-credentials --key-file /outside/repo/cdp_key.json
+  coinbase-demo
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
@@ -465,6 +484,8 @@ try {
     await credentialReadiness();
   } else if (command === "configure-credentials") {
     await configureExecution(args);
+  } else if (command === "coinbase-demo") {
+    await coinbaseDemo();
   } else if (command === "plan") {
     await createPlanCommand(args);
   } else if (command === "simulate") {

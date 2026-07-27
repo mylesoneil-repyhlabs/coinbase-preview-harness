@@ -31,6 +31,36 @@ real read and **Preview** endpoints to validate the exact prospective order.
 
 This is an independent Delta prototype, not a Coinbase product or endorsement.
 
+## Run the complete Coinbase demo
+
+The fastest way to see the credential-ready, end-to-end proof is:
+
+```sh
+./run credential-readiness
+./run coinbase-demo
+```
+
+`coinbase-demo` turns the pinned natural-language request into a closed policy,
+runs the production-shaped Delta policy → intent → proposal → verifier → proof
+lifecycle, binds the exact prospective Create payload to the simulated proof,
+reaches the simulated execution boundary only after verification, and
+reconciles the synthetic result. It also exercises the real deterministic
+attempt-loop controller: one constraint failure is retried once, the second
+candidate verifies, and only the external controller executes.
+
+The command writes private JSON and visual HTML artifacts under
+`runtime/artifacts/` and prints their absolute paths. It uses no credential,
+contacts neither Coinbase nor production delta, invokes no Coinbase Create
+endpoint, and moves no money. The adapter and evidence contracts are the same
+replacement seams documented for engineering; the demo is a working flow, not
+a separate UI mock.
+
+See [Coinbase credential setup](docs/COINBASE-CREDENTIAL-SETUP.md) for the
+optional public Advanced Trade API path. A normal user-created CDP ECDSA key can
+support permissions validation, authenticated reads, Preview, and—after the
+separate delta production controls are installed—Create. No private Coinbase
+developer access is required by the documented API surface.
+
 ## Install
 
 Requirements:
@@ -217,8 +247,8 @@ pnpm run check:skill
 pnpm run check:links
 ```
 
-The repository includes 143 unit, adversarial, replay, and bypass tests plus a
-seven-page simulated workflow.
+The repository includes a comprehensive unit, adversarial, replay, and bypass
+suite plus a seven-page simulated workflow.
 
 ## Repository map
 
@@ -231,8 +261,9 @@ src/intent-compiler.js                deterministic + optional model compiler
 src/execution-pipeline.js             deterministic fail-closed controller
 src/coinbase-rest.js                  reads/Preview + locked Create transport
 src/mandate/                          Delta adapter, controller, and simulator
+src/coinbase-demo.js                  one-command complete simulation showcase
 src/reconciliation.js                 uncertainty and recovery checks
-test/                                 143 safety and behavior tests
+test/                                 safety and behavior tests
 output/                               screenshots and workflow PDF
 runtime/                              ignored local plans and private reports
 ```

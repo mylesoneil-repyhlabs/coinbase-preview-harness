@@ -36,6 +36,7 @@ export function renderExecutionHtml(record) {
   const execution = record.execution ?? {};
   const reconciliation = record.reconciliation ?? {};
   const actual = reconciliation.order ?? {};
+  const retry = record.demo?.bounded_retry ?? null;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -116,6 +117,13 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
       <dt>Actual average</dt><dd>${escapeHtml(actual.average_filled_price ?? "—")}</dd>
       <dt>Post-trade check</dt><dd>${escapeHtml(reconciliation.checks?.verdict ?? "—")}</dd>
     </dl></article>
+    ${retry ? `<article class="card wide"><h2>Bounded deterministic retry</h2><dl>
+      <dt>Maximum attempts</dt><dd>${escapeHtml(retry.max_attempts)}</dd>
+      <dt>Attempt 1</dt><dd>${escapeHtml(retry.attempts?.[0]?.disposition ?? "—")} · constraint failure</dd>
+      <dt>Attempt 2</dt><dd>${escapeHtml(retry.attempts?.[1]?.disposition ?? "—")} · verified proof</dd>
+      <dt>Controller outcome</dt><dd>${escapeHtml(retry.terminal_status ?? "—")}</dd>
+      <dt>Real Coinbase Create</dt><dd>NOT INVOKED</dd>
+    </dl><div class="notice">${escapeHtml(retry.note ?? "")}</div></article>` : ""}
     <article class="card wide"><details><summary>Sanitized execution record</summary><pre>${escapeHtml(JSON.stringify(record, null, 2))}</pre></details></article>
   </section>
   ${simulated ? '<div class="notice"><strong>SIMULATION.</strong> Coinbase, OpenAI, and the production delta verifier were not contacted. The artifact proves orchestration, binding, fail-closed behavior, and the single-use execution seam—not a real transaction.</div>' : ""}

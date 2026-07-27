@@ -9,6 +9,24 @@ The optional credential path enables authenticated Coinbase reads and Preview
 only. Real Coinbase Create remains compile-time locked until the reviewed
 production delta adapter and durable one-time grant store are installed.
 
+## Public API availability
+
+Verified against Coinbase's public documentation on 2026-07-27: the required
+Advanced Trade endpoints are public and use ordinary user-created CDP API
+credentials. No private Coinbase developer program is required for:
+
+- [Get API Key Permissions](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/data-api/get-api-key-permissions);
+- [Get Best Bid/Ask and the other Advanced Trade endpoints](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/rest-api);
+- [Preview Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders); or
+- [Create Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order).
+
+Coinbase documents Preview as requiring `view`, Create as requiring `trade`,
+and CDP keys as defaulting to their permissioned portfolio. A normal user can
+[create an ECDSA CDP key](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication)
+with portfolio and permission restrictions. The remaining missing capability
+in this public build is not Coinbase access: it is the reviewed production
+delta adapter, independent verification, and durable one-time execution grant.
+
 ## 1. Check readiness without a credential
 
 ```sh
