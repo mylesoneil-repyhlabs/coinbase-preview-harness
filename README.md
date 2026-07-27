@@ -55,6 +55,10 @@ endpoint, and moves no money. The adapter and evidence contracts are the same
 replacement seams documented for engineering; the demo is a working flow, not
 a separate UI mock.
 
+[Watch the short seven-step screen demo](output/video/delta-coinbase-guard-demo.avi)
+or open the [workflow PDF](output/pdf/delta-coinbase-guard-v1-workflow.pdf).
+Both artifacts are credential-free and show only the simulation.
+
 See [Coinbase credential setup](docs/COINBASE-CREDENTIAL-SETUP.md) for the
 optional public Advanced Trade API path. A normal user-created CDP ECDSA key can
 support permissions validation, authenticated reads, Preview, and—after the
