@@ -1,6 +1,6 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Mandate-gated Coinbase Advanced Trade skill and trusted local executor.",
   "private": true,
   "type": "module",

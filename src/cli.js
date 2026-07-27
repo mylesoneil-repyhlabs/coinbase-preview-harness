@@ -260,9 +260,12 @@ async function simulate(args) {
   }
 }
 
-async function coinbaseDemo() {
+async function coinbaseDemo(args) {
+  const unsupported = args.filter((argument) => argument !== "--no-artifacts");
+  if (unsupported.length > 0) {
+    throw new Error("Usage: coinbase-demo [--no-artifacts]");
+  }
   const record = await runCoinbaseDemo();
-  const paths = await writeExecutionReport(record, "coinbase-complete-demo");
   const retry = record.demo.bounded_retry;
   const first = retry.attempts[0];
   const second = retry.attempts[1];
@@ -273,37 +276,65 @@ async function coinbaseDemo() {
     `AUTHORIZED_POLICY=${JSON.stringify(retry.human_mandate)}\n`,
   );
   process.stdout.write(
-    "AUTHORIZATION_INSTRUCTION=Treat the checked-in mandate as an explicitly labeled demo fixture; do not infer live-trade authorization.\n",
+    "AUTHORIZATION_STATUS=USER_REQUESTED_SIMULATION_ONLY; NOT_LIVE_TRADE_AUTHORIZATION\n",
   );
   process.stdout.write(`MANDATE_DIGEST=${first.receipt.mandate_digest}\n`);
   process.stdout.write(
-    `AGENT_PROPOSAL_1=${JSON.stringify(first.economics)}\n`,
+    `AUTHORIZATION_DIGEST=${first.receipt.authorization_digest}\n`,
+  );
+  process.stdout.write(`AUTHORIZED_AT=${first.receipt.authorized_at}\n`);
+  process.stdout.write(
+    `MANDATE_EXPIRES_AT=${first.receipt.mandate_expires_at}\n`,
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL_1=${JSON.stringify(first.exact_payload)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_FIXTURE_ECONOMICS=${JSON.stringify(first.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_EVIDENCE_DIGEST=${first.evidence_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_EVIDENCE_SOURCE=${first.evidence.collected_by}\n`,
   );
   process.stdout.write(
     `ATTEMPT_1=${first.receipt.verdict}->${first.disposition} ` +
       `PROPOSAL_DIGEST=${first.exact_payload_digest}\n`,
   );
   process.stdout.write(
-    `ATTEMPT_1_FAILURES=${first.constraint_failures
-      .map(({ id }) => id)
-      .join(",")}\n`,
+    `ATTEMPT_1_FAILURES=${JSON.stringify(
+      first.constraint_failures.map(({ id, reason }) => ({ id, reason })),
+    )}\n`,
   );
   process.stdout.write(
-    `ATTEMPT_1_RECEIPT_DIGEST=${first.receipt.receipt_digest}\n`,
+    `ATTEMPT_1_RECEIPT=${JSON.stringify(first.receipt)}\n`,
   );
   process.stdout.write(
     `ATTEMPT_1_RECEIPT_VERIFIED=${first.receipt.verified}\n`,
   );
   process.stdout.write("CONTROLLER_ACTION=RETRY_ONCE_WITHIN_FIXED_BUDGET\n");
   process.stdout.write(
-    `AGENT_PROPOSAL_2=${JSON.stringify(second.economics)}\n`,
+    "RETRY_EVIDENCE=NEW_LABELED_MARKET_PREVIEW_AND_PORTFOLIO_FIXTURE; AGENT_CANNOT_AUTHOR_EVIDENCE\n",
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL_2=${JSON.stringify(second.exact_payload)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_FIXTURE_ECONOMICS=${JSON.stringify(second.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_EVIDENCE_DIGEST=${second.evidence_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_EVIDENCE_SOURCE=${second.evidence.collected_by}\n`,
   );
   process.stdout.write(
     `ATTEMPT_2=${second.receipt.verdict}->${second.disposition} ` +
       `PROPOSAL_DIGEST=${second.exact_payload_digest}\n`,
   );
   process.stdout.write(
-    `ATTEMPT_2_RECEIPT_DIGEST=${second.receipt.receipt_digest}\n`,
+    `ATTEMPT_2_RECEIPT=${JSON.stringify(second.receipt)}\n`,
   );
   process.stdout.write(
     `ATTEMPT_2_RECEIPT_VERIFIED=${second.receipt.verified}\n`,
@@ -315,14 +346,32 @@ async function coinbaseDemo() {
     `EXECUTION_PAYLOAD_DIGEST=${retry.execution.exact_payload_digest}\n`,
   );
   process.stdout.write(
+    `EXECUTION_EVIDENCE_DIGEST=${retry.execution.evidence_digest}\n`,
+  );
+  process.stdout.write(`EXECUTION_GATE=${retry.execution.gate}\n`);
+  process.stdout.write(
     `EXACT_PAYLOAD_MATCH=${
       retry.execution.exact_payload_digest === second.exact_payload_digest
     }\n`,
   );
+  process.stdout.write(
+    `EVIDENCE_MATCH=${
+      retry.execution.evidence_digest === second.evidence_digest
+    }\n`,
+  );
+  process.stdout.write(
+    `SIMULATED_TRACE_ELIGIBILITIES=${retry.execution.simulated_trace_eligibilities}\n`,
+  );
+  process.stdout.write(
+    `DURABLE_ONE_TIME_GRANT_ISSUED=${retry.execution.durable_one_time_grant_issued}\n`,
+  );
+  process.stdout.write(
+    `EXTERNAL_EXECUTOR_INVOKED=${retry.execution.external_executor_invoked}\n`,
+  );
   process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
   process.stdout.write("COINBASE_CONTACTED=false\n");
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
-  printPaths(paths);
+  process.stdout.write("ARTIFACTS_WRITTEN=false\n");
 }
 
 async function probeExecution(args) {
@@ -503,7 +552,7 @@ Commands:
   doctor
   credential-readiness
   configure-credentials --key-file /outside/repo/cdp_key.json
-  coinbase-demo
+  coinbase-demo [--no-artifacts]
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
@@ -533,7 +582,7 @@ try {
   } else if (command === "configure-credentials") {
     await configureExecution(args);
   } else if (command === "coinbase-demo") {
-    await coinbaseDemo();
+    await coinbaseDemo(args);
   } else if (command === "plan") {
     await createPlanCommand(args);
   } else if (command === "simulate") {

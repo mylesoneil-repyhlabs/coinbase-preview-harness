@@ -7,17 +7,17 @@
   {
     "panel": "02",
     "suggested_duration_seconds": 12,
-    "title": "The agent proposes. Delta decides."
+    "title": "Agent proposes. Simulated evaluator decides."
   },
   {
     "panel": "03",
     "suggested_duration_seconds": 18,
-    "title": "BLOCK — five constraints fail"
+    "title": "BLOCK — six checks fail"
   },
   {
     "panel": "04",
     "suggested_duration_seconds": 14,
-    "title": "The decision is bound to exact bytes"
+    "title": "Decision bound to canonical action and evidence"
   },
   {
     "panel": "05",

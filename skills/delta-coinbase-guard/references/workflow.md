@@ -49,16 +49,25 @@ verification gap in a meaningful delegated trade. It does not compile the
 or production delta.
 
 1. Display the simulated human mandate and its digest.
-2. Let the agent fixture propose candidate one.
-3. Evaluate allocation, reference price, slippage, fee, exposure, and expiry.
+2. Let the agent fixture propose candidate one's closed canonical Create
+   object. The proposal callback cannot provide timestamps or evidence.
+3. Let the external controller attach a separately labeled market, Preview,
+   and portfolio fixture, then evaluate payload schema, evidence provenance,
+   authorization window, freshness, allocation, market price, limit price,
+   slippage, fee, exposure, and expiry.
 4. Return `BLOCK` with every failed constraint and a receipt bound to the
    candidate payload digest.
 5. Let the deterministic controller classify only that failure as `RETRY`,
-   within the fixed two-attempt budget.
-6. Let the agent fixture produce candidate two.
-7. Return `PASS` with a receipt bound to candidate two's exact payload digest.
-8. Compare the passed digest with the execution-boundary digest.
-9. Mark those exact bytes eligible for one simulated execution.
+   within the fixed two-attempt budget, and obtain a new labeled market,
+   Preview, and portfolio evidence fixture.
+6. Let the agent fixture produce candidate two. The agent may revise the order
+   payload but cannot author or change the evidence fixture.
+7. Return `PASS` with a receipt bound to candidate two's canonical payload and
+   evidence digests.
+8. Compare both passed digests with the execution-boundary digests and
+   re-verify the authorization window.
+9. Mark that action eligible once in this simulated trace. Do not imply that a
+   durable one-time grant was issued.
 10. Report that Coinbase Create was unreachable and uninvoked.
 
 This sequence uses labeled market, fee, exposure, and decision fixtures. Its

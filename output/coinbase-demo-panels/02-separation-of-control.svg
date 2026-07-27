@@ -2,10 +2,11 @@
 <rect width="720" height="1080" fill="#f8fafc"/>
 <rect width="12" height="1080" fill="#0052ff"/>
 <text x="54" y="72" fill="#0052ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">SEPARATION OF CONTROL</text>
-<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="42" font-weight="800">
-  <tspan x="54" dy="0">The agent proposes. Delta decides.</tspan>
-  <tspan x="54" dy="52"></tspan>
+<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="40" font-weight="800">
+  <tspan x="54" dy="0">Agent proposes.</tspan>
+  <tspan x="54" dy="50">Simulated evaluator decides.</tspan>
 </text>
+<text x="54" y="224" fill="#667085" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="1">SIMULATION ONLY · FIXTURE DATA · NO LIVE ORDER</text>
 <rect x="54" y="259" width="74" height="7" rx="3.5" fill="#0052ff"/>
 <g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
@@ -14,8 +15,8 @@
 </g>
 <g transform="translate(54 442)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">2 · Delta</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Evaluates exact action vs mandate</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">2 · Simulated evaluator</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Checks canonical action vs mandate</text>
 </g>
 <g transform="translate(54 554)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
@@ -25,7 +26,7 @@
 <g transform="translate(54 666)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">4 · Executor</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Can receive only passed exact bytes</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Can receive only the passed canonical action</text>
 </g>
 <text x="54" y="958" fill="#475467" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="1">THE MODEL NEVER OWNS THE EXECUTION DECISION</text>
 <text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">02 / 06</text>

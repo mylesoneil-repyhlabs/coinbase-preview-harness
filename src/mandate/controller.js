@@ -183,6 +183,7 @@ export function mandateDisposition(result, attempt, maxAttempts) {
 
 export async function runMandateAttemptLoop({
   propose,
+  collectEvidence,
   evaluate,
   execute,
   maxAttempts = 3,
@@ -192,7 +193,12 @@ export async function runMandateAttemptLoop({
   }
   const attempts = [];
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const candidate = await propose({ attempt, previous: attempts.at(-1) ?? null });
+    const previous = attempts.at(-1) ?? null;
+    const proposal = await propose({ attempt, previous });
+    const candidate =
+      typeof collectEvidence === "function"
+        ? await collectEvidence({ attempt, proposal, previous })
+        : proposal;
     const result = await evaluate(candidate, attempt);
     const disposition = mandateDisposition(result, attempt, maxAttempts);
     attempts.push({ attempt, candidate, result, disposition });

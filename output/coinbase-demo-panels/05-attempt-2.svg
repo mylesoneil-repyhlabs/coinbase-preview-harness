@@ -2,10 +2,10 @@
 <rect width="720" height="1080" fill="#f8fafc"/>
 <rect width="12" height="1080" fill="#067647"/>
 <text x="54" y="72" fill="#067647" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">ATTEMPT 2</text>
-<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="42" font-weight="800">
-  <tspan x="54" dy="0">PASS — the revised action</tspan>
-  <tspan x="54" dy="52">fits</tspan>
+<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="40" font-weight="800">
+  <tspan x="54" dy="0">PASS — revised action fits</tspan>
 </text>
+<text x="54" y="224" fill="#667085" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="1">SIMULATION ONLY · FIXTURE DATA · NO LIVE ORDER</text>
 <rect x="54" y="259" width="74" height="7" rx="3.5" fill="#067647"/>
 <g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
@@ -14,8 +14,8 @@
 </g>
 <g transform="translate(54 442)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Reference / limit</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">2,995 / 3,000 USDC</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Market / limit</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">2,994 / 3,000 USDC</text>
 </g>
 <g transform="translate(54 554)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>

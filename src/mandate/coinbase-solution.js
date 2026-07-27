@@ -128,7 +128,7 @@ function assertSorLimitIoc(configuration, name) {
   });
 }
 
-function assertCreatePayload(payload) {
+export function assertCoinbaseCreatePayload(payload) {
   assertExactFields(payload, CREATE_PAYLOAD_FIELDS, "Coinbase Create payload");
   assertNonEmptyString(
     payload.client_order_id,
@@ -351,7 +351,7 @@ export function parseCoinbaseSolution(solution) {
   ) {
     throw new Error("Coinbase proposal Create payload bytes mismatch");
   }
-  assertCreatePayload(envelope.create_payload);
+  assertCoinbaseCreatePayload(envelope.create_payload);
   assertPreviewRequest(envelope.preview_request);
   assertClaimedEvidence(envelope.claimed_evidence, envelope.create_payload);
   assertSha256(

@@ -7,18 +7,20 @@
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
 [**Download Delta Coinbase Guard V1 (.zip)**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip)
-· [View the seven-step workflow](output/pdf/delta-coinbase-guard-v1-workflow.pdf)
+· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip.sha256)
+· [Recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md)
+· [Claim ledger](docs/COINBASE-DEMO-ASSURANCE.md)
 · [Engineering handoff](docs/ENGINEERING-HANDOFF.md)
 
-[![Delta Coinbase Guard workflow](output/playwright/delta-coinbase-guard-v1/step-01-intent.png)](output/pdf/delta-coinbase-guard-v1-workflow.pdf)
+[![Delta Coinbase Guard conditional mandate showcase](output/coinbase-demo-panels/00-overview.svg)](docs/COINBASE-CODEX-RECORDING-KIT.md)
 
 ## What it is
 
 Delta Coinbase Guard is an installable Codex skill and local Coinbase Advanced
-Trade harness. It turns a one-off request such as “buy exactly 5 USDC of ETH”
-into a closed, reviewable policy; records the exact digest supplied by the
-calling host; deterministically proposes a policy-compliant order; and makes
-the execute-or-stop decision outside model-controlled logic.
+Trade harness. It turns a one-off ETH allocation request into a closed,
+reviewable policy; records the exact digest supplied by the calling host;
+deterministically proposes a policy-compliant order; and makes the
+execute-or-stop decision outside model-controlled logic.
 
 The included V1 lets anyone run the complete workflow as a credential-free
 simulation. With an isolated Coinbase API key, it can also call Coinbase’s
@@ -48,24 +50,31 @@ For a terminal-only check from the repository:
 
 `coinbase-demo` presents a meaningful simulated mandate: allocate up to 3,000
 USDC to ETH only at or below a target price, within fee, slippage, portfolio
-exposure, expiry, and one-use constraints. The first agent proposal violates
-five constraints. The simulated Delta evaluator returns a bound `BLOCK`
+exposure, expiry, and one-use constraints. The first agent proposal fails six
+checks across allocation, market price, limit price, slippage, fee, and
+exposure. The simulated Delta evaluator returns a bound `BLOCK`
 receipt; the external deterministic controller permits one retry; a revised
 exact proposal receives `PASS`; and only the passed payload digest becomes
-eligible for one simulated execution.
+eligible once in this simulated trace. No durable grant is issued and no
+external executor is invoked.
 
 The skill returns the mandate, authorization status, both exact proposals,
 constraint failures, `BLOCK → RETRY → PASS`, receipt verification, payload
-digest equality, and no-live-order status directly in Codex. A browser or
-separate product UI is not part of the recording. Six aligned right-side
+and evidence digest equality, evidence provenance, and no-live-order status
+directly in Codex. A browser or separate product UI is not part of the
+recording. Six aligned right-side
 [companion panels](output/coinbase-demo-panels/) explain the flow without
 pretending to be a live Coinbase or delta interface.
 
-The command also writes private JSON and visual HTML inspection artifacts under
-`runtime/artifacts/`, but they are optional. It uses no credential, contacts
-neither Coinbase nor production delta, invokes no Coinbase Create endpoint,
-and moves no money. The 5-USDC ceiling belongs only to the separate future
-live-test safety profile; it is not the economic story in this simulation.
+The chat showcase writes no artifact and requires no browser or repository
+write access. It uses no credential, contacts neither Coinbase nor production
+delta, invokes no Coinbase Create endpoint, and moves no money. The 5-USDC
+ceiling belongs only to the separate future live-test safety profile; it is not
+the economic story in this simulation.
+
+The [showcase claim ledger](docs/COINBASE-DEMO-ASSURANCE.md) states exactly
+what the receipt proves, what remains fixture data, and which production claims
+this public build deliberately does not make.
 
 See [Coinbase credential setup](docs/COINBASE-CREDENTIAL-SETUP.md) for the
 optional public Advanced Trade API path. A normal user-created CDP ECDSA key can
@@ -96,8 +105,14 @@ git clone https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness.git \
 ### Option B: download the release
 
 1. [Download the V1 bundle](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip).
-2. Unzip it into a permanent folder.
-3. In Terminal, enter that folder and run:
+2. Download the matching [SHA-256 file](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip.sha256) and verify it:
+
+```sh
+shasum -a 256 -c delta-coinbase-guard-v1.zip.sha256
+```
+
+3. Unzip it into a permanent folder.
+4. In Terminal, enter that folder and run:
 
 ```sh
 ./install
@@ -108,16 +123,26 @@ If the executable bit was removed during download, run `bash install`.
 The installer:
 
 1. verifies Node.js 22+;
-2. links the skill into `${CODEX_HOME:-~/.codex}/skills`;
+2. links the skill into `${CODEX_HOME}/skills` when set, otherwise the
+   documented user-local `~/.agents/skills`;
 3. runs the local safety doctor; and
 4. never reads credentials or contacts Coinbase.
 
 Keep the repository in the same location after installation because the Codex
 skill links back to its matching harness.
 
-Start a new Codex session after installation.
+Codex normally detects the new skill automatically. If it does not, fully quit
+and reopen Codex, then start a fresh chat.
 
-## Run it
+To upgrade an older release extracted somewhere else, keep the new release in
+its permanent location and run `./install --upgrade`. The installer retargets
+only a verified `delta-coinbase-guard` symlink; it refuses directories,
+unrelated skills, and ambiguous existing paths.
+
+## Run the narrow Preview-compatible V1 path
+
+This separate path exercises the future live-test safety profile. Its 5-USDC
+ceiling is a test control, not the economic logic of the partner showcase.
 
 Paste this into Codex:
 
@@ -259,8 +284,9 @@ pnpm run check:skill
 pnpm run check:links
 ```
 
-The repository includes a comprehensive unit, adversarial, replay, and bypass
-suite plus a seven-page simulated workflow.
+The repository includes a comprehensive unit, adversarial, replay, bypass, and
+cold-install suite plus the six companion panels used with an authentic Codex
+recording.
 
 ## Repository map
 
@@ -276,7 +302,7 @@ src/mandate/                          Delta adapter, controller, and simulator
 src/coinbase-demo.js                  one-command complete simulation showcase
 src/reconciliation.js                 uncertainty and recovery checks
 test/                                 safety and behavior tests
-output/                               screenshots and workflow PDF
+output/coinbase-demo-panels/          recording companion panels and timeline
 runtime/                              ignored local plans and private reports
 ```
 
