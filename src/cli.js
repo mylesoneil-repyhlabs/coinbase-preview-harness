@@ -26,6 +26,7 @@ import {
 } from "./integration/production-composition.js";
 import {
   loadAndVerifyTradeCredentials,
+  TRADE_ATTESTATION_PATH,
   verifyTradeKeyFileAndConfigure,
 } from "./permissions.js";
 import { HARNESS_ROOT } from "./paths.js";
@@ -141,6 +142,37 @@ async function configureExecution(args) {
   process.stdout.write(`${JSON.stringify(result.attestation, null, 2)}\n`);
   process.stdout.write(
     "View+Trade credential verified; Transfer/Receive are absent. The key remains outside this repository and is not copied by the guard.\n",
+  );
+}
+
+async function credentialReadiness() {
+  let configured = false;
+  try {
+    await access(TRADE_ATTESTATION_PATH);
+    configured = true;
+  } catch {
+    configured = false;
+  }
+  process.stdout.write(
+    `${configured ? "CREDENTIAL_ATTESTATION_PRESENT" : "CREDENTIALS_NOT_CONFIGURED"}\n`,
+  );
+  process.stdout.write(
+    "KEY_LOCATION=external absolute path supplied only at command time\n",
+  );
+  process.stdout.write(
+    "REQUIRED_SCOPE=View+Trade enabled; Transfer+Receive disabled\n",
+  );
+  process.stdout.write(
+    "PERSISTED_SECRET_MATERIAL=false\n",
+  );
+  process.stdout.write(
+    "LIVE_CREATE=LOCKED_PENDING_REVIEWED_DELTA_ADAPTER_AND_ONE_TIME_GRANT_STORE\n",
+  );
+  process.stdout.write(
+    "SAFETY_CAP=5.00 USDC principal; 5.50 USDC all-in; one ETH-USDC IOC order; 120 seconds\n",
+  );
+  process.stdout.write(
+    "When ready, keep the downloaded key outside this repository with mode 0600, then run configure-credentials with its absolute path.\n",
   );
 }
 
@@ -403,6 +435,8 @@ function usage() {
 
 Commands:
   doctor
+  credential-readiness
+  configure-credentials --key-file /outside/repo/cdp_key.json
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
@@ -427,6 +461,10 @@ try {
     process.stdout.write(usage());
   } else if (command === "doctor") {
     await doctor();
+  } else if (command === "credential-readiness") {
+    await credentialReadiness();
+  } else if (command === "configure-credentials") {
+    await configureExecution(args);
   } else if (command === "plan") {
     await createPlanCommand(args);
   } else if (command === "simulate") {
