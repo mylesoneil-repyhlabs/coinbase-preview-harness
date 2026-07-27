@@ -5,6 +5,7 @@ import {
   createCoinbaseExecutionAdapter,
   createCoinbaseRestAdapter,
 } from "./coinbase-rest.js";
+import { runCoinbaseDemo } from "./coinbase-demo.js";
 import { runExecutionPipeline } from "./execution-pipeline.js";
 import {
   assertBoundExecutionForRecovery,
@@ -26,6 +27,7 @@ import {
 } from "./integration/production-composition.js";
 import {
   loadAndVerifyTradeCredentials,
+  TRADE_ATTESTATION_PATH,
   verifyTradeKeyFileAndConfigure,
 } from "./permissions.js";
 import { HARNESS_ROOT } from "./paths.js";
@@ -144,6 +146,37 @@ async function configureExecution(args) {
   );
 }
 
+async function credentialReadiness() {
+  let configured = false;
+  try {
+    await access(TRADE_ATTESTATION_PATH);
+    configured = true;
+  } catch {
+    configured = false;
+  }
+  process.stdout.write(
+    `${configured ? "CREDENTIAL_ATTESTATION_PRESENT" : "CREDENTIALS_NOT_CONFIGURED"}\n`,
+  );
+  process.stdout.write(
+    "KEY_LOCATION=external absolute path supplied only at command time\n",
+  );
+  process.stdout.write(
+    "REQUIRED_SCOPE=View+Trade enabled; Transfer+Receive disabled\n",
+  );
+  process.stdout.write(
+    "PERSISTED_SECRET_MATERIAL=false\n",
+  );
+  process.stdout.write(
+    "LIVE_CREATE=LOCKED_PENDING_REVIEWED_DELTA_ADAPTER_AND_ONE_TIME_GRANT_STORE\n",
+  );
+  process.stdout.write(
+    "SAFETY_CAP=5.00 USDC principal; 5.50 USDC all-in; one ETH-USDC IOC order; 120 seconds\n",
+  );
+  process.stdout.write(
+    "When ready, keep the downloaded key outside this repository with mode 0600, then run configure-credentials with its absolute path.\n",
+  );
+}
+
 async function bindExecution(args) {
   const planPath = optionValue(args, "--plan");
   const keyFile = optionValue(args, "--key-file");
@@ -225,6 +258,120 @@ async function simulate(args) {
   if (!["FILLED", "PARTIAL_FILL", "NO_FILL"].includes(record.status)) {
     process.exitCode = 1;
   }
+}
+
+async function coinbaseDemo(args) {
+  const unsupported = args.filter((argument) => argument !== "--no-artifacts");
+  if (unsupported.length > 0) {
+    throw new Error("Usage: coinbase-demo [--no-artifacts]");
+  }
+  const record = await runCoinbaseDemo();
+  const retry = record.demo.bounded_retry;
+  const first = retry.attempts[0];
+  const second = retry.attempts[1];
+  process.stdout.write("SIMULATION_ONLY\n");
+  process.stdout.write("CONDITIONAL_MANDATE_SHOWCASE=COMPLETE\n");
+  process.stdout.write(`HUMAN_MANDATE=${retry.human_mandate_text}\n`);
+  process.stdout.write(
+    `AUTHORIZED_POLICY=${JSON.stringify(retry.human_mandate)}\n`,
+  );
+  process.stdout.write(
+    "AUTHORIZATION_STATUS=USER_REQUESTED_SIMULATION_ONLY; NOT_LIVE_TRADE_AUTHORIZATION\n",
+  );
+  process.stdout.write(`MANDATE_DIGEST=${first.receipt.mandate_digest}\n`);
+  process.stdout.write(
+    `AUTHORIZATION_DIGEST=${first.receipt.authorization_digest}\n`,
+  );
+  process.stdout.write(`AUTHORIZED_AT=${first.receipt.authorized_at}\n`);
+  process.stdout.write(
+    `MANDATE_EXPIRES_AT=${first.receipt.mandate_expires_at}\n`,
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL_1=${JSON.stringify(first.exact_payload)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_FIXTURE_ECONOMICS=${JSON.stringify(first.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_EVIDENCE_DIGEST=${first.evidence_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_EVIDENCE_SOURCE=${first.evidence.collected_by}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1=${first.receipt.verdict}->${first.disposition} ` +
+      `PROPOSAL_DIGEST=${first.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_FAILURES=${JSON.stringify(
+      first.constraint_failures.map(({ id, reason }) => ({ id, reason })),
+    )}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_RECEIPT=${JSON.stringify(first.receipt)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_1_RECEIPT_VERIFIED=${first.receipt.verified}\n`,
+  );
+  process.stdout.write("CONTROLLER_ACTION=RETRY_ONCE_WITHIN_FIXED_BUDGET\n");
+  process.stdout.write(
+    "RETRY_EVIDENCE=NEW_LABELED_MARKET_PREVIEW_AND_PORTFOLIO_FIXTURE; AGENT_CANNOT_AUTHOR_EVIDENCE\n",
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL_2=${JSON.stringify(second.exact_payload)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_FIXTURE_ECONOMICS=${JSON.stringify(second.economics)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_EVIDENCE_DIGEST=${second.evidence_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_EVIDENCE_SOURCE=${second.evidence.collected_by}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2=${second.receipt.verdict}->${second.disposition} ` +
+      `PROPOSAL_DIGEST=${second.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_RECEIPT=${JSON.stringify(second.receipt)}\n`,
+  );
+  process.stdout.write(
+    `ATTEMPT_2_RECEIPT_VERIFIED=${second.receipt.verified}\n`,
+  );
+  process.stdout.write(
+    `EXECUTION_ELIGIBILITY=${retry.execution.status}\n`,
+  );
+  process.stdout.write(
+    `EXECUTION_PAYLOAD_DIGEST=${retry.execution.exact_payload_digest}\n`,
+  );
+  process.stdout.write(
+    `EXECUTION_EVIDENCE_DIGEST=${retry.execution.evidence_digest}\n`,
+  );
+  process.stdout.write(`EXECUTION_GATE=${retry.execution.gate}\n`);
+  process.stdout.write(
+    `EXACT_PAYLOAD_MATCH=${
+      retry.execution.exact_payload_digest === second.exact_payload_digest
+    }\n`,
+  );
+  process.stdout.write(
+    `EVIDENCE_MATCH=${
+      retry.execution.evidence_digest === second.evidence_digest
+    }\n`,
+  );
+  process.stdout.write(
+    `SIMULATED_TRACE_ELIGIBILITIES=${retry.execution.simulated_trace_eligibilities}\n`,
+  );
+  process.stdout.write(
+    `DURABLE_ONE_TIME_GRANT_ISSUED=${retry.execution.durable_one_time_grant_issued}\n`,
+  );
+  process.stdout.write(
+    `EXTERNAL_EXECUTOR_INVOKED=${retry.execution.external_executor_invoked}\n`,
+  );
+  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
+  process.stdout.write("COINBASE_CONTACTED=false\n");
+  process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
+  process.stdout.write("ARTIFACTS_WRITTEN=false\n");
 }
 
 async function probeExecution(args) {
@@ -403,6 +550,9 @@ function usage() {
 
 Commands:
   doctor
+  credential-readiness
+  configure-credentials --key-file /outside/repo/cdp_key.json
+  coinbase-demo [--no-artifacts]
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
@@ -427,6 +577,12 @@ try {
     process.stdout.write(usage());
   } else if (command === "doctor") {
     await doctor();
+  } else if (command === "credential-readiness") {
+    await credentialReadiness();
+  } else if (command === "configure-credentials") {
+    await configureExecution(args);
+  } else if (command === "coinbase-demo") {
+    await coinbaseDemo(args);
   } else if (command === "plan") {
     await createPlanCommand(args);
   } else if (command === "simulate") {

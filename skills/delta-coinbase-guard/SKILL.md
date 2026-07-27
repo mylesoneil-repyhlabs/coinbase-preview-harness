@@ -1,6 +1,6 @@
 ---
 name: delta-coinbase-guard
-description: Turn a one-off natural-language Coinbase Advanced Trade request into a closed reviewable policy, pause for exact digest confirmation, safely simulate the mandate-gated flow, or run a credentialed Coinbase Preview probe that cannot create an order. Use for Coinbase spot trade planning, policy review, credential-free demonstrations, Preview compatibility checks, and tests of the delta-to-Coinbase boundary. The public V1 never executes trades and must not be used for transfers, withdrawals, sends, conversions, leverage, derivatives, recurring trades, conditional actions, or long-running strategies.
+description: Turn a one-off natural-language Coinbase Advanced Trade request into a closed reviewable policy, pause for exact digest confirmation, safely simulate the mandate-gated flow, run a labeled conditional-allocation partner showcase, or run a credentialed Coinbase Preview probe that cannot create an order. Use for Coinbase spot trade planning, policy review, credential-free demonstrations, Preview compatibility checks, and tests of the delta-to-Coinbase boundary. The public V1 never executes trades and must not be used for transfers, withdrawals, sends, conversions, leverage, derivatives, recurring trades, live conditional actions, or long-running strategies.
 ---
 
 # Delta Coinbase Guard V1
@@ -12,14 +12,17 @@ Invoke this workflow explicitly as `$delta-coinbase-guard`.
 
 ## Initialize
 
-1. Resolve `scripts/run` relative to this `SKILL.md` and keep its absolute path
-   as `GUARD_RUN`. Do not search for or substitute another checkout.
+1. Resolve the executable `scripts/run` relative to this `SKILL.md` and keep
+   its absolute path as `GUARD_RUN`. Do not search for or substitute another
+   checkout.
 2. Verify that `GUARD_RUN` is executable. It resolves the installed skill link
    back to the complete, matching repository harness.
 3. Read [workflow.md](references/workflow.md).
-4. Before accepting a credential path or calling Coinbase, also read
+4. For the conditional partner showcase, also read and follow
+   [showcase-response.md](references/showcase-response.md).
+5. Before accepting a credential path or calling Coinbase, also read
    [security-boundary.md](references/security-boundary.md).
-5. Run `"$GUARD_RUN" doctor` before the first workflow in a checkout.
+6. Run `"$GUARD_RUN" doctor` before the first workflow in a checkout.
 
 If the wrapper or complete checkout is unavailable, ask the user to install
 the repository with its root `install` script. Do not clone, edit another
@@ -30,6 +33,8 @@ repository, or bypass the harness unless the user explicitly asks.
 Choose one workflow:
 
 - Policy draft or demo: **plan → policy confirmation → simulate**.
+- Conditional-allocation partner showcase: **showcase fixture → BLOCK/RETRY
+  receipt → revised exact proposal → PASS receipt → simulated eligibility**.
 - Coinbase API compatibility check: **plan → policy confirmation → bind →
   execution confirmation receipt → probe**.
 
@@ -46,6 +51,33 @@ user authorizes, up to `5 USDC`, using a quote-sized SOR limit IOC with at most
 into an exact spend or silently narrow a different request. These limits are a
 safety ceiling, not defaults: if the user's source request omits any material
 cap or term, let `plan` request clarification rather than filling it.
+
+The partner showcase is a separate, credential-free presentation mode. It is
+not a live conditional-order feature and does not expand the public V1 safety
+profile. Use it only when the user explicitly asks for a simulation,
+showcase, or partner demo of a conditional ETH allocation. Run:
+
+```sh
+"$GUARD_RUN" coinbase-demo --no-artifacts
+```
+
+The checked-in fixture represents a user mandate to allocate up to 3,000 USDC
+to ETH only at or below 3,000 USDC, with a 35 bps slippage cap, 15 USDC fee
+cap, 10,000 USDC post-trade exposure cap, fifteen-minute expiry, and one
+execution. The first proposal intentionally violates the allocation, price,
+slippage, fee, and exposure constraints. The external controller retries once
+against a new labeled evidence fixture; the agent revises the exact proposal
+but does not author market, Preview, or portfolio evidence. Report the first
+evaluator `BLOCK` receipt followed by controller `RETRY`, the second evaluator
+`PASS` receipt followed by controller `EXECUTE`, and equality between the
+passed proposal and evidence digests and the simulated gate digests.
+
+Always label every market, fee, exposure, delta decision, receipt, and
+execution result in this showcase as fixture-based simulation. Coinbase and
+production delta are not contacted, Coinbase Create is not invoked, and no
+money moves. Do not use the future 5-USDC live-test ceiling as the economic
+story; mention it only when discussing credentialed setup or future live-test
+safety.
 
 ## Plan and review
 
@@ -153,6 +185,30 @@ Return:
 - whether Coinbase Create was reachable or invoked;
 - sanitized artifact links; and
 - the current blocker or next safe step.
+
+For the conditional partner showcase, lead with the human mandate and then
+separate the actors explicitly:
+
+1. the agent proposed candidate one;
+2. the simulated delta evaluator returned specific failures and a bound
+   `BLOCK` receipt;
+3. the external controller, not the model, allowed one retry;
+4. the agent proposed candidate two;
+5. the simulated evaluator returned `PASS` with a receipt bound to the exact
+   payload digest; and
+6. the controller marked only that canonical action and evidence eligible once
+   in this simulated trace, while issuing no durable grant and leaving Coinbase
+   Create unreachable.
+
+Follow the six-section response contract in
+[showcase-response.md](references/showcase-response.md) exactly. Its headings
+are synchronized with the recording kit's six companion panels. Copy values
+and full digests from harness output; never generate or abbreviate them.
+
+Do not present the generated HTML report as a Coinbase or delta product UI.
+The primary user experience is the Codex conversation. Use `--no-artifacts`
+for the partner showcase so recording does not depend on filesystem access or
+a separate report.
 
 Never expose raw Coinbase or Delta responses, account identifiers, portfolio
 labels, credential material, authorization headers, or local home-directory

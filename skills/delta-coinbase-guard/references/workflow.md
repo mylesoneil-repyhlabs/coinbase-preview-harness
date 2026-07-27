@@ -41,6 +41,39 @@ authenticate the author of a chat message. The calling host owns that control.
 Production should use an authenticated Delta-native authorization UX and
 signer session.
 
+## Conditional partner showcase
+
+The separate `coinbase-demo` command is a presentation fixture for showing the
+verification gap in a meaningful delegated trade. It does not compile the
+3,000-USDC scenario into the public V1 live policy and cannot contact Coinbase
+or production delta.
+
+1. Display the simulated human mandate and its digest.
+2. Let the agent fixture propose candidate one's closed canonical Create
+   object. The proposal callback cannot provide timestamps or evidence.
+3. Let the external controller attach a separately labeled market, Preview,
+   and portfolio fixture, then evaluate payload schema, evidence provenance,
+   authorization window, freshness, allocation, market price, limit price,
+   slippage, fee, exposure, and expiry.
+4. Return `BLOCK` with every failed constraint and a receipt bound to the
+   candidate payload digest.
+5. Let the deterministic controller classify only that failure as `RETRY`,
+   within the fixed two-attempt budget, and obtain a new labeled market,
+   Preview, and portfolio evidence fixture.
+6. Let the agent fixture produce candidate two. The agent may revise the order
+   payload but cannot author or change the evidence fixture.
+7. Return `PASS` with a receipt bound to candidate two's canonical payload and
+   evidence digests.
+8. Compare both passed digests with the execution-boundary digests and
+   re-verify the authorization window.
+9. Mark that action eligible once in this simulated trace. Do not imply that a
+   durable one-time grant was issued.
+10. Report that Coinbase Create was unreachable and uninvoked.
+
+This sequence uses labeled market, fee, exposure, and decision fixtures. Its
+content-addressed receipts make tampering evident within the artifact; they are
+not production delta signatures or trusted identities.
+
 When clarification is required, request one complete replacement instruction
 and compile it as a new source intent. Do not merge fragments on the user's
 behalf. If the original request was for execution, obtain separate permission
@@ -85,3 +118,8 @@ multiple failed proposals requires one explicit design:
 
 Do not describe “retry until pass under one authorization” as implemented
 until engineering selects and tests one of these semantics.
+
+The conditional showcase therefore demonstrates controller behavior, not an
+authoritative multi-proposal production-delta lifecycle. Its two simulated
+receipts are separate fixture decisions. Preserve that qualification in every
+demo and partner explanation.

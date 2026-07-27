@@ -1,2 +1,9 @@
 *.pdf binary
 *.png binary
+
+# Historical faux-UI artifacts remain in git for provenance, but the
+# user-facing release ships only the authentic Codex recording kit and its
+# companion panels.
+output/playwright export-ignore
+output/pdf export-ignore
+scripts/generate-workflow-screenshots.mjs export-ignore

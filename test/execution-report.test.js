@@ -51,6 +51,23 @@ test("live HTML does not carry the simulation banner", () => {
   assert.doesNotMatch(html, /SIMULATION_ONLY/);
 });
 
+test("showcase HTML surfaces the bounded external-controller retry", () => {
+  const showcase = record();
+  showcase.demo = {
+    bounded_retry: {
+      max_attempts: 2,
+      terminal_status: "EXECUTED",
+      note: "Illustrative controller trace.",
+      attempts: [{ disposition: "RETRY" }, { disposition: "EXECUTE" }],
+    },
+  };
+  const html = renderExecutionHtml(showcase);
+  assert.match(html, /Bounded deterministic retry/);
+  assert.match(html, /BLOCK → RETRY · specific violations/);
+  assert.match(html, /PASS → EXECUTE · exact payload verified/);
+  assert.match(html, /Real Coinbase Create/);
+});
+
 test("reports are private, ignored-runtime artifacts with unique names", async (t) => {
   const harnessRoot = await mkdtemp(
     path.join(os.tmpdir(), "delta-coinbase-report-"),

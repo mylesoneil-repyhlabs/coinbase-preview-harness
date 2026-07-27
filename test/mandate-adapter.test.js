@@ -362,6 +362,59 @@ test("deterministic controller retries only constraint failures and executes onc
   assert.deepEqual(result.execution, { order: "candidate-2" });
 });
 
+test("deterministic controller collects evidence outside the proposal callback", async () => {
+  let proposalSeenByCollector;
+  const result = await runMandateAttemptLoop({
+    maxAttempts: 1,
+    propose: async () => ({ id: "candidate-1", exact_action: { amount: "1" } }),
+    collectEvidence: async ({ proposal }) => {
+      proposalSeenByCollector = structuredClone(proposal);
+      return {
+        ...proposal,
+        evidence: { source: "controller-owned" },
+      };
+    },
+    evaluate: async (candidate) => ({
+      status: "success",
+      verified: true,
+      constraint_failures: [],
+      proof: { evidence_source: candidate.evidence.source },
+    }),
+    execute: async (candidate) => ({ evidence: candidate.evidence }),
+  });
+
+  assert.deepEqual(proposalSeenByCollector, {
+    id: "candidate-1",
+    exact_action: { amount: "1" },
+  });
+  assert.equal(Object.hasOwn(proposalSeenByCollector, "evidence"), false);
+  assert.deepEqual(result.execution, {
+    evidence: { source: "controller-owned" },
+  });
+});
+
+test("deterministic controller maps a failed final attempt to STOP, not RETRY", async () => {
+  const result = await runMandateAttemptLoop({
+    maxAttempts: 2,
+    propose: async ({ attempt }) => ({ id: `candidate-${attempt}` }),
+    evaluate: async () => ({
+      status: "failure",
+      verified: false,
+      constraint_failures: [{ index: 0, reason: "still outside mandate" }],
+    }),
+    execute: async () => {
+      throw new Error("must remain locked");
+    },
+  });
+
+  assert.equal(result.status, "STOPPED");
+  assert.deepEqual(
+    result.attempts.map(({ disposition }) => disposition),
+    ["RETRY", "STOP"],
+  );
+  assert.equal(result.execution, null);
+});
+
 test("deterministic controller stops without execution on a non-constraint failure", async () => {
   let executions = 0;
   const result = await runMandateAttemptLoop({
