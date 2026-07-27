@@ -34,19 +34,23 @@ git -C "$REPOSITORY_ROOT" archive \
   --output="$OUTPUT_DIRECTORY/$ARCHIVE_NAME" \
   "$RELEASE_COMMIT"
 
+ARCHIVE_LIST="$OUTPUT_DIRECTORY/.delta-coinbase-guard-archive-list.$$"
+trap 'rm -f "$ARCHIVE_LIST"' EXIT
+unzip -Z1 "$OUTPUT_DIRECTORY/$ARCHIVE_NAME" > "$ARCHIVE_LIST"
+
 for required_file in "${REQUIRED_FILES[@]}"; do
-  if ! unzip -Z1 "$OUTPUT_DIRECTORY/$ARCHIVE_NAME" |
-    grep -Fqx "$ARCHIVE_PREFIX$required_file"; then
+  if ! grep -Fqx "$ARCHIVE_PREFIX$required_file" "$ARCHIVE_LIST"; then
     echo "Release archive is missing required file: $required_file" >&2
     exit 1
   fi
 done
 
-if unzip -Z1 "$OUTPUT_DIRECTORY/$ARCHIVE_NAME" |
-  grep -Eq "^${ARCHIVE_PREFIX}output/(playwright|pdf)/"; then
+if grep -Eq "^${ARCHIVE_PREFIX}output/(playwright|pdf)/" "$ARCHIVE_LIST"; then
   echo "Release archive includes a legacy faux-UI artifact." >&2
   exit 1
 fi
+rm -f "$ARCHIVE_LIST"
+trap - EXIT
 
 if command -v shasum >/dev/null 2>&1; then
   (
