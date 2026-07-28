@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mastra × delta partner proof</title>
+  <style>
+    :root{--ink:#151515;--muted:#66645f;--line:#d8d4ca;--paper:#f4f1e9;--white:#fff;--green:#126345;--red:#9f302b;--amber:#875900;--blue:#2f4fc7}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .banner{padding:12px 20px;background:#642414;color:white;text-align:center;font-weight:900;letter-spacing:.07em}
+    main{max-width:1180px;margin:auto;padding:42px 28px 64px}.eyebrow{color:var(--blue);font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+    h1{margin:10px 0;font-size:46px;line-height:1.02;letter-spacing:-.04em}.lede{max-width:900px;color:var(--muted);font-size:18px}
+    .invariant{margin:26px 0;padding:18px 20px;border-left:5px solid var(--blue);background:var(--white);font-weight:750}
+    .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:20px 0}.flow div,.outcome{border:1px solid var(--line);border-radius:13px;background:var(--white);padding:16px}.flow b{display:block;margin-bottom:5px}.flow span{color:var(--muted);font-size:13px}
+    .outcomes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.outcome{border-top-width:6px}.outcome.pass{border-top-color:var(--green)}.outcome.block{border-top-color:var(--red)}.outcome.review{border-top-color:var(--amber)}
+    .outcome header{display:flex;justify-content:space-between;font-size:20px}.outcome p{color:var(--muted);min-height:42px}.outcome dl{display:grid;grid-template-columns:1fr auto;gap:8px;margin:16px 0}.outcome dd{margin:0;font-weight:750;text-align:right}.reason{min-height:118px;padding:12px;border-radius:8px;background:#f7f6f2;font-size:13px}.outcome code{display:block;margin-top:12px;color:var(--muted);font-size:10px;word-break:break-all}
+    .truth{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.truth article{padding:18px;border:1px solid var(--line);border-radius:13px;background:var(--white)}.truth h2{margin:0 0 8px;font-size:18px}.truth ul{margin:0;padding-left:19px}
+    footer{margin-top:20px;color:var(--muted);font-size:12px}@media(max-width:850px){h1{font-size:34px}.flow,.outcomes,.truth{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="banner">LOCAL PARTNER PROOF · NO LIVE MASTRA SERVER, BREX API, PRODUCTION DELTA, OR MONEY MOVEMENT</div>
+  <main>
+    <div class="eyebrow">Mastra × delta · Brex-style vendor-payment boundary</div>
+    <h1>Schema-valid is not the same as authorized.</h1>
+    <p class="lede">Mastra gives the agent a typed action surface. Delta checks whether the exact vendor, invoice, amount, account, bank details and timing match what the business authorized—before the payment adapter is reachable.</p>
+    <div class="invariant">Agent proposes → trusted runtime resolves fixture evidence → delta signs PASS / BLOCK / REVIEW → exact verified PASS consumes one execution grant.</div>
+    <section class="flow">
+      <div><b>1 · Mandate</b><span>Human-authorized scope</span></div>
+      <div><b>2 · Proposal</b><span>Strict Mastra tool input</span></div>
+      <div><b>3 · Evidence</b><span>Server-owned demo fixtures</span></div>
+      <div><b>4 · Receipt</b><span>Bound digests + pinned signer</span></div>
+      <div><b>5 · Gate</b><span>One use; reconcile ambiguity</span></div>
+    </section>
+    <section class="outcomes"><article class="outcome pass">
+        <header><strong>PASS</strong><span>$2,400.00</span></header>
+        <p>Northstar Cloud Services · INV-7741</p>
+        <dl>
+          <dt>Receipt integrity</dt><dd>VERIFIED</dd>
+          <dt>Execution eligibility</dt><dd>GRANT_CONSUMED</dd>
+          <dt>Adapter invoked</dt><dd>YES — SIMULATED</dd>
+          <dt>Grant consumed</dt><dd>YES — ONE USE</dd>
+        </dl>
+        <div class="reason">All hard constraints satisfied; exact payload eligible for one simulated submission.</div>
+        <code>afc1ccb5c7e353e97a6e79299b6cf4fd3e31725ec8e7519c8956ab9ca05bbc9e</code>
+      </article>
+<article class="outcome block">
+        <header><strong>BLOCK</strong><span>$12,500.00</span></header>
+        <p>Unapproved Infrastructure Vendor · INV-9912</p>
+        <dl>
+          <dt>Receipt integrity</dt><dd>VERIFIED</dd>
+          <dt>Execution eligibility</dt><dd>LOCKED</dd>
+          <dt>Adapter invoked</dt><dd>NO</dd>
+          <dt>Grant consumed</dt><dd>NO</dd>
+        </dl>
+        <div class="reason"><b>vendor_allowlist</b>: Vendor is not active and on the authorized allowlist.<br><b>invoice_not_duplicate</b>: Invoice is already recorded or evidence does not match it.<br><b>purchase_order_match</b>: Purchase order is closed, mismatched, or has insufficient balance.<br><b>bank_details_unchanged</b>: Vendor bank details changed or are outside the authorization.<br><b>payment_cap</b>: Payment exceeds the authorized maximum.</div>
+        <code>70132084fdd96498ee94396d819717bd62724e5132f3b562ca589dc65ff65444</code>
+      </article>
+<article class="outcome review">
+        <header><strong>REVIEW</strong><span>$7,200.00</span></header>
+        <p>Northstar Cloud Services · INV-8862</p>
+        <dl>
+          <dt>Receipt integrity</dt><dd>VERIFIED</dd>
+          <dt>Execution eligibility</dt><dd>SUSPEND_FOR_REVIEW</dd>
+          <dt>Adapter invoked</dt><dd>NO</dd>
+          <dt>Grant consumed</dt><dd>NO</dd>
+        </dl>
+        <div class="reason"><b>human_review_threshold</b>: Payment is within the hard mandate but requires human review.</div>
+        <code>55bdd12080cf1b6ff1a17db9a38395114111117166b4e17567ea4faf44c75455</code>
+      </article></section>
+    <section class="truth">
+      <article><h2>What this runs</h2><ul>
+        <li>Strict tool and handler schemas</li>
+        <li>Controller-owned IDs and authorization context</li>
+        <li>Fixture vendor, invoice, PO, bank and account evidence</li>
+        <li>Exact prepared-payment payload binding</li>
+        <li>Signed receipts, expiry, replay blocking and reconciliation state</li>
+      </ul></article>
+      <article><h2>What remains a partner build</h2><ul>
+        <li>Authenticated Mastra server middleware and production storage</li>
+        <li>Production delta signer, verifier and mandate adapter</li>
+        <li>Authoritative enterprise evidence sources</li>
+        <li>Reviewed Brex sandbox/payment adapter and reconciliation</li>
+        <li>Not installed into Mastra product/repo and not connected to Brex</li>
+      </ul></article>
+    </section>
+    <footer>Bundle digest: a1fa3e678e93779393401513a0cd2bc6ecdf8e6e716bd4ca1e88ff9bfe91dc3b · The separate reference package runs Mastra 1.53 createTool plus persisted REVIEW suspend/resume against in-memory LibSQL; this overview command remains a deterministic local three-outcome presentation harness.</footer>
+  </main>
+</body>
+</html>

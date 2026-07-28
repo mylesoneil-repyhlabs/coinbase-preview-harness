@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Mastra and delta mandate-gated vendor payment workflow</title>
+  <desc id="desc">A Mastra tool proposes a vendor payment. The trusted runtime resolves fixture evidence and delta evaluates the exact prepared payment as PASS, BLOCK, or REVIEW. Only a controller-trusted PASS can consume a one-use grant.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1d2433" flood-opacity=".10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12Z" fill="#697386"/>
+    </marker>
+    <style>
+      .eyebrow{font:700 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:2px;fill:#3156d3}
+      .title{font:800 54px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:-2px;fill:#171b25}
+      .subtitle{font:400 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#626979}
+      .card-title{font:750 25px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#171b25}
+      .card-text{font:400 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#626979}
+      .small{font:650 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#626979}
+      .pill{font:800 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .arrow{stroke:#697386;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="900" fill="#f6f3ed"/>
+  <text x="70" y="72" class="eyebrow">MASTRA × DELTA · PROPOSED PARTNER INTEGRATION</text>
+  <text x="70" y="142" class="title">The agent proposes. Delta decides.</text>
+  <text x="70" y="185" class="subtitle">The payment adapter is reachable only after a trusted, exact, unexpired PASS consumes one grant.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="260" width="270" height="205" rx="22" fill="#fff" stroke="#dedbd4"/>
+    <rect x="390" y="260" width="300" height="205" rx="22" fill="#fff" stroke="#dedbd4"/>
+    <rect x="740" y="245" width="330" height="235" rx="24" fill="#fff" stroke="#ff5a3d" stroke-width="3"/>
+    <rect x="1120" y="260" width="250" height="205" rx="22" fill="#fff" stroke="#dedbd4"/>
+  </g>
+
+  <circle cx="110" cy="305" r="21" fill="#edefff"/>
+  <text x="103" y="312" class="small" fill="#3156d3">1</text>
+  <text x="100" y="360" class="card-title">Human mandate</text>
+  <text x="100" y="398" class="card-text">Vendor allowlist</text>
+  <text x="100" y="425" class="card-text">Amount + review caps</text>
+
+  <circle cx="430" cy="305" r="21" fill="#edefff"/>
+  <text x="423" y="312" class="small" fill="#3156d3">2</text>
+  <text x="420" y="360" class="card-title">Mastra proposal</text>
+  <text x="420" y="398" class="card-text">Typed createTool input</text>
+  <text x="420" y="425" class="card-text">Strict schema · server IDs</text>
+
+  <circle cx="780" cy="292" r="21" fill="#fff0ed"/>
+  <text x="773" y="299" class="small" fill="#ff5a3d">3</text>
+  <text x="770" y="350" class="card-title">delta verification</text>
+  <text x="770" y="388" class="card-text">Server-owned fixture evidence</text>
+  <text x="770" y="415" class="card-text">Exact prepared-payload digest</text>
+  <text x="770" y="442" class="card-text">Pinned signer · expiry · one use</text>
+
+  <circle cx="1160" cy="305" r="21" fill="#e9f6ef"/>
+  <text x="1153" y="312" class="small" fill="#176a46">4</text>
+  <text x="1150" y="360" class="card-title">Payment executor</text>
+  <text x="1150" y="398" class="card-text">Trusted app/server closure</text>
+  <text x="1150" y="425" class="card-text">Exact bound payload only</text>
+
+  <path d="M340 363H382" class="arrow"/>
+  <path d="M690 363H732" class="arrow"/>
+  <path d="M1070 363H1112" class="arrow"/>
+
+  <rect x="1083" y="288" width="92" height="32" rx="16" fill="#e9f6ef"/>
+  <text x="1106" y="310" class="pill" fill="#176a46">PASS</text>
+
+  <path d="M905 480V555" class="arrow"/>
+  <path d="M905 555H530V625" class="arrow"/>
+  <path d="M905 555H1060V625" class="arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="330" y="625" width="400" height="150" rx="22" fill="#fff" stroke="#ead0cd"/>
+    <rect x="790" y="625" width="400" height="150" rx="22" fill="#fff" stroke="#eadfbe"/>
+  </g>
+  <rect x="360" y="650" width="92" height="34" rx="17" fill="#fbe9e7"/>
+  <text x="380" y="673" class="pill" fill="#a12e28">BLOCK</text>
+  <text x="360" y="720" class="card-title">Hard constraint failed</text>
+  <text x="360" y="750" class="card-text">Return reasons · executor locked</text>
+
+  <rect x="820" y="650" width="96" height="34" rx="17" fill="#fff4d7"/>
+  <text x="838" y="673" class="pill" fill="#8c5b00">REVIEW</text>
+  <text x="820" y="720" class="card-title">Human decision required</text>
+  <text x="820" y="750" class="card-text">Mastra snapshot · fresh decision required · locked</text>
+
+  <rect x="70" y="825" width="1300" height="1" fill="#d8d4cb"/>
+  <text x="70" y="860" class="small">Reference runs Mastra 1.53 createTool + persisted REVIEW workflow · Brex-style simulation only · no Brex integration · no money moved</text>
+</svg>

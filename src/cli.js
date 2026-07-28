@@ -32,6 +32,14 @@ import {
 } from "./permissions.js";
 import { HARNESS_ROOT } from "./paths.js";
 import {
+  runMastraPartnerBundle,
+  runMastraPartnerDemo,
+} from "./mastra-partner.js";
+import {
+  writeMastraPartnerBundleReport,
+  writePartnerDemoReport,
+} from "./partner-demo.js";
+import {
   createExecutionPlan,
   loadSafetyProfile,
   readExecutionPlan,
@@ -374,6 +382,66 @@ async function coinbaseDemo(args) {
   process.stdout.write("ARTIFACTS_WRITTEN=false\n");
 }
 
+async function mastraDemo(args) {
+  const scenario = optionValue(args, "--scenario");
+  const expectedArgs = scenario ? ["--scenario", scenario] : [];
+  if (
+    args.length !== expectedArgs.length ||
+    args.some((argument, index) => argument !== expectedArgs[index])
+  ) {
+    throw new Error(
+      "Usage: mastra-demo [--scenario pass|block|review]",
+    );
+  }
+  process.stdout.write("SIMULATION_ONLY\n");
+  process.stdout.write("MASTRA_PARTNER_PROOF=COMPLETE\n");
+  if (scenario) {
+    const record = await runMastraPartnerDemo({ scenario });
+    const paths = await writePartnerDemoReport(record, {
+      reportPrefix: "mastra-demo",
+    });
+    process.stdout.write(`DELTA_DECISION=${record.decision.decision}\n`);
+    process.stdout.write(
+      `PROPOSAL_DIGEST=${record.decision.proposal_digest}\n`,
+    );
+    process.stdout.write(
+      `EVIDENCE_DIGEST=${record.decision.evidence_digest}\n`,
+    );
+    process.stdout.write(
+      `EXECUTION_PAYLOAD_DIGEST=${record.decision.execution_payload_digest}\n`,
+    );
+    process.stdout.write(
+      `RECEIPT_DIGEST=${record.receipt.receipt_digest}\n`,
+    );
+    process.stdout.write(
+      `RECEIPT_INTEGRITY_VERIFIED=${record.receipt_verification.artifact_verified}\n`,
+    );
+    process.stdout.write(
+      `EXECUTION_ELIGIBILITY=${record.execution.eligibility}\n`,
+    );
+    process.stdout.write(
+      `ONE_USE_GRANT_CONSUMED=${record.execution.grant_consumed}\n`,
+    );
+    printPaths(paths);
+  } else {
+    const bundle = await runMastraPartnerBundle();
+    const paths = await writeMastraPartnerBundleReport(bundle);
+    process.stdout.write("SCENARIOS=PASS,BLOCK,REVIEW\n");
+    process.stdout.write(`BUNDLE_DIGEST=${bundle.bundle_digest}\n`);
+    process.stdout.write(
+      `OUTCOMES=${JSON.stringify(bundle.outcomes)}\n`,
+    );
+    printPaths(paths);
+  }
+  process.stdout.write("MASTRA_RUNTIME_EXERCISED=false\n");
+  process.stdout.write(
+    "REFERENCE_MASTRA_RUNTIME=examples/mastra (pinned createTool + persisted REVIEW workflow)\n",
+  );
+  process.stdout.write("BREX_CONTACTED=false\n");
+  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
+  process.stdout.write("MONEY_MOVED=false\n");
+}
+
 async function probeExecution(args) {
   const boundPath = optionValue(args, "--bound-execution");
   const receiptPath = optionValue(args, "--confirmation-receipt");
@@ -553,6 +621,7 @@ Commands:
   credential-readiness
   configure-credentials --key-file /outside/repo/cdp_key.json
   coinbase-demo [--no-artifacts]
+  mastra-demo [--scenario pass|block|review]
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
@@ -583,6 +652,8 @@ try {
     await configureExecution(args);
   } else if (command === "coinbase-demo") {
     await coinbaseDemo(args);
+  } else if (command === "mastra-demo") {
+    await mastraDemo(args);
   } else if (command === "plan") {
     await createPlanCommand(args);
   } else if (command === "simulate") {
