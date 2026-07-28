@@ -17,6 +17,10 @@ export const TRADE_ATTESTATION_PATH = path.join(
   ATTESTATION_DIR,
   "trade-permission-attestation.json",
 );
+export const VIEW_ATTESTATION_PATH = path.join(
+  ATTESTATION_DIR,
+  "view-permission-attestation.json",
+);
 export const JWT_PROFILE = "CDP_URIS_V1";
 
 function base64url(value) {
@@ -100,7 +104,9 @@ export function assertViewOnlyPermissions(response) {
   if (response?.can_view !== true) failures.push("can_view must be true");
   if (response?.can_trade !== false) failures.push("can_trade must be false");
   if (response?.can_transfer !== false) failures.push("can_transfer must be false");
-  if (response?.can_receive !== false) failures.push("can_receive must be false");
+  // The documented key-permissions response currently omits can_receive.
+  // Reject an explicitly granted extension, but accept the documented shape.
+  if (response?.can_receive === true) failures.push("can_receive must not be true");
   if (!response?.portfolio_uuid) failures.push("portfolio_uuid must be present");
   if (failures.length) {
     throw new Error(`Key is not safe for the preview harness: ${failures.join("; ")}`);
@@ -113,7 +119,7 @@ export function assertTradeOnlyPermissions(response) {
   if (response?.can_view !== true) failures.push("can_view must be true");
   if (response?.can_trade !== true) failures.push("can_trade must be true");
   if (response?.can_transfer !== false) failures.push("can_transfer must be false");
-  if (response?.can_receive !== false) failures.push("can_receive must be false");
+  if (response?.can_receive === true) failures.push("can_receive must not be true");
   if (!response?.portfolio_uuid) failures.push("portfolio_uuid must be present");
   if (failures.length) {
     throw new Error(`Key is not safe for the execution harness: ${failures.join("; ")}`);
@@ -237,8 +243,58 @@ export async function verifyTradeKeyFileAndConfigure(
   };
 }
 
+export async function verifyViewKeyFileAndConfigure(
+  keyFilePath,
+  fetchImpl = fetch,
+  { persistAttestation = true } = {},
+) {
+  const { keyId, privateKey } = await readExternalKeyFile(keyFilePath);
+  const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
+  assertViewOnlyPermissions(permissions);
+  const attestation = {
+    schema: "delta.coinbase.view_permission_attestation.v1",
+    verified_at: new Date().toISOString(),
+    environment: "coinbase-read-preview",
+    jwt_profile: JWT_PROFILE,
+    can_view: true,
+    can_trade: false,
+    can_transfer: false,
+    can_receive: false,
+    portfolio_fingerprint: createHash("sha256")
+      .update(permissions.portfolio_uuid)
+      .digest("hex"),
+    key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
+  };
+  if (persistAttestation) {
+    await mkdir(ATTESTATION_DIR, { recursive: true, mode: 0o700 });
+    await writeFile(
+      VIEW_ATTESTATION_PATH,
+      `${JSON.stringify(attestation, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  }
+  return {
+    attestation,
+    credentials: { keyId, privateKey },
+  };
+}
+
 export async function loadAndVerifyTradeCredentials(keyFilePath, fetchImpl = fetch) {
   const result = await verifyTradeKeyFileAndConfigure(keyFilePath, fetchImpl);
+  return {
+    attestation: result.attestation,
+    credentials: result.credentials,
+  };
+}
+
+export async function loadAndVerifyViewCredentials(
+  keyFilePath,
+  fetchImpl = fetch,
+) {
+  const result = await verifyViewKeyFileAndConfigure(
+    keyFilePath,
+    fetchImpl,
+  );
   return {
     attestation: result.attestation,
     credentials: result.credentials,

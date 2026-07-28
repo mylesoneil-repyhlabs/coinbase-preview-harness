@@ -171,3 +171,81 @@ test("List Orders recovery scan is narrowly filtered and query-free in the JWT",
     `GET api.coinbase.com${BROKERAGE_PATH}/orders/historical/batch`,
   ]);
 });
+
+test("List Accounts follows bounded pagination and returns complete funding evidence", async () => {
+  const calls = [];
+  const adapter = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      const cursor = new URL(url).searchParams.get("cursor");
+      return cursor == null
+        ? response({
+            accounts: [{ uuid: "a", currency: "USDC" }],
+            has_next: true,
+            cursor: "next-page",
+          })
+        : response({
+            accounts: [{ uuid: "b", currency: "BTC" }],
+            has_next: false,
+            cursor: "",
+          });
+    },
+  });
+  const result = await adapter.listAccounts();
+  assert.deepEqual(
+    result.accounts.map(({ uuid }) => uuid),
+    ["a", "b"],
+  );
+  assert.equal(result.has_next, false);
+  assert.equal(calls.length, 2);
+  assert.equal(
+    new URL(calls[0].url).pathname,
+    `${BROKERAGE_PATH}/accounts`,
+  );
+  assert.equal(
+    new URL(calls[1].url).searchParams.get("cursor"),
+    "next-page",
+  );
+  assert.deepEqual(jwtPayload(calls[1].options.headers.Authorization).uris, [
+    `GET api.coinbase.com${BROKERAGE_PATH}/accounts`,
+  ]);
+});
+
+test("List Accounts rejects repeated pagination cursors", async () => {
+  const adapter = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async () =>
+      response({ accounts: [], has_next: true, cursor: "repeat" }),
+  });
+  await assert.rejects(
+    () => adapter.listAccounts(),
+    /cursor repeated/,
+  );
+});
+
+test("List Products pins SPOT and exact requested product IDs", async () => {
+  const calls = [];
+  const adapter = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return response({ products: [] });
+    },
+  });
+  await adapter.listProducts({
+    productIds: ["SOL-USDC", "BTC-USD"],
+  });
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, `${BROKERAGE_PATH}/products`);
+  assert.equal(url.searchParams.get("product_type"), "SPOT");
+  assert.equal(
+    url.searchParams.get("get_tradability_status"),
+    "true",
+  );
+  assert.deepEqual(url.searchParams.getAll("product_ids"), [
+    "SOL-USDC",
+    "BTC-USD",
+  ]);
+  assert.throws(
+    () => adapter.listProducts({ productIds: ["../orders"] }),
+    /Invalid Coinbase product_id/,
+  );
+});

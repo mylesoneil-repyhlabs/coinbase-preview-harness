@@ -5,11 +5,15 @@ const STATUS_VALUES = new Set([
   "processing",
   "success",
   "failure",
+  "review",
   "expired",
 ]);
 
 export const COINBASE_PROOF_BINDING_FIELDS = Object.freeze([
   "product_id",
+  "action_descriptor_digest",
+  "authorized_limit_price",
+  "funding_evidence_digest",
   "preview_id",
   "create_payload_digest",
   "preview_request_digest",
@@ -43,7 +47,7 @@ export function assertMandateStatus(status) {
     throw new Error("Mandate adapter returned an invalid status");
   }
   if (
-    ["processing", "success", "failure"].includes(status.status) &&
+    ["processing", "success", "failure", "review"].includes(status.status) &&
     typeof status.proposal?.solution !== "string"
   ) {
     throw new Error(`Mandate ${status.status} status omitted its proposal`);
@@ -55,7 +59,7 @@ export function assertMandateStatus(status) {
     throw new Error("Mandate failure omitted constraint_failures");
   }
   if (
-    ["success", "failure", "expired"].includes(status.status) &&
+    ["success", "failure", "review", "expired"].includes(status.status) &&
     (typeof status.intent_id !== "string" || !status.intent_id)
   ) {
     throw new Error(`Mandate ${status.status} status omitted its intent ID`);
@@ -64,7 +68,7 @@ export function assertMandateStatus(status) {
 }
 
 export function isTerminalMandateStatus(status) {
-  return ["success", "failure", "expired"].includes(status.status);
+  return ["success", "failure", "review", "expired"].includes(status.status);
 }
 
 export function assertProposalBinding(actual, expectedSolution) {

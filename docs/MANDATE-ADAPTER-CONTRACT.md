@@ -1,8 +1,8 @@
-# Mandate adapter contract
+# Delta Mandate adapter contract
 
-This harness has one Delta boundary. Both simulation and production implement
-the same application port; the execution pipeline does not know which one is
-selected.
+Delta Coinbase Guard v1.3 has one application boundary between the Coinbase
+controller and Delta. Simulation and a future production integration implement
+the same seven-operation port:
 
 ```js
 {
@@ -16,117 +16,139 @@ selected.
 }
 ```
 
-The port is defined and checked in `src/mandate/contract.js`. The deterministic
-controller is in `src/mandate/controller.js`.
+The shape is enforced in `src/mandate/contract.js`; the deterministic result and
+receipt logic lives in `src/mandate/controller.js`.
 
-## Mapping to current delta main
+This contract is intentionally narrower than the private Delta implementation.
+The public Repyh Labs organization does not expose the code needed to confirm
+actual policy syntax, endpoint paths, status vocabulary, signed-intent wire
+format, or proof type. The HTTP mapping in
+`src/mandate/orchestrator-adapter.js` is production-shaped integration code,
+not evidence that private Delta currently exposes those exact interfaces.
 
-| Harness operation | Delta operation |
+## Operation semantics
+
+| Port operation | Required application behavior |
 | --- | --- |
-| `submitPolicy(source)` | Orchestrator `POST /policies`, `text/plain` |
-| `authorizeIntent(...)` | Sign `Intent { id, policy_id, attrs }` using Delta's JCS signature rules, then Orchestrator `POST /intents` |
-| `prepareProposal(...)` | Register the frozen Coinbase action with the trusted action registry and return its opaque Delta `solution` |
-| `submitProposal(...)` | Orchestrator `POST /intents/{id}/proposal` with exactly `{solution}` |
-| `getStatus(...)` | Orchestrator `GET /intents/{id}/status` |
-| `getVerificationOutcome(...)` | Verifier `GET /intents/{id}` |
-| `getProof(...)` | Verifier `GET /proofs/{id}` |
+| `submitPolicy(source)` | Compile/register the pinned Coinbase SPOT v1.3 policy and return its content-bound ID |
+| `authorizeIntent(...)` | Obtain authenticated user authorization, sign the exact policy ID and typed parameters, submit it, and return the assigned intent ID |
+| `prepareProposal(...)` | Store the frozen Coinbase action record in an authenticated append-only registry and return its content-addressed locator |
+| `submitProposal(...)` | Submit exactly that locator for the authorized intent |
+| `getStatus(...)` | Return the current evaluation state and the exact proposal when present |
+| `getVerificationOutcome(...)` | Return an operationally independent verification result bound to the same intent and proposal |
+| `getProof(...)` | Return proof material binding the signed intent, proposal, and required Coinbase evidence |
 
-`authorizeIntent` and `prepareProposal` are application operations, not Delta
-HTTP endpoints. The production intent implementation receives an injected
-signer and verifies that the returned `SignedIntent` binds the exact policy ID,
-caller-assigned intent ID, and typed `attrs` before submitting it. The proposal
-implementation delegates to a trusted action registry so an arbitrary action
-locator cannot be supplied by the untrusted agent.
+`authorizeIntent` and `prepareProposal` are application operations. They need
+not correspond one-for-one to Delta HTTP endpoints. Production may use generated
+clients or a different wire protocol while preserving this port.
 
-## Required status union
+## Checked-in HTTP hypothesis
+
+The current `OrchestratorMandateAdapter` models:
+
+```text
+POST /policies
+POST /intents
+POST /intents/{id}/proposal
+GET  /intents/{id}/status
+GET  {independent-verifier}/intents/{id}
+GET  {independent-verifier}/proofs/{id}
+```
+
+It requires:
+
+- HTTPS except for loopback development;
+- distinct Orchestrator and Verifier origins;
+- no shared bearer-token argument;
+- distinct nonempty tokens when both are configured;
+- an injected signer;
+- an injected action registry; and
+- bounded request time and response size.
+
+The signer result is rejected unless its intent ID, policy ID, and typed
+attributes exactly match the caller's values.
+
+Engineering must validate and, if necessary, replace the internal HTTP calls
+against the actual private Delta clients. Do not weaken the surrounding
+bindings to accommodate a different transport.
+
+## Status contract
+
+The controller recognizes:
 
 ```text
 open
 processing { proposal }
 success    { intent_id, proposal, evidence }
 failure    { intent_id, reason, proposal, evidence?, constraint_failures[] }
+review     { intent_id, reason, proposal, evidence? }
 expired    { intent_id }
 ```
 
-A constraint failure is distinguished from infrastructure/proof failure by a
-nonempty `constraint_failures` array. Only a constraint failure may be
-classified as candidate-retryable by the local controller. Current Delta main
-still makes that intent terminal; see `ENGINEERING-HANDOFF.md` for the required
-retry decision.
+`processing`, `success`, `failure`, and `review` must include the proposal.
+Terminal states must carry the exact intent ID. `failure` must include a
+`constraint_failures` array, which may be empty for a non-policy failure.
 
-## Success predicate
+The current controller polls only until `success`, `failure`, `review`, or
+`expired`. Unexpected status, malformed state, timeout, or transport failure
+throws and stops fail-closed.
 
-The adapter/controller returns an executable success only after all of these
-hold:
+## PASS, BLOCK, and REVIEW
 
-1. Orchestrator status is `success`.
-2. The Orchestrator proposal equals the submitted solution exactly.
-3. The independent Verifier outcome is `success`.
-4. Verifier intent ID, policy ID, and typed attributes match exactly.
-5. Verifier proposal equals the submitted solution exactly.
-6. A Proof with nonempty `sp1_proof` material is available.
-7. Proof SignedIntent ID, policy ID, and typed attributes match exactly.
-8. Proof proposal equals the submitted solution exactly.
-9. The complete proof binding set—product ID, Preview ID, Create-body digest,
-   Preview-request digest, portfolio fingerprint, and credential fingerprint—
-   matches the frozen Coinbase action.
+The v1.3 application has three decision values, but their sources are distinct:
 
-Any missing, open, processing-timeout, failure, expiry, malformed, mismatched,
-or unverifiable state stops execution.
+- **PASS** — local Coinbase checks passed and Delta returned a terminal
+  successful result with matching independent verification and proof.
+- **BLOCK** — a deterministic proposal/Preview constraint failed, or Delta
+  returned `failure` or `expired`.
+- **REVIEW** — Coinbase Preview returned a warning after otherwise passing
+  deterministic checks, or the Mandate adapter returned a bound terminal
+  `review` state.
 
-The local controller checks the presence of nonempty `sp1_proof` material and
-all artifact bindings; it does not cryptographically verify SP1 itself. That is
-the independent Verifier's responsibility, and the controller requires the
-Verifier's matching successful outcome before it can execute.
+A Preview warning stops before Delta evaluation. The checked-in application
+contract recognizes a terminal adapter `review` and emits a bound REVIEW
+receipt without proof or execution eligibility. It does not claim that private
+Delta currently has that native status; the mapping must be validated against
+the actual runtime. Infrastructure, timeout, verifier, proof, or schema errors
+are hard stops, not an authorization and not a reason to default to PASS.
 
-## Production composition
+## Exact success predicate
 
-The public V1 does not load a production adapter at runtime. Its compile-time
-composition seam is:
+An adapter result is executable only after all of these hold:
+
+1. the evaluation status is `success`;
+2. the status intent ID matches the authorized intent;
+3. the status proposal equals the submitted solution;
+4. the independent verification outcome is `success`;
+5. the verifier's intent ID, policy ID, and typed attributes match exactly;
+6. the verifier's proposal equals the submitted solution;
+7. proof material exists and its `sp1_proof` member is nonempty;
+8. the proof's signed intent and proposal match the same artifacts; and
+9. every required Coinbase proof-evidence binding matches the frozen action.
+
+The binding set is exactly:
 
 ```text
-src/integration/production-composition.js
+product_id
+action_descriptor_digest
+funding_evidence_digest
+preview_id
+create_payload_digest
+preview_request_digest
+portfolio_fingerprint
+credential_fingerprint
 ```
 
-The checked-in export always fails with
-`ENGINEERING_INTEGRATION_REQUIRED` before the execution command reads a
-Coinbase key. No environment variable, path, module digest, plugin, or
-command-line flag can select a different implementation. The module also owns
-a non-exported `LIVE_EXECUTION_CAPABILITY`; the public LIVE pipeline and the
-Coinbase Create transport each reject a caller that cannot present that exact
-object.
+Any missing, extra, empty, malformed, stale, or mismatched field stops. The
+local controller checks proof presence and artifact equality; it does not
+cryptographically verify SP1 itself. Production requires an operationally
+independent Verifier to perform the actual cryptographic check and return a
+matching successful outcome.
 
-Engineering replaces that internal composition in source with a reviewed
-build-time dependency that creates:
+## Action registry
 
-```js
-createOrchestratorMandateAdapter({
-  orchestratorUrl,
-  verifierUrl,
-  signer,
-  actionRegistry,
-  orchestratorBearerToken,
-  verifierBearerToken,
-})
-```
-
-and injects an isolated durable implementation of the existing execution-grant
-ports. The reviewed composition must also return its module-private
-`LIVE_EXECUTION_CAPABILITY` as `executionCapability`. It must never export the
-capability, expose a minting function, or accept a runtime-supplied substitute.
-Keep secrets and the Trade credential outside the agent-facing process. Do not
-turn this seam into an arbitrary runtime-loaded JavaScript module; in-process
-module labels and file hashes do not establish isolation or trusted provenance.
-
-The adapter enforces distinct Orchestrator and Verifier origins and rejects a
-shared bearer token or equal configured tokens. Production must configure
-independently scoped credentials and operational separation.
-`prepareProposal` is the single-Preview handoff: the trusted executor freezes
-one action record, the registry stores it immutably and returns an opaque
-solution, and Delta evidence resolves that same record rather than issuing a
-second Coinbase Preview.
-
-The registry response is fail-closed and content-addressed:
+`prepareProposal` computes `digest(actionRecord)`, then requires the trusted
+registry to return:
 
 ```js
 {
@@ -135,45 +157,126 @@ The registry response is fail-closed and content-addressed:
 }
 ```
 
-The adapter rejects any other locator, missing digest, or mismatch. Registry
-storage must be authenticated, append-only, and readable by the evidence
-service using the exact locator; the model-facing process must not be able to
-write or replace records.
+The registry must be authenticated, append-only, and content-addressed. The
+trusted controller is its only writer. The evidence service resolves it
+read-only. The agent cannot choose a locator, replace a record, or make a
+simulation envelope authoritative.
 
-The hand-written HTTP adapter is useful for contract testing. If the target
-Delta runtime already has generated clients, engineering should keep this port
-and replace the internal HTTP calls with those clients.
+The action record is `delta.coinbase.evaluation_request.v2`; it binds the
+authorized generic BUY/SELL action, held-funds evidence, one Coinbase Preview,
+the exact prospective Create bytes, and all digests. See
+[COINBASE-EVIDENCE-CONTRACT.md](COINBASE-EVIDENCE-CONTRACT.md).
 
-The production grant store must implement the injected
-`consumeGrant(planId, intentId, record)`, `markGrant(planId, patch)`, and
-`readGrant(planId)` ports with:
+## Decision receipt
 
-- an authenticated writer available only to the trusted executor;
-- a transactional unique key that prevents two processes or hosts from
-  consuming the same plan;
-- binding to the exact plan, confirmation receipt, successful Delta intent,
-  proposal, and Create-body digest;
-- durable audit state across restart; and
-- a read-only reconciliation path for an uncertain Coinbase submission.
+Every structured Delta result carries
+`delta.coinbase.decision_receipt.v2`, including:
 
-Public V1 ships no default live grant store. Tests and the explicit simulator
-use injected in-memory doubles; they are not production trust boundaries.
+- decision;
+- policy and intent IDs;
+- action-descriptor, exact-payload, evidence, and proof digests;
+- indexed constraint failures;
+- verification state; and
+- a receipt digest.
 
-## Contract tests
+The public simulator's receipt is deterministic and tamper-evident under local
+SHA-256 recomputation. Its signature and proof fields are explicit placeholders.
+It is not a production Delta signature, independently verified proof, Coinbase
+attestation, or authenticated statement of user identity.
 
-`test/mandate-adapter.test.js` pins:
+## Retry contract
 
-- lifecycle pass and indexed constraint failure;
-- exact Orchestrator and Verifier method/path/body mapping;
-- canonical solution tamper rejection;
-- proof evidence binding;
-- verified-proof-required execution;
-- retry only on constraint failures; and
-- full pipeline operation through the simulator implementation.
+`mandateDisposition` maps:
 
-Production-composition tests must prove that the public V1 returns
-`ENGINEERING_INTEGRATION_REQUIRED` before credentials are read, that simulation
-cannot be selected for execution, and that no runtime configuration can enable
-Create. The internal engineering build must add contract tests for the real
-adapter, signer, registry, durable grant store, and operationally independent
-Verifier.
+- verified `PASS` plus proof → `EXECUTE`;
+- `BLOCK` with at least one explicit constraint failure and an attempt
+  remaining → `RETRY`; and
+- everything else, including `REVIEW` → `STOP`.
+
+`runMandateAttemptLoop` enforces an integer attempt limit from 1 through 10 and
+defaults to three. A production integration must select and test retry semantics
+compatible with the private Delta lifecycle: local refinement before one Delta
+proposal, a newly authorized intent per retry, or an explicit authenticated
+proposal-window primitive. This public build does not claim any of those exists
+in private Delta today.
+
+Retry never authorizes a changed policy, different pair, side, size,
+credential, portfolio, or expired action. An uncertain Coinbase submission is
+reconciliation-only and cannot be retried as a new Create.
+
+## Public production-composition lock
+
+The only build-time seam is:
+
+```text
+src/integration/production-composition.js
+```
+
+The checked-in `loadProductionExecutionDependencies()` always throws
+`ENGINEERING_INTEGRATION_REQUIRED`. It cannot be overridden by an environment
+variable, path, plugin, module hash, command-line flag, or simulation adapter.
+
+The module owns a non-exported `LIVE_EXECUTION_CAPABILITY`. Both the LIVE
+pipeline and Coinbase Create transport require that exact object. Public v1.3
+never returns it, so credentials alone cannot enable Create.
+
+A reviewed internal composition must supply:
+
+```js
+{
+  mandateAdapter,
+  consumeGrant,
+  markGrant,
+  readGrant,
+  executionCapability
+}
+```
+
+The capability must come from the module closure, not a runtime caller.
+`consumeGrant`, `markGrant`, and `readGrant` must use isolated durable storage
+with transactional one-use enforcement and recovery state.
+
+Do not replace this seam with a runtime-loaded JavaScript adapter. A module
+name, path, or self-asserted security label does not prove process isolation,
+evidence provenance, signer identity, or verifier independence.
+
+## Simulation implementation
+
+`SimulatedMandateAdapter`:
+
+- accepts only the pinned v1.3 policy source;
+- creates an in-memory intent;
+- encodes the frozen record into a strict canonical simulation solution;
+- deterministically extracts claimed fixture evidence;
+- evaluates the pinned constraints;
+- emits indexed failures or success; and
+- returns explicit placeholder signature and proof material.
+
+It performs no network request, user authentication, Coinbase attestation,
+trusted evidence extraction, real Delta evaluation, cryptographic proof, or
+durable one-time grant. It is a test double and must never be selectable in
+LIVE composition.
+
+## Required production tests
+
+Before internal composition can return the live capability, contract tests must
+cover:
+
+- real private-Delta policy compilation and typed parameter mapping;
+- authenticated authorization and signer binding;
+- registry locator and immutable-record tampering;
+- status, verifier, and proof shapes from the actual services;
+- independent origins and credential scopes;
+- all eight proof bindings;
+- BUY and SELL across multiple pairs and decimal precisions;
+- held quote funds for BUY and held base funds for SELL;
+- `PASS`, constraint `BLOCK`, Preview `REVIEW`, expiry, timeout, malformed
+  proof, and verifier disagreement;
+- bounded retry using the selected private-Delta lifecycle;
+- grant atomicity across processes and restart;
+- exact serialized Create bytes and transport digest;
+- uncertain-submission reconciliation by `client_order_id`; and
+- proof that public builds, simulation, runtime configuration, and credentials
+  cannot obtain the live capability.
+
+Until those pass, credentialed Coinbase use ends at reads and Preview.

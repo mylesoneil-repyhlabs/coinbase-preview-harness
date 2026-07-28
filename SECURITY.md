@@ -23,13 +23,14 @@ allow a reasonable remediation window before public disclosure.
 
 ## Supported version
 
-Only the latest commit on the default branch is supported. This is a V1
+Only the latest commit on the default branch is supported. This is a v1.3
 integration preview, not a production custody or trading service.
 
 ## Operator safety
 
 - Keep Coinbase credentials outside the repository and pass credential paths
-  only at runtime. Use a dedicated portfolio and the least-privileged key.
+  only at runtime. Use a dedicated portfolio and a View-only key for reads and
+  Preview. A future Trade key belongs only in an isolated executor.
 - Do not commit anything under `credentials/` or `runtime/`. Generated
   execution reports can contain sensitive trading metadata and are written
   under ignored `runtime/artifacts/` with user-only permissions.

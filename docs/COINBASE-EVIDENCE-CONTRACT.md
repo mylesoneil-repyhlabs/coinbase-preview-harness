@@ -1,162 +1,315 @@
-# Coinbase policy and evidence contract
+# Coinbase v1.3 policy and evidence contract
 
-The checked-in V1 policy source lives in
-`src/mandate/coinbase-policy.js`. It deliberately uses the vocabulary on
-current Delta main:
+This document describes the checked-in generic SPOT BUY/SELL contract. The
+implementation is deterministic and production-shaped, but its Delta policy,
+signing, evidence, proof, and receipt are simulated. It has not been validated
+against the private Delta Mandate codebase.
 
-- `parameters { ... }`;
-- `parameters.<name>`;
-- a fixed category constraint; and
-- only boolean, signed-integer, and string evidence.
+The primary files are:
 
-The production source of truth must be one `SchemaSpec` in
-`CoinbaseSpotHooks`, following the existing `kalshi_wc26.rs` pattern. It should
-derive both the policy-engine `EvidenceSchema` and the evidence-service
-`ExtractionSchema` from the same field declarations.
+- `src/spot-action.js`;
+- `src/funding.js`;
+- `src/mandate/coinbase-policy.js`;
+- `src/mandate/coinbase-solution.js`;
+- `src/mandate/coinbase-evidence.js`;
+- `src/mandate/contract.js`; and
+- `src/mandate/controller.js`.
 
-## Parameters authorized by the user
+## Authorized policy parameters
 
-| Field | Type | Unit or meaning |
+`buildCoinbasePolicyBundle` maps the human-authorized v1.3 plan into these
+parameters:
+
+| Parameter | Type | Meaning |
 | --- | --- | --- |
-| `product_id` | string | Exact Coinbase product |
+| `product_id` | string | Exact Coinbase SPOT pair |
 | `base_asset` | string | Exact base asset |
 | `quote_asset` | string | Exact quote asset |
-| `side` | string | Exact side |
-| `exact_quote_size_microunits` | int | Quote asset × 1,000,000 |
-| `max_slippage_bps` | int | Basis points |
-| `max_commission_microunits` | int | Quote asset × 1,000,000 |
-| `max_all_in_debit_microunits` | int | Quote asset × 1,000,000 |
-| `portfolio_fingerprint` | string | Authorized portfolio binding |
-| `credential_fingerprint` | string | Authorized execution-key binding |
-| `expires_at_epoch_ms` | int | Trusted absolute deadline |
+| `side` | string | `BUY` or `SELL` |
+| `size_field` | string | `quote_size` for BUY; `base_size` for SELL |
+| `exact_size_value` | decimal string | Exact authorized side-specific size |
+| `funding_asset` | string | Quote asset for BUY; base asset for SELL |
+| `max_slippage_bps` | integer | Maximum adverse slippage in basis points |
+| `max_commission_value` | decimal string | Maximum commission in quote asset |
+| `settlement_kind` | string | `MAX_QUOTE_DEBIT` or `MIN_NET_QUOTE_PROCEEDS` |
+| `settlement_value` | decimal string | Side-specific debit ceiling or net-proceeds floor |
+| `action_descriptor_digest` | string | Digest of the complete canonical action |
+| `portfolio_fingerprint` | string | Bound Coinbase portfolio |
+| `credential_fingerprint` | string | Bound key identity |
+| `expires_at_epoch_ms` | integer | Absolute evaluation deadline |
 
-These become the `attrs` of a Delta `Intent` using the policy-engine
-`ObjectValue` wire representation. No float crosses this boundary.
+Amounts are canonical decimal strings, not floating-point numbers and not a
+universal microunit integer. That distinction is required for base assets whose
+valid Coinbase increment has more than six decimal places.
 
-## V1 evidence schema
+The checked-in source is `coinbase_spot_order_v2` with policy kind
+`coinbase_spot_v2`. It is a narrow simulator contract pending validation of the
+private Delta engine's actual syntax and type mapping.
 
-| Field | Type | Production authority |
+## Canonical action descriptor
+
+`delta.coinbase.spot_action.v1` is the authorization-level action description.
+Its digest covers:
+
+- Coinbase Advanced and the custodial-ledger execution domain;
+- product ID, SPOT type, and exact base/quote assets;
+- side;
+- SOR limit IOC and partial-fill policy;
+- exact size field, denomination, asset, and value;
+- held-balance funding source, required amount, and
+  `conversion_allowed: false`;
+- fresh price reference and side-specific price direction;
+- slippage, commission, and settlement limits; and
+- one execution with the authorized validity start and TTL.
+
+The descriptor is regenerated and compared at planning, proposal, solution
+parsing, Delta parameter construction, and proof binding. A field addition,
+deletion, or mutation changes its digest.
+
+## Trusted input ownership
+
+| Data | Simulation authority | Required production authority |
 | --- | --- | --- |
-| `category` | string enum | `CoinbaseSpotHooks`, fixed to `COINBASE_ADVANCED_SPOT_ORDER` |
-| `environment` | string enum | Trusted action registry/executor |
-| `execution_domain` | string enum | Trusted action registry/executor |
-| `product_id` | string | Exact frozen Create body |
-| `base_asset`, `quote_asset` | string | Fresh Coinbase product response |
-| `side` | string enum | Exact frozen Create body |
-| `order_type`, `time_in_force` | string enum | Exact frozen order configuration |
-| `quote_size_microunits` | int | Exact frozen order configuration |
-| `limit_price_microunits` | int | Exact frozen order configuration |
-| `slippage_bps` | int | Trusted Preview versus trusted market snapshot |
-| `commission_microunits` | int | Trusted Coinbase Preview |
-| `all_in_debit_microunits` | int | Exact-decimal `max(order_total, quote_size + commission_total)` |
-| `portfolio_fingerprint` | string | Trusted action registry and Coinbase account binding |
-| `credential_fingerprint` | string | Trusted executor registration |
-| `evaluated_at_epoch_ms` | int | Evidence-service clock |
-| `preview_id`, `create_preview_id` | string | Trusted Preview and exact Create body |
-| `preview_present` | bool | Derived, never defaulted |
-| `preview_request_matches_create` | bool | Extractor recomputation |
-| `create_payload_digest` | string | Extractor hash of exact serialized Create bytes |
-| `claimed_create_payload_digest` | string | Immutable solution/action-record binding |
-| `preview_request_digest` | string | Extractor hash of request derived from Create |
-| `claimed_preview_request_digest` | string | Immutable solution/action-record binding |
-| `market_status` | string enum | Fresh Coinbase product response |
-| `trading_disabled`, `product_disabled` | bool | Fresh Coinbase product response |
+| Closed policy and action descriptor | Compiler plus explicit digest confirmation | Authenticated user approval / signer |
+| Product metadata and flags | Labeled fixture | Fresh Coinbase Get Product |
+| Best bid and ask | Labeled fixture | Fresh authenticated Coinbase market read |
+| Funding accounts | Labeled fixture | Complete authenticated List Accounts response |
+| Preview economics and `preview_id` | Labeled fixture | One authenticated Coinbase Preview |
+| Credential and portfolio fingerprints | Simulator attestation | Fresh key-permission verification |
+| Delta decision and proof | Simulated adapter | Actual Delta evaluation and independent Verifier |
+| One-use grant | In-memory test double | Isolated transactional store |
 
-The hook may include `limit_price_microunits` for receipts and future policy
-versions even though the V1 policy controls price through the independently
-derived slippage cap.
+An agent-authored proposal is never authoritative evidence. In production, the
+trusted controller gathers Coinbase responses, normalizes them, and freezes one
+immutable action record before invoking Delta.
 
-Coinbase's optional self-reported `slippage` field is deliberately excluded
-from the canonical evidence envelope. V1 derives `slippage_bps` from the
-trusted Preview `est_average_filled_price` and the independently fetched fresh
-market `best_ask`; it never trusts the venue's optional summary value.
+## Funding evidence
 
-There is intentionally no `usage_index` evidence constraint. Current Delta
-`ExtractionRequest` provides the solution and requested attributes, not the
-intent ID needed to establish attempt/use count. Replay prevention remains in
-Orchestrator proposal state and the executor's single atomic execution-grant
-record unless
-engineering introduces a trusted attempt registry.
+`delta.coinbase.funding_evidence.v1` contains:
 
-## Solution format
+```text
+portfolio_fingerprint
+funding_asset
+required_available
+available_balance
+account_fingerprints[]
+complete
+evidence_digest
+```
+
+The account list must be complete. Only active, ready, non-deleted accounts
+whose available-balance currency exactly matches the required asset contribute.
+Account fingerprints commit account UUID, currency, platform, and retail
+portfolio ID without copying those identifiers into the decision receipt.
+
+For a BUY, required available funds equal the authorized maximum quote debit.
+For a SELL, required available funds equal the exact base size. USD and USDC,
+and every other asset symbol, remain distinct. The guard never substitutes or
+converts a different balance.
+
+Missing, malformed, incomplete, or insufficient funding evidence is `BLOCK`
+before Coinbase Preview or Delta evaluation.
+
+## Market and Preview evidence
+
+The normalized market record includes the exact pair and assets; Coinbase
+increments and min/max size bounds; best bid and ask; observation time; status;
+and product flags. The pipeline rejects a non-SPOT, offline, disabled,
+trading-disabled, view-only, cancel-only, post-only, or auction product. It also
+rejects malformed or stale data and contradictory bounds.
+
+The selected Preview record contains only:
+
+```text
+order_total
+commission_total
+quote_size
+base_size
+est_average_filled_price
+best_bid
+best_ask
+preview_id
+errs[]
+warning[]
+```
+
+The [Coinbase Preview reference](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders)
+documents the response's errors, warnings, estimates, and `preview_id`.
+The local decision rule is:
+
+- nonempty `errs` → `BLOCK`;
+- malformed fields or violated policy economics → `BLOCK`;
+- nonempty `warning` → `REVIEW` and stop; and
+- otherwise → `PASS`.
+
+The simulation solution accepts only a Preview that has empty errors and
+warnings. A `REVIEW` is intentionally not submitted to the simulated Delta
+adapter.
+
+The guard derives adverse slippage instead of trusting Coinbase's optional
+self-reported slippage summary:
+
+- BUY compares estimated fill price to fresh best ask; and
+- SELL compares estimated fill price to fresh best bid.
+
+Only movement adverse to the user counts, and fractional basis points round up.
+
+Settlement is also side-specific:
+
+```text
+BUY  = max(order_total, requested quote_size + commission_total)
+SELL = min(order_total, Preview quote_size) - commission_total
+```
+
+The BUY result must not exceed `MAX_QUOTE_DEBIT`; the SELL result must not fall
+below `MIN_NET_QUOTE_PROCEEDS`.
+
+## Evidence attributes evaluated by the simulator
+
+`extractSimulatedCoinbaseEvidence` deterministically derives the flat evidence
+consumed by `coinbase_spot_order_v2`:
+
+| Group | Fields |
+| --- | --- |
+| Domain | `category`, `environment`, `execution_domain` |
+| Instrument | `product_id`, `base_asset`, `quote_asset`, `side` |
+| Order | `order_type`, `time_in_force`, `size_field`, `size_value`, `limit_price` |
+| Economics | `slippage_bps`, `slippage_within_limit`, `commission_value`, `commission_within_limit`, `settlement_kind`, `settlement_value`, `settlement_within_limit` |
+| Funding | `funding_asset`, `funding_available`, `funding_required`, `funding_evidence_digest`, `funding_sufficient` |
+| Authorization | `action_descriptor_digest`, `portfolio_fingerprint`, `credential_fingerprint`, `evaluated_at_epoch_ms` |
+| Preview binding | `preview_id`, `preview_present`, `create_preview_id`, `preview_request_matches_create` |
+| Payload binding | `create_payload_digest`, `claimed_create_payload_digest`, `preview_request_digest`, `claimed_preview_request_digest` |
+| Product state | `market_status`, `trading_disabled`, `product_disabled`, `view_only` |
+
+The simulator labels the evidence execution target as `production` because the
+policy describes the prospective Coinbase production action. That label does
+not make the fixtures or Delta evaluation production evidence; the receipt
+separately declares `artifact_class: SIMULATED_DELTA_CONTRACT`.
+
+## Frozen action record
+
+After local proposal, funding, and Preview checks pass, the controller creates
+`delta.coinbase.evaluation_request.v2`. It includes:
+
+- source-intent, plan, policy, authorization, and action-descriptor bindings;
+- the proposal and its digest;
+- normalized market, Preview, and funding evidence plus collection time;
+- an evidence digest;
+- the exact Preview request and digest;
+- the exact prospective Create object;
+- its serialized UTF-8 JSON bytes and SHA-256 digest; and
+- credential and portfolio fingerprints.
+
+The prospective Create payload has the exact field set:
+
+```text
+client_order_id
+product_id
+side
+order_configuration.sor_limit_ioc
+preview_id
+```
+
+`sor_limit_ioc` contains `quote_size` plus `limit_price` for BUY, or
+`base_size` plus `limit_price` for SELL. Supplying both size fields, neither
+field, an unknown field, or a different order type is rejected.
+
+Coinbase publicly documents both `client_order_id` and `preview_id` in its
+[Create Order request](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order).
+The public build constructs this payload for binding tests but cannot transmit
+it.
+
+## Simulation solution
 
 The simulator uses:
 
 ```text
-coinbase-advanced://order/v1/{create-payload-sha256}?envelope={base64url-canonical-json}
+coinbase-advanced://order/v2/{create-payload-sha256}?envelope={base64url-canonical-json}
 ```
 
-The envelope is strict, versioned, and canonical. It binds:
+The strict canonical envelope binds:
 
-- the exact Create object;
-- the exact serialized Create bytes;
-- their SHA-256 digest;
-- the Preview request and digest; and
-- simulator-only evidence claims.
+- the complete action descriptor;
+- exact Create object and serialized bytes;
+- Create-body digest;
+- exact Preview request and digest; and
+- claimed market, Preview, funding, collection-time, portfolio, and credential
+  evidence.
 
-This embedded envelope is simulation-only. Production uses:
+The parser rejects an unknown version, noncanonical encoding, missing or extra
+field, malformed decimal or timestamp, digest mismatch, BUY/SELL size mismatch,
+incomplete funding, nonempty Preview errors/warnings, or evidence mismatch.
+
+This envelope is an inspectable simulation fixture, not a trusted production
+evidence channel.
+
+## Production action locator
+
+The production-shaped adapter instead requires an authenticated action registry
+to return:
 
 ```text
 coinbase-order://proposal/v1/{sha256-of-canonical-action-record}
 ```
 
-`prepareProposal({ actionRecord })` sends the closed
-`delta.coinbase.evaluation_request.v1` record to an authenticated trusted action
-registry. The registry recomputes `digest(actionRecord)`, stores the record
-append-only under that digest, and must return exactly:
+The registry recomputes the digest, stores the record append-only, and returns
+the same digest and locator. The evidence service resolves that immutable
+record with read-only access and derives the requested evidence itself. It must
+not trust the agent, accept the simulation envelope, or issue a second Preview.
 
-```json
-{
-  "solution": "coinbase-order://proposal/v1/<action-record-digest>",
-  "action_record_digest": "<action-record-digest>"
-}
+The locator digest binds the complete action record. The
+`create_payload_digest` separately binds the bytes intended for Coinbase.
+Neither substitutes for the other.
+
+## Delta proof and decision receipt
+
+The local controller requires the Delta Verifier result, signed-intent fields,
+proposal solution, and proof to match the authorized intent. The proof evidence
+must contain exactly these nonempty string bindings:
+
+```text
+product_id
+action_descriptor_digest
+funding_evidence_digest
+preview_id
+create_payload_digest
+preview_request_digest
+portfolio_fingerprint
+credential_fingerprint
 ```
 
-The trusted executor has already called Coinbase Preview once, frozen its
-Preview ID into the exact Create bytes, and included the Preview response and
-market snapshot in the action record. The production extractor resolves that
-same immutable record and must not call Preview again. It verifies trusted
-registration provenance, exact field sets, freshness, Preview/Create
-consistency, market state, and every digest; then it derives the flat evidence
-with deterministic exact-decimal logic. It never treats an agent-authored claim
-or the simulation envelope as production evidence.
+`delta.coinbase.decision_receipt.v2` then binds:
 
-The locator digest binds the whole action record. The separate
-`create_payload_digest` binds the exact UTF-8 Coinbase Create body. Both are
-required and must not be conflated.
+- `PASS`, `BLOCK`, or `REVIEW`;
+- policy and intent IDs;
+- action-descriptor, exact-payload, evidence, and proof digests;
+- indexed constraint failures;
+- whether verification succeeded; and
+- the receipt digest.
 
-## Proof-to-execution binding
+In this repository, that is a deterministic SHA-256 integrity receipt over a
+simulated Delta contract. The simulator uses placeholder proof and signature
+material. It is not a production Delta signature, SP1 proof, Coinbase
+attestation, authenticated signer identity, or independent source-authenticity
+guarantee.
 
-The current SP1 public values commit the policy ID, parameter hash, and evidence
-hash, but not the proposal directly. Therefore V1 requires all of the following:
+Only `PASS` with verified proof material is eligible for the controller's
+`EXECUTE` disposition. `BLOCK` can be retryable only when it carries explicit
+constraint failures and an attempt remains. `REVIEW`, expiry, infrastructure
+failure, proof mismatch, or unknown state stops.
 
-1. exact Create digest is independently extracted evidence;
-2. the policy constrains the relevant digest/Preview consistency booleans and
-   equalities;
-3. Verifier outcome and Proof carry the exact submitted proposal, intent ID,
-   policy ID, and typed intent attributes;
-4. the controller requires the exact six-field Proof binding set: product ID,
-   Preview ID, Create-body digest, Preview-request digest, portfolio
-   fingerprint, and credential fingerprint;
-5. the executor recomputes the outgoing Create-body digest immediately before
-   submission; and
-6. the Coinbase transport returns the digest of the body bytes it actually
-   sent. A missing or mismatched transport digest is
-   `SUBMISSION_UNCERTAIN`.
+## Pre-live shadow requirements
 
-The local controller checks proof presence and binding equality. Cryptographic
-SP1 verification is performed by the independent Verifier.
+Before Create can be enabled, engineering must use isolated credentials to pin:
 
-Adding the proposal hash directly to SP1 public values remains the stronger
-long-term hardening described in `ENGINEERING-HANDOFF.md`.
+- live key-permission response fields;
+- List Accounts pagination and balance semantics;
+- runtime product flags, increments, and size bounds across multiple pairs;
+- BUY and SELL Preview field and settlement behavior;
+- Preview ID freshness, reuse, and exact Create matching;
+- warning and error handling;
+- `client_order_id` uniqueness and uncertain-submission recovery; and
+- every digest and proof binding against the actual private Delta runtime.
 
-## Coinbase Preview behavior to verify in shadow
-
-The public [Preview Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders)
-and [Create Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order)
-references expose the Preview response and `preview_id` input but do not define
-all lifecycle guarantees this integration needs. Before live execution,
-engineering must empirically pin Preview ID freshness, reuse, Create-payload
-matching, and error behavior in the shadow suite. The harness remains
-fail-closed with a short local freshness window and never requests a second
-Preview for the same candidate.
+Until those checks, the supported external endpoint is credentialed reads and
+Preview followed by stop.

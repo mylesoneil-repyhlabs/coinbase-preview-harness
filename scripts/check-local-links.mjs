@@ -5,9 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(SCRIPT_DIR, "..");
+const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
+const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_ROOT;
 const SKIP_DIRECTORIES = new Set([
   ".git",
+  ".cache",
+  "artifacts",
   "node_modules",
   "runtime",
   "tmp",

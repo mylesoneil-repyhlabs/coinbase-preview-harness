@@ -15,6 +15,7 @@ import {
   assertViewOnlyPermissions,
   createRequestJwt,
   verifyTradeKeyFileAndConfigure,
+  verifyViewKeyFileAndConfigure,
 } from "../src/permissions.js";
 
 test("view-only permissions pass and overscoped keys fail closed", () => {
@@ -24,6 +25,15 @@ test("view-only permissions pass and overscoped keys fail closed", () => {
       can_trade: false,
       can_transfer: false,
       can_receive: false,
+      portfolio_uuid: "11111111-1111-1111-1111-111111111111",
+    }),
+    true,
+  );
+  assert.equal(
+    assertViewOnlyPermissions({
+      can_view: true,
+      can_trade: false,
+      can_transfer: false,
       portfolio_uuid: "11111111-1111-1111-1111-111111111111",
     }),
     true,
@@ -48,7 +58,7 @@ test("view-only permissions pass and overscoped keys fail closed", () => {
         can_receive: true,
         portfolio_uuid: "11111111-1111-1111-1111-111111111111",
       }),
-    /can_receive must be false/,
+    /can_receive must not be true/,
   );
 });
 
@@ -59,6 +69,15 @@ test("trade execution requires exactly View+Trade and forbids money-movement per
       can_trade: true,
       can_transfer: false,
       can_receive: false,
+      portfolio_uuid: "11111111-1111-1111-1111-111111111111",
+    }),
+    true,
+  );
+  assert.equal(
+    assertTradeOnlyPermissions({
+      can_view: true,
+      can_trade: true,
+      can_transfer: false,
       portfolio_uuid: "11111111-1111-1111-1111-111111111111",
     }),
     true,
@@ -128,6 +147,25 @@ test("external credential file is permission-checked, read-only attested, and ne
     assert.equal(result.attestation.jwt_profile, "CDP_URIS_V1");
     assert.equal(result.attestation.can_trade, true);
     assert.equal(JSON.stringify(result.attestation).includes("PRIVATE KEY"), false);
+    const viewResult = await verifyViewKeyFileAndConfigure(
+      keyFile,
+      async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            can_receive: false,
+            portfolio_uuid:
+              "33333333-3333-3333-3333-333333333333",
+          }),
+      }),
+      { persistAttestation: false },
+    );
+    assert.equal(viewResult.attestation.can_view, true);
+    assert.equal(viewResult.attestation.can_trade, false);
 
     await chmod(keyFile, 0o644);
     await assert.rejects(

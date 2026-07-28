@@ -19,3 +19,4 @@ artifacts/dry-run-*
 artifacts/live-execution-*
 artifacts/execution-probe-*
 artifacts/execution-reconciliation-*
+artifacts/release-*/

@@ -12,7 +12,7 @@ import { validateCompilation } from "./policy-validator.js";
 const SCHEMA_PATH = path.join(
   HARNESS_ROOT,
   "config",
-  "coinbase-spot-policy.v1.schema.json",
+  "coinbase-spot-policy.v2.schema.json",
 );
 
 const COMPILER_INSTRUCTIONS = `You compile a human's natural-language trading intent into a draft policy.
@@ -24,7 +24,8 @@ Rules:
 - Never infer a product, base asset, quote asset, dollar currency, portfolio, side, exact size, order type, fill policy, fee cap, all-in cap, slippage cap, or expiry.
 - "dollars" and "$" are ambiguous unless the intent explicitly says USD or USDC.
 - Normalize "buy BASE with QUOTE" to BASE-QUOTE BUY and "sell BASE for QUOTE" to BASE-QUOTE SELL.
-- V1 supports only one exact-size SOR_LIMIT_IOC order. BUY must be quote-sized. SELL must be base-sized.
+- V2 supports only one exact-size SOR_LIMIT_IOC order. BUY must be quote-sized. SELL must be base-sized.
+- BUY requires a maximum quote-asset total debit. SELL requires a minimum quote-asset net proceeds floor.
 - The TTL starts only when the human supplies the final credential-scoped execution digest.
 - Transfers, conversions, leverage, margin, derivatives, recurring orders, balance percentages, GTC orders, conditional strategies, unrestricted market orders, and on-chain network instructions are unsupported.
 - Every material constraint must appear exactly once in the source, including when repeated statements have the same value.
@@ -71,7 +72,7 @@ function parseExactSize(intent) {
 
 function parseNamedLimit(intent, suffix) {
   const expression = new RegExp(
-    `(?:(?:do not (?:pay|spend)|never (?:pay|spend)|not)\\s+)?more than\\s+(\\d+(?:\\.\\d+)?)\\s+([A-Z0-9]{2,12})\\s+${suffix}`,
+    `(?:(?:(?:do not|never)\\s+)?(?:pay|spend)\\s+|not\\s+)?more than\\s+(\\d+(?:\\.\\d+)?)\\s+([A-Z0-9]{2,12})\\s+${suffix}`,
     "i",
   );
   const match = intent.match(expression);
@@ -87,6 +88,18 @@ function parseTtl(intent) {
   const value = Number(match[1]);
   const seconds = match[2].toLowerCase().startsWith("minute") ? value * 60 : value;
   return { seconds, quote: match[0] };
+}
+
+function parseMinimumProceeds(intent) {
+  const match = intent.match(
+    /\b(?:receive|accept)\s+(?:at least|no less than)\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net)\b/i,
+  );
+  if (!match) return null;
+  return {
+    value: match[1],
+    asset: match[2].toUpperCase(),
+    quote: match[0],
+  };
 }
 
 function readyGrounding(values) {
@@ -108,8 +121,8 @@ function readyGrounding(values) {
       source_quote: values.commission.quote,
     },
     {
-      field: "policy.limits.max_all_in_debit.value",
-      source_quote: values.total.quote,
+      field: "policy.limits.settlement.value",
+      source_quote: values.settlement.quote,
     },
     { field: "policy.validity.ttl_seconds", source_quote: values.ttl.quote },
     { field: "policy.usage.max_executions", source_quote: values.onceQuote },
@@ -139,10 +152,13 @@ export function compileDeterministicIntent(intent) {
     /\bpartial fill(?:s)? (?:is|are) acceptable\b/i,
   );
   const slippageMatch = intent.match(
-    /\b(?:do not pay|never pay|not) more than\s+(\d+)\s+bps\s+(?:above|below)\b/i,
+    /\b(?:do not (?:pay|accept)|never (?:pay|accept)|not) more than\s+(\d+)\s+bps\s+(?:above|below)\b/i,
   );
   const commission = parseNamedLimit(intent, "in commission");
   const total = parseNamedLimit(intent, "total");
+  const minimumProceeds = parseMinimumProceeds(intent);
+  const settlement =
+    side === "BUY" ? total : side === "SELL" ? minimumProceeds : null;
   const ttl = parseTtl(intent);
   const onceQuote = matchQuote(intent, /\bonce\b/i);
 
@@ -158,6 +174,24 @@ export function compileDeterministicIntent(intent) {
   for (const [code, expression, reason] of unsupportedPatterns) {
     const quote = matchQuote(intent, expression);
     if (quote) unsupportedConstraints.push(unsupported(code, quote, reason));
+  }
+  if (slippageMatch && Number(slippageMatch[1]) > 9_999) {
+    unsupportedConstraints.push(
+      unsupported(
+        "SLIPPAGE_OUTSIDE_CAPABILITY",
+        slippageMatch[0],
+        "A price bound must remain strictly positive; v1.3 supports at most 9999 bps.",
+      ),
+    );
+  }
+  if (ttl && (ttl.seconds < 30 || ttl.seconds > 600)) {
+    unsupportedConstraints.push(
+      unsupported(
+        "EXPIRY_OUTSIDE_CAPABILITY",
+        ttl.quote,
+        "v1.3 authorization validity must be between 30 and 600 seconds.",
+      ),
+    );
   }
   if (!unsupportedConstraints.length) {
     unsupportedConstraints.push(...findUnrecognizedConstraints(intent));
@@ -214,9 +248,17 @@ export function compileDeterministicIntent(intent) {
       issue("COMMISSION_CAP_REQUIRED", "", "State the maximum commission and asset."),
     );
   }
-  if (!total) {
+  if (!settlement) {
     ambiguities.push(
-      issue("ALL_IN_CAP_REQUIRED", "", "State the maximum all-in debit and asset."),
+      issue(
+        side === "SELL"
+          ? "MIN_NET_PROCEEDS_REQUIRED"
+          : "MAX_QUOTE_DEBIT_REQUIRED",
+        "",
+        side === "SELL"
+          ? "State the minimum quote-asset amount that must be received after commission."
+          : "State the maximum quote-asset total debit.",
+      ),
     );
   }
   if (!ttl) {
@@ -248,13 +290,13 @@ export function compileDeterministicIntent(intent) {
       ),
     );
   }
-  for (const value of [commission, total]) {
+  for (const value of [commission, settlement]) {
     if (product && value && value.asset !== product.quote_asset) {
       ambiguities.push(
         issue(
           "LIMIT_ASSET_MISMATCH",
           value.quote,
-          `Commission and all-in limits must be denominated in ${product.quote_asset}.`,
+          `Commission and settlement limits must be denominated in ${product.quote_asset}.`,
         ),
       );
     }
@@ -263,8 +305,8 @@ export function compileDeterministicIntent(intent) {
   if (unsupportedConstraints.length) {
     return validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v1",
-        taxonomy_version: "digital-asset-spot-order.v1",
+        schema_version: "delta.coinbase.compilation.v2",
+        taxonomy_version: "digital-asset-spot-order.v2",
         status: "UNSUPPORTED",
         policy: null,
         ambiguities: [],
@@ -277,8 +319,8 @@ export function compileDeterministicIntent(intent) {
   if (ambiguities.length) {
     return validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v1",
-        taxonomy_version: "digital-asset-spot-order.v1",
+        schema_version: "delta.coinbase.compilation.v2",
+        taxonomy_version: "digital-asset-spot-order.v2",
         status: "NEEDS_CLARIFICATION",
         policy: null,
         ambiguities,
@@ -297,13 +339,13 @@ export function compileDeterministicIntent(intent) {
     partialFillQuote,
     slippageQuote: slippageMatch[0],
     commission,
-    total,
+    settlement,
     ttl,
     onceQuote,
   };
   const compilation = {
-    schema_version: "delta.coinbase.compilation.v1",
-    taxonomy_version: "digital-asset-spot-order.v1",
+    schema_version: "delta.coinbase.compilation.v2",
+    taxonomy_version: "digital-asset-spot-order.v2",
     status: "READY_FOR_CONFIRMATION",
     policy: {
       venue: "COINBASE_ADVANCED",
@@ -328,9 +370,13 @@ export function compileDeterministicIntent(intent) {
           asset: commission.asset,
           value: commission.value,
         },
-        max_all_in_debit: {
-          asset: total.asset,
-          value: total.value,
+        settlement: {
+          kind:
+            side === "BUY"
+              ? "MAX_QUOTE_DEBIT"
+              : "MIN_NET_QUOTE_PROCEEDS",
+          asset: settlement.asset,
+          value: settlement.value,
         },
       },
       validity: {
@@ -386,8 +432,8 @@ export async function compileIntentWithOpenAI(
   if (sourceConstraintIssues.length) {
     const compilation = validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v1",
-        taxonomy_version: "digital-asset-spot-order.v1",
+        schema_version: "delta.coinbase.compilation.v2",
+        taxonomy_version: "digital-asset-spot-order.v2",
         status: "UNSUPPORTED",
         policy: null,
         ambiguities: [],
@@ -419,7 +465,7 @@ export async function compileIntentWithOpenAI(
         source_intent: intent,
         source_intent_digest: digest(intent),
         locale: "en-US",
-        taxonomy_version: "digital-asset-spot-order.v1",
+        taxonomy_version: "digital-asset-spot-order.v2",
       }),
       text: {
         verbosity: "low",

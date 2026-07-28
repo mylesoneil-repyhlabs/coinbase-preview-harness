@@ -1,0 +1,1 @@
+Using my isolated Coinbase Advanced portfolio, sell exactly 0.05000000 BTC on BTC-USD once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not accept more than 35 bps below Coinbase's fresh best bid, do not pay more than 4 USD in commission, and receive at least 3400 USD after commission. This authorization expires 3 minutes after I confirm it.

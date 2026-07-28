@@ -1,6 +1,25 @@
 *.pdf binary
 *.png binary
 
+# Never export local state, credential-shaped material, or repository-only
+# metadata even if one of these paths is accidentally added in a future commit.
+.gitignore export-ignore
+.gitattributes export-ignore
+.github export-ignore
+.delta-coinbase-guard-node export-ignore
+.env export-ignore
+.env.* export-ignore
+node_modules export-ignore
+runtime export-ignore
+tmp export-ignore
+credentials export-ignore
+artifacts export-ignore
+*.pem export-ignore
+*.key export-ignore
+*.jwk export-ignore
+*.p12 export-ignore
+*.pfx export-ignore
+
 # Historical faux-UI artifacts remain in git for provenance, but the
 # user-facing release ships only the authentic Codex recording kit and its
 # companion panels.

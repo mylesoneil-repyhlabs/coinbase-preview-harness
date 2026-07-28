@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "output", "coinbase-demo-panels");
+const capabilityOutput = path.join(
+  root,
+  "output",
+  "coinbase-v1.3-capability-panels",
+);
 
 const panels = [
   {
@@ -104,6 +109,105 @@ const panels = [
   },
 ];
 
+const capabilityPanels = [
+  {
+    id: "01",
+    duration: 15,
+    eyebrow: "V1.3 ACTION INVENTORY",
+    title: "One generic spot action, two sides",
+    titleLines: ["One generic spot action,", "two sides"],
+    accent: "#0052ff",
+    items: [
+      ["BUY", "Exact quote_size · fund with held quote"],
+      ["SELL", "Exact base_size · fund with held base"],
+      ["Pairs", "Validated from runtime SPOT metadata"],
+      ["Evidence", "Funds · market · Preview"],
+      ["Boundary", "Coinbase Create disabled"],
+    ],
+    footer: "THIS RECORDING USES FIXTURES · PRODUCT AVAILABILITY IS NOT CLAIMED",
+  },
+  {
+    id: "02",
+    duration: 18,
+    eyebrow: "GENERIC BUY · DRAFT",
+    title: "SOL-USDC becomes a closed BUY action",
+    titleLines: ["SOL-USDC becomes", "a closed BUY action"],
+    accent: "#0052ff",
+    items: [
+      ["Size", "quote_size = 250 USDC"],
+      ["Funding", "held USDC · required 252"],
+      ["Price", "fresh best ask · ≤25 bps above"],
+      ["Costs", "≤2 fee · ≤252 total debit"],
+      ["Authorization", "Pause on exact policy digest"],
+    ],
+    footer: "THE HARNESS DOES NOT AUTHORIZE ITS OWN DRAFT",
+  },
+  {
+    id: "03",
+    duration: 18,
+    eyebrow: "GENERIC BUY · RESULT",
+    title: "The exact BUY reaches a simulated PASS",
+    titleLines: ["The exact BUY reaches", "a simulated PASS"],
+    accent: "#067647",
+    items: [
+      ["Proposal", "SOL-USDC · BUY · quote_size"],
+      ["Funding", "USDC balance fixture bound"],
+      ["Preview", "Labeled fixture · not Coinbase data"],
+      ["Receipt", "Action + payload + evidence digests"],
+      ["Gate", "Verified PASS for this payload only"],
+    ],
+    footer: "COINBASE CONTACTED: FALSE · PRODUCTION DELTA: FALSE",
+  },
+  {
+    id: "04",
+    duration: 18,
+    eyebrow: "GENERIC SELL · DRAFT",
+    title: "BTC-USD becomes a closed SELL action",
+    titleLines: ["BTC-USD becomes", "a closed SELL action"],
+    accent: "#7a5af8",
+    items: [
+      ["Size", "base_size = 0.05 BTC"],
+      ["Funding", "held BTC · required 0.05"],
+      ["Price", "fresh best bid · ≤30 bps below"],
+      ["Settlement", "≤12 fee · ≥4,990 USD net"],
+      ["Authorization", "Pause on a new policy digest"],
+    ],
+    footer: "SELL USES BASE FUNDS; NO SILENT ASSET CONVERSION",
+  },
+  {
+    id: "05",
+    duration: 18,
+    eyebrow: "GENERIC SELL · RESULT",
+    title: "The exact SELL reaches a simulated PASS",
+    titleLines: ["The exact SELL reaches", "a simulated PASS"],
+    accent: "#067647",
+    items: [
+      ["Proposal", "BTC-USD · SELL · base_size"],
+      ["Funding", "BTC balance fixture bound"],
+      ["Preview", "Labeled fixture · not Coinbase data"],
+      ["Receipt", "Action + payload + evidence digests"],
+      ["Gate", "Verified PASS for this payload only"],
+    ],
+    footer: "COINBASE CREATE INVOKED: FALSE · NO MONEY MOVED",
+  },
+  {
+    id: "06",
+    duration: 15,
+    eyebrow: "SCOPE CONTROL",
+    title: "Unsupported actions stop; Create stays locked",
+    titleLines: ["Unsupported actions stop;", "Create stays locked"],
+    accent: "#b42318",
+    items: [
+      ["No coercion", "Transfer ≠ spot trade"],
+      ["Funding", "Different held asset cannot substitute"],
+      ["Preview warning", "REVIEW · gate remains locked"],
+      ["Payload change", "Invalidates the PASS binding"],
+      ["Execution", "Compile-time Create seam disabled"],
+    ],
+    footer: "TRANSFERS · STAKING · DERIVATIVES · RECURRING ORDERS: FUTURE",
+  },
+];
+
 function escapeXml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -112,7 +216,7 @@ function escapeXml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function panelSvg(panel, index) {
+function panelSvg(panel, index, sequence = panels) {
   const compactRows = panel.items.length > 5;
   const rowStep = compactRows ? 94 : 112;
   const rowHeight = compactRows ? 76 : 88;
@@ -126,7 +230,7 @@ function panelSvg(panel, index) {
 </g>`;
     })
     .join("\n");
-  const dots = panels
+  const dots = sequence
     .map(
       (_item, dot) =>
         `<circle cx="${282 + dot * 31}" cy="1018" r="${dot === index ? 7 : 5}" fill="${dot === index ? panel.accent : "#d0d5dd"}"/>`,
@@ -146,7 +250,7 @@ function panelSvg(panel, index) {
 <rect x="54" y="259" width="74" height="7" rx="3.5" fill="${panel.accent}"/>
 ${rows}
 <text x="54" y="958" fill="#475467" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="1">${escapeXml(panel.footer)}</text>
-<text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">${panel.id} / 06</text>
+<text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">${panel.id} / ${String(sequence.length).padStart(2, "0")}</text>
 ${dots}
 </svg>`;
 }
@@ -215,12 +319,27 @@ function overviewSvg() {
 </svg>`;
 }
 
-await mkdir(output, { recursive: true });
+await Promise.all([
+  mkdir(output, { recursive: true }),
+  mkdir(capabilityOutput, { recursive: true }),
+]);
 await Promise.all(
   panels.map((panel, index) =>
     writeFile(
       path.join(output, `${panel.id}-${panel.eyebrow.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}.svg`),
       panelSvg(panel, index),
+      "utf8",
+    ),
+  ),
+);
+await Promise.all(
+  capabilityPanels.map((panel, index) =>
+    writeFile(
+      path.join(
+        capabilityOutput,
+        `${panel.id}-${panel.eyebrow.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}.svg`,
+      ),
+      panelSvg(panel, index, capabilityPanels),
       "utf8",
     ),
   ),
@@ -239,7 +358,20 @@ await writeFile(
   )}\n`,
   "utf8",
 );
+await writeFile(
+  path.join(capabilityOutput, "timeline.json"),
+  `${JSON.stringify(
+    capabilityPanels.map(({ id, duration, title }) => ({
+      panel: id,
+      suggested_duration_seconds: duration,
+      title,
+    })),
+    null,
+    2,
+  )}\n`,
+  "utf8",
+);
 
 process.stdout.write(
-  `Generated one overview and ${panels.length} Coinbase companion panels in ${output}\n`,
+  `Generated one overview and ${panels.length} conditional-showcase panels in ${output}\nGenerated ${capabilityPanels.length} v1.3 capability panels in ${capabilityOutput}\n`,
 );

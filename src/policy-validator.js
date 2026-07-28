@@ -130,7 +130,7 @@ export function validatePolicy(policy) {
 
   assertExactFields(policy.size, ["denomination", "asset", "operator", "value"], "policy.size");
   assertEnum(policy.size.denomination, ["QUOTE", "BASE"], "policy.size.denomination");
-  if (policy.size.operator !== "EXACT") throw new Error("v1 requires an exact order size");
+  if (policy.size.operator !== "EXACT") throw new Error("v1.3 requires an exact order size");
   assertDecimal(policy.size.value, "policy.size.value");
   if (
     policy.side === "BUY" &&
@@ -147,29 +147,66 @@ export function validatePolicy(policy) {
 
   assertExactFields(
     policy.limits,
-    ["max_slippage_bps", "max_commission", "max_all_in_debit"],
+    ["max_slippage_bps", "max_commission", "settlement"],
     "policy.limits",
   );
   if (
     !Number.isInteger(policy.limits.max_slippage_bps) ||
     policy.limits.max_slippage_bps < 0 ||
-    policy.limits.max_slippage_bps > 10_000
+    policy.limits.max_slippage_bps > 9_999
   ) {
-    throw new Error("policy.limits.max_slippage_bps must be an integer from 0 to 10000");
+    throw new Error("policy.limits.max_slippage_bps must be an integer from 0 to 9999");
   }
-  for (const field of ["max_commission", "max_all_in_debit"]) {
-    const limit = policy.limits[field];
-    assertExactFields(limit, ["asset", "value"], `policy.limits.${field}`);
-    if (limit.asset !== policy.quote_asset) {
-      throw new Error(`policy.limits.${field}.asset must equal the quote asset`);
-    }
-    assertDecimal(limit.value, `policy.limits.${field}.value`, { positive: false });
+  const commission = policy.limits.max_commission;
+  assertExactFields(
+    commission,
+    ["asset", "value"],
+    "policy.limits.max_commission",
+  );
+  if (commission.asset !== policy.quote_asset) {
+    throw new Error(
+      "policy.limits.max_commission.asset must equal the quote asset",
+    );
+  }
+  assertDecimal(
+    commission.value,
+    "policy.limits.max_commission.value",
+    { positive: false },
+  );
+  const settlement = policy.limits.settlement;
+  assertExactFields(
+    settlement,
+    ["kind", "asset", "value"],
+    "policy.limits.settlement",
+  );
+  assertEnum(
+    settlement.kind,
+    ["MAX_QUOTE_DEBIT", "MIN_NET_QUOTE_PROCEEDS"],
+    "policy.limits.settlement.kind",
+  );
+  if (settlement.asset !== policy.quote_asset) {
+    throw new Error(
+      "policy.limits.settlement.asset must equal the quote asset",
+    );
+  }
+  assertDecimal(
+    settlement.value,
+    "policy.limits.settlement.value",
+    { positive: false },
+  );
+  if (
+    (policy.side === "BUY" &&
+      settlement.kind !== "MAX_QUOTE_DEBIT") ||
+    (policy.side === "SELL" &&
+      settlement.kind !== "MIN_NET_QUOTE_PROCEEDS")
+  ) {
+    throw new Error("policy settlement kind does not match the order side");
   }
   if (
     policy.side === "BUY" &&
-    compareDecimals(policy.limits.max_all_in_debit.value, policy.size.value) < 0
+    compareDecimals(settlement.value, policy.size.value) < 0
   ) {
-    throw new Error("max_all_in_debit cannot be below BUY principal");
+    throw new Error("MAX_QUOTE_DEBIT cannot be below BUY principal");
   }
 
   assertExactFields(policy.validity, ["starts", "ttl_seconds"], "policy.validity");
@@ -188,7 +225,7 @@ export function validatePolicy(policy) {
 
   assertExactFields(policy.usage, ["max_executions"], "policy.usage");
   if (policy.usage.max_executions !== 1) {
-    throw new Error("v1 policies must authorize exactly one execution");
+    throw new Error("v1.3 policies must authorize exactly one execution");
   }
   return policy;
 }
@@ -205,10 +242,10 @@ function validateIssues(items, name, requiredFields) {
 
 export function validateCompilation(compilation, sourceIntent) {
   assertExactFields(compilation, TOP_LEVEL_FIELDS, "compilation");
-  if (compilation.schema_version !== "delta.coinbase.compilation.v1") {
+  if (compilation.schema_version !== "delta.coinbase.compilation.v2") {
     throw new Error("unsupported compilation schema_version");
   }
-  if (compilation.taxonomy_version !== "digital-asset-spot-order.v1") {
+  if (compilation.taxonomy_version !== "digital-asset-spot-order.v2") {
     throw new Error("unsupported taxonomy_version");
   }
   assertEnum(
@@ -264,13 +301,17 @@ export function assertPolicyWithinSafetyProfile(policy, safetyProfile) {
   if (compareDecimals(policy.size.value, safetyProfile.max_principal) > 0) {
     failures.push("principal exceeds the local safety profile");
   }
-  if (
-    compareDecimals(
-      policy.limits.max_all_in_debit.value,
-      safetyProfile.max_all_in_debit,
-    ) > 0
-  ) {
-    failures.push("all-in debit exceeds the local safety profile");
+  if (policy.side === "BUY") {
+    if (
+      compareDecimals(
+        policy.limits.settlement.value,
+        safetyProfile.max_all_in_debit,
+      ) > 0
+    ) {
+      failures.push("all-in debit exceeds the local safety profile");
+    }
+  } else {
+    failures.push("SELL is not enabled by the future live safety profile");
   }
   if (
     compareDecimals(policy.limits.max_commission.value, safetyProfile.max_commission) > 0
@@ -287,5 +328,41 @@ export function assertPolicyWithinSafetyProfile(policy, safetyProfile) {
     failures.push("execution count exceeds the local safety profile");
   }
   if (failures.length) throw new Error(`Policy exceeds safety profile: ${failures.join("; ")}`);
+  return true;
+}
+
+export function assertPolicyWithinPreviewCapability(
+  policy,
+  capabilityProfile,
+) {
+  validatePolicy(policy);
+  assertPlainObject(capabilityProfile, "preview capability profile");
+  const failures = [];
+  if (capabilityProfile.create_enabled !== false) {
+    failures.push("preview capability must keep Create disabled");
+  }
+  if (!capabilityProfile.allowed_product_types?.includes(policy.product_type)) {
+    failures.push("product type is outside the preview capability");
+  }
+  if (!capabilityProfile.allowed_sides?.includes(policy.side)) {
+    failures.push("side is outside the preview capability");
+  }
+  if (!capabilityProfile.allowed_order_types?.includes(policy.order_type)) {
+    failures.push("order type is outside the preview capability");
+  }
+  if (policy.limits.max_slippage_bps > capabilityProfile.max_slippage_bps) {
+    failures.push("slippage exceeds the preview capability");
+  }
+  if (policy.validity.ttl_seconds > capabilityProfile.max_ttl_seconds) {
+    failures.push("validity exceeds the preview capability");
+  }
+  if (policy.usage.max_executions > capabilityProfile.max_executions) {
+    failures.push("execution count exceeds the preview capability");
+  }
+  if (failures.length) {
+    throw new Error(
+      `Policy exceeds preview capability: ${failures.join("; ")}`,
+    );
+  }
   return true;
 }

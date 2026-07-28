@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { compareDecimals } from "../decimal.js";
 import { digest } from "../evidence.js";
 import { extractSimulatedCoinbaseEvidence } from "./coinbase-evidence.js";
 import {
@@ -59,23 +60,60 @@ export function evaluateSimulatedCoinbasePolicy(parameters, evidence) {
       "the order is not immediate-or-cancel",
     ],
     [
-      evidence.quote_size_microunits ===
-        parameters.exact_quote_size_microunits,
-      "the quote size differs from the exact authorized amount",
+      evidence.size_field === parameters.size_field,
+      "the Coinbase size field differs from the authorized side",
     ],
     [
-      evidence.slippage_bps <= parameters.max_slippage_bps,
+      evidence.size_value === parameters.exact_size_value,
+      "the size differs from the exact authorized amount",
+    ],
+    [
+      evidence.funding_asset === parameters.funding_asset,
+      "the funding asset differs from the authorized source asset",
+    ],
+    [
+      evidence.action_descriptor_digest ===
+        parameters.action_descriptor_digest,
+      "the canonical action descriptor differs from authorization",
+    ],
+    [
+      evidence.limit_price_within_bound === true,
+      "the exact Coinbase limit price exceeds the authorized side-specific bound",
+    ],
+    [
+      evidence.slippage_within_limit === true &&
+        evidence.slippage_bps <= parameters.max_slippage_bps,
       "estimated slippage exceeds the authorized cap",
     ],
     [
-      evidence.commission_microunits <=
-        parameters.max_commission_microunits,
+      evidence.commission_within_limit === true &&
+        compareDecimals(
+          evidence.commission_value,
+          parameters.max_commission_value,
+        ) <= 0,
       "estimated commission exceeds the authorized cap",
     ],
     [
-      evidence.all_in_debit_microunits <=
-        parameters.max_all_in_debit_microunits,
-      "estimated all-in debit exceeds the authorized cap",
+      evidence.settlement_kind === parameters.settlement_kind &&
+        evidence.settlement_within_limit === true &&
+        (parameters.settlement_kind === "MAX_QUOTE_DEBIT"
+          ? compareDecimals(
+              evidence.settlement_value,
+              parameters.settlement_value,
+            ) <= 0
+          : compareDecimals(
+              evidence.settlement_value,
+              parameters.settlement_value,
+            ) >= 0),
+      "estimated settlement value violates the authorized bound",
+    ],
+    [
+      evidence.funding_sufficient === true &&
+        compareDecimals(
+          evidence.funding_available,
+          evidence.funding_required,
+        ) >= 0,
+      "available Coinbase funds do not cover the authorized action",
     ],
     [
       evidence.portfolio_fingerprint ===
@@ -125,6 +163,10 @@ export function evaluateSimulatedCoinbasePolicy(parameters, evidence) {
       evidence.product_disabled === false,
       "the Coinbase product is disabled",
     ],
+    [
+      evidence.view_only === false,
+      "the Coinbase product is view-only",
+    ],
   ];
 
   return checks.flatMap(([passed, reason], index) =>
@@ -147,7 +189,7 @@ export class SimulatedMandateAdapter {
 
   async submitPolicy(source) {
     if (source !== COINBASE_SPOT_POLICY_SOURCE) {
-      throw new Error("The simulator accepts only the pinned Coinbase V1 policy");
+      throw new Error("The simulator accepts only the pinned Coinbase V2 policy");
     }
     const policyId = `sim-policy-${digest(source)}`;
     this.policies.set(policyId, source);

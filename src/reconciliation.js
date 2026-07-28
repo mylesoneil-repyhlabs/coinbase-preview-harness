@@ -1,11 +1,13 @@
 import {
   addDecimals,
   compareDecimals,
+  divideDecimals,
   isPositiveDecimal,
   isSlippageWithinBps,
   isWithinDecimalTolerance,
   multiplyDecimals,
   parseDecimal,
+  subtractDecimals,
 } from "./decimal.js";
 
 const PENDING_STATUSES = new Set([
@@ -59,6 +61,16 @@ function requireFillCount(value) {
 }
 
 function selectOrder(order) {
+  const configuration = order.order_configuration?.sor_limit_ioc ?? {};
+  const selectedConfiguration = {
+    ...(configuration.quote_size === undefined
+      ? {}
+      : { quote_size: configuration.quote_size }),
+    ...(configuration.base_size === undefined
+      ? {}
+      : { base_size: configuration.base_size }),
+    limit_price: configuration.limit_price,
+  };
   return {
     order_id: order.order_id,
     client_order_id: order.client_order_id,
@@ -82,10 +94,7 @@ function selectOrder(order) {
     reject_message: order.reject_message,
     cancel_message: order.cancel_message,
     order_configuration: {
-      sor_limit_ioc: {
-        quote_size: order.order_configuration?.sor_limit_ioc?.quote_size,
-        limit_price: order.order_configuration?.sor_limit_ioc?.limit_price,
-      },
+      sor_limit_ioc: selectedConfiguration,
     },
   };
 }
@@ -116,12 +125,13 @@ function assertOrderBinding(order, createPayload, expectedOrderId) {
   }
   const expectedConfiguration = createPayload.order_configuration?.sor_limit_ioc;
   const actualConfiguration = order.order_configuration?.sor_limit_ioc;
+  const sizeField = createPayload.side === "BUY" ? "quote_size" : "base_size";
   if (
     !isObject(expectedConfiguration) ||
     !isObject(actualConfiguration) ||
     compareDecimals(
-      actualConfiguration.quote_size,
-      expectedConfiguration.quote_size,
+      actualConfiguration[sizeField],
+      expectedConfiguration[sizeField],
     ) !== 0 ||
     compareDecimals(
       actualConfiguration.limit_price,
@@ -162,18 +172,20 @@ function evaluateActualConstraints(order, fills, policy, market, createPayload) 
     "order.completion_percentage",
     { nonnegative: true },
   );
-  requireDecimal(order.filled_size, "order.filled_size", {
+  const filledSize = requireDecimal(order.filled_size, "order.filled_size", {
     nonnegative: true,
   });
   if (compareDecimals(completionPercentage, "100") > 0) {
     throw new Error("order.completion_percentage cannot exceed 100");
   }
 
-  if (compareDecimals(filledValue, policy.size.value) > 0) {
+  const actualPrincipal =
+    policy.side === "BUY" ? filledValue : filledSize;
+  if (compareDecimals(actualPrincipal, policy.size.value) > 0) {
     failures.push({
       code: "ACTUAL_PRINCIPAL_EXCEEDED",
       expected: policy.size.value,
-      actual: filledValue,
+      actual: actualPrincipal,
     });
   }
   if (compareDecimals(totalFees, policy.limits.max_commission.value) > 0) {
@@ -183,27 +195,58 @@ function evaluateActualConstraints(order, fills, policy, market, createPayload) 
       actual: totalFees,
     });
   }
-  const calculatedAllIn = addDecimals(filledValue, totalFees);
-  const actualAllIn =
-    compareDecimals(calculatedAllIn, totalValueAfterFees) >= 0
-      ? calculatedAllIn
-      : totalValueAfterFees;
-  if (
-    compareDecimals(actualAllIn, policy.limits.max_all_in_debit.value) > 0
-  ) {
-    failures.push({
-      code: "ACTUAL_ALL_IN_DEBIT_EXCEEDED",
-      expected: policy.limits.max_all_in_debit.value,
-      actual: actualAllIn,
-    });
+  let actualSettlement;
+  if (policy.side === "BUY") {
+    const calculatedAllIn = addDecimals(filledValue, totalFees);
+    actualSettlement =
+      compareDecimals(calculatedAllIn, totalValueAfterFees) >= 0
+        ? calculatedAllIn
+        : totalValueAfterFees;
+    if (
+      compareDecimals(
+        actualSettlement,
+        policy.limits.settlement.value,
+      ) > 0
+    ) {
+      failures.push({
+        code: "ACTUAL_MAX_QUOTE_DEBIT_EXCEEDED",
+        expected: policy.limits.settlement.value,
+        actual: actualSettlement,
+      });
+    }
+  } else {
+    const calculatedNet = subtractDecimals(filledValue, totalFees);
+    actualSettlement =
+      compareDecimals(calculatedNet, totalValueAfterFees) <= 0
+        ? calculatedNet
+        : totalValueAfterFees;
+    const proportionalFloor = divideDecimals(
+      multiplyDecimals(
+        policy.limits.settlement.value,
+        completionPercentage,
+      ),
+      "100",
+      { scale: 18 },
+    );
+    if (compareDecimals(actualSettlement, proportionalFloor) < 0) {
+      failures.push({
+        code: "ACTUAL_MIN_NET_PROCEEDS_NOT_MET",
+        expected: proportionalFloor,
+        actual: actualSettlement,
+      });
+    }
   }
 
   if (isPositiveDecimal(averagePrice)) {
     const limitPrice =
       createPayload.order_configuration.sor_limit_ioc.limit_price;
-    if (compareDecimals(averagePrice, limitPrice) > 0) {
+    const limitComparison = compareDecimals(averagePrice, limitPrice);
+    if (
+      (policy.side === "BUY" && limitComparison > 0) ||
+      (policy.side === "SELL" && limitComparison < 0)
+    ) {
       failures.push({
-        code: "ACTUAL_LIMIT_PRICE_EXCEEDED",
+        code: "ACTUAL_LIMIT_PRICE_VIOLATION",
         expected: limitPrice,
         actual: averagePrice,
       });
@@ -211,15 +254,16 @@ function evaluateActualConstraints(order, fills, policy, market, createPayload) 
     if (
       !isSlippageWithinBps(
         averagePrice,
-        market.best_ask,
+        policy.side === "BUY" ? market.best_ask : market.best_bid,
         policy.limits.max_slippage_bps,
-        "BUY",
+        policy.side,
       )
     ) {
       failures.push({
         code: "ACTUAL_SLIPPAGE_EXCEEDED",
         expected_bps: policy.limits.max_slippage_bps,
-        reference_best_ask: market.best_ask,
+        reference_price:
+          policy.side === "BUY" ? market.best_ask : market.best_bid,
         actual: averagePrice,
       });
     }
@@ -248,14 +292,16 @@ function evaluateActualConstraints(order, fills, policy, market, createPayload) 
       fillNotional,
       multiplyDecimals(fill.price, fill.size),
     );
+    const fillLimitComparison = compareDecimals(
+      fill.price,
+      createPayload.order_configuration.sor_limit_ioc.limit_price,
+    );
     if (
-      compareDecimals(
-        fill.price,
-        createPayload.order_configuration.sor_limit_ioc.limit_price,
-      ) > 0
+      (policy.side === "BUY" && fillLimitComparison > 0) ||
+      (policy.side === "SELL" && fillLimitComparison < 0)
     ) {
       failures.push({
-        code: "FILL_LIMIT_PRICE_EXCEEDED",
+        code: "FILL_LIMIT_PRICE_VIOLATION",
         expected:
           createPayload.order_configuration.sor_limit_ioc.limit_price,
         actual: fill.price,
@@ -298,7 +344,8 @@ function evaluateActualConstraints(order, fills, policy, market, createPayload) 
   return {
     verdict: failures.length ? "BREACH" : "PASS",
     failures,
-    actual_all_in_debit: actualAllIn,
+    settlement_kind: policy.limits.settlement.kind,
+    actual_settlement_value: actualSettlement,
     observed_fill_commission: fillCommission,
     observed_fill_size: fillSize,
     observed_fill_notional: fillNotional,

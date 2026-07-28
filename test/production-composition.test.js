@@ -25,7 +25,7 @@ function fakeDependencies() {
   };
 }
 
-test("public V1 hard-disables real Coinbase Create at the compile-time seam", async () => {
+test("public v1.3 hard-disables real Coinbase Create at the compile-time seam", async () => {
   assert.deepEqual(productionExecutionStatus(), {
     enabled: false,
     code: "ENGINEERING_INTEGRATION_REQUIRED",

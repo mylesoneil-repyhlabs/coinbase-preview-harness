@@ -30,7 +30,7 @@ const SCOPE_FIELDS = Object.freeze([
   "plan_id",
   "plan_digest",
   "policy_digest",
-  "safety_profile",
+  "capability_profile",
   "credential_binding",
 ]);
 
@@ -75,7 +75,7 @@ function credentialBinding(attestation) {
   if (
     binding.jwt_profile !== JWT_PROFILE ||
     binding.can_view !== true ||
-    binding.can_trade !== true ||
+    typeof binding.can_trade !== "boolean" ||
     binding.can_transfer !== false ||
     binding.can_receive !== false ||
     typeof binding.portfolio_fingerprint !== "string" ||
@@ -90,7 +90,7 @@ function credentialBinding(attestation) {
 
 export function createBoundExecution(plan, attestation, confirmPolicyDigest) {
   if (
-    plan?.schema_version !== "delta.coinbase.execution_plan.v1" ||
+    plan?.schema_version !== "delta.coinbase.execution_plan.v2" ||
     plan?.status !== "AWAITING_HUMAN_CONFIRMATION" ||
     digest(plan.policy) !== plan.policy_digest
   ) {
@@ -102,17 +102,17 @@ export function createBoundExecution(plan, attestation, confirmPolicyDigest) {
   const bindingId = randomUUID();
   const planDigest = digest(plan);
   const authorizationScope = {
-    schema_version: "delta.coinbase.execution_scope.v1",
+    schema_version: "delta.coinbase.execution_scope.v2",
     binding_id: bindingId,
     plan_id: plan.plan_id,
     plan_digest: planDigest,
     policy_digest: plan.policy_digest,
-    safety_profile: plan.safety_profile,
+    capability_profile: plan.capability_profile,
     credential_binding: credentialBinding(attestation),
   };
   const executionDigest = digest(authorizationScope);
   return {
-    schema_version: "delta.coinbase.bound_execution.v1",
+    schema_version: "delta.coinbase.bound_execution.v2",
     binding_id: bindingId,
     created_at: new Date().toISOString(),
     status: "AWAITING_HUMAN_CONFIRMATION",
@@ -139,7 +139,7 @@ export function assertBoundExecution(
 ) {
   assertExactFields(boundExecution, BOUND_FIELDS, "bound execution");
   if (
-    boundExecution.schema_version !== "delta.coinbase.bound_execution.v1" ||
+    boundExecution.schema_version !== "delta.coinbase.bound_execution.v2" ||
     boundExecution.status !== "AWAITING_HUMAN_CONFIRMATION"
   ) {
     throw new Error("Bound execution is not ready for confirmation");
@@ -161,13 +161,13 @@ export function assertBoundExecution(
   );
   const scope = boundExecution.authorization_scope;
   if (
-    scope.schema_version !== "delta.coinbase.execution_scope.v1" ||
+    scope.schema_version !== "delta.coinbase.execution_scope.v2" ||
     scope.binding_id !== boundExecution.binding_id ||
     scope.plan_id !== boundExecution.plan.plan_id ||
     scope.plan_digest !== boundExecution.plan_digest ||
     scope.policy_digest !== boundExecution.plan.policy_digest ||
-    digest(scope.safety_profile) !==
-      digest(boundExecution.plan.safety_profile) ||
+    digest(scope.capability_profile) !==
+      digest(boundExecution.plan.capability_profile) ||
     digest(scope) !== boundExecution.execution_digest
   ) {
     throw new Error("Bound execution authorization scope mismatch");
@@ -205,7 +205,7 @@ export async function writeBoundExecution(boundExecution) {
 export async function readBoundExecution(filePath) {
   const raw = await readFile(path.resolve(filePath), "utf8");
   const boundExecution = JSON.parse(raw);
-  if (boundExecution.schema_version !== "delta.coinbase.bound_execution.v1") {
+  if (boundExecution.schema_version !== "delta.coinbase.bound_execution.v2") {
     throw new Error("Unsupported bound execution schema");
   }
   return boundExecution;

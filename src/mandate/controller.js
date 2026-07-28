@@ -8,9 +8,37 @@ import {
   isTerminalMandateStatus,
 } from "./contract.js";
 import { toDeltaWireAttributes } from "./coinbase-policy.js";
+import { digest } from "../evidence.js";
 
 const sleep = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function decisionReceipt({
+  decision,
+  policyId,
+  intentId,
+  actionRecord,
+  status,
+  proof,
+  verified,
+}) {
+  const payload = {
+    schema_version: "delta.coinbase.decision_receipt.v2",
+    artifact_class: "SIMULATED_DELTA_CONTRACT",
+    decision,
+    policy_id: policyId,
+    intent_id: intentId,
+    action_descriptor_digest:
+      actionRecord?.action_descriptor?.descriptor_digest ?? null,
+    exact_payload_digest:
+      actionRecord?.create_payload_digest ?? null,
+    evidence_digest: actionRecord?.evidence_digest ?? null,
+    constraint_failures: status?.constraint_failures ?? [],
+    verified,
+    proof_digest: proof == null ? null : digest(proof),
+  };
+  return { ...payload, receipt_digest: digest(payload) };
+}
 
 async function poll({
   read,
@@ -81,7 +109,7 @@ export async function evaluateMandateCandidate({
         assertProposalBinding(current.proposal, solution);
       }
       if (
-        ["success", "failure", "expired"].includes(current.status) &&
+        ["success", "failure", "review", "expired"].includes(current.status) &&
         current.intent_id !== intentId
       ) {
         throw new Error("Delta status is not bound to the authorized intent");
@@ -96,8 +124,22 @@ export async function evaluateMandateCandidate({
   });
 
   if (status.status !== "success") {
+    const decision =
+      status.status === "failure" || status.status === "expired"
+        ? "BLOCK"
+        : "REVIEW";
+    const receipt = decisionReceipt({
+      decision,
+      policyId,
+      intentId,
+      actionRecord,
+      status,
+      proof: null,
+      verified: false,
+    });
     return {
       status: status.status,
+      decision,
       policy_id: policyId,
       intent_id: intentId,
       proposal: status.proposal ?? null,
@@ -106,6 +148,7 @@ export async function evaluateMandateCandidate({
       reason: status.reason ?? null,
       proof: null,
       verified: false,
+      receipt,
     };
   }
   assertProposalBinding(status.proposal, solution);
@@ -148,8 +191,18 @@ export async function evaluateMandateCandidate({
     evidenceBindings: requiredProofEvidenceBindings,
   });
 
+  const receipt = decisionReceipt({
+    decision: "PASS",
+    policyId,
+    intentId,
+    actionRecord,
+    status,
+    proof,
+    verified: true,
+  });
   return {
     status: "success",
+    decision: "PASS",
     policy_id: policyId,
     intent_id: intentId,
     proposal: status.proposal,
@@ -158,12 +211,20 @@ export async function evaluateMandateCandidate({
     reason: null,
     proof,
     verified: true,
+    receipt,
   };
 }
 
 export function mandateDisposition(result, attempt, maxAttempts) {
+  const decision =
+    result?.decision ??
+    (result?.status === "success"
+      ? "PASS"
+      : result?.status === "failure"
+        ? "BLOCK"
+        : "REVIEW");
   if (
-    result?.status === "success" &&
+    decision === "PASS" &&
     result.verified === true &&
     result.proof &&
     typeof result.proof === "object"
@@ -171,7 +232,7 @@ export function mandateDisposition(result, attempt, maxAttempts) {
     return "EXECUTE";
   }
   if (
-    result?.status === "failure" &&
+    decision === "BLOCK" &&
     Array.isArray(result.constraint_failures) &&
     result.constraint_failures.length > 0 &&
     attempt < maxAttempts

@@ -115,7 +115,7 @@ const semanticallyDifferentSources = [
     "more than 0.40 USDC in commission",
   ],
   [
-    "policy.limits.max_all_in_debit.value",
+    "policy.limits.settlement.value",
     (intent) => intent.replace("5.50 USDC total", "6.00 USDC total"),
     "more than 6.00 USDC total",
   ],

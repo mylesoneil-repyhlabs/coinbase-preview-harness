@@ -1,134 +1,173 @@
-# Delta Coinbase Guard V1 — engineering handoff
+# Delta Coinbase Guard v1.3 — engineering handoff
 
-This is the start-here document for replacing the local delta simulator with the real delta Mandate runtime without rebuilding the Coinbase harness.
+This is the start-here contract for replacing the checked-in Coinbase and Delta
+simulators with trusted production components without rebuilding the guard.
 
-The integration was mapped against `Repyh-Labs/delta-mandate` `main`
-(workspace version `0.8.0`) on 2026-07-24, including the current vocabulary
-migration introduced in commit
-`bd26d3ce529e0e0f71a21b5e7aac468ffe75f017`. Re-check the listed paths before
-implementation if `main` has moved.
+The public Repyh Labs organization does not expose the private Delta Mandate
+implementation needed to validate concrete policy syntax, service paths, proof
+types, or deployment topology. This document therefore describes the narrow
+application contract implemented by this repository. It does **not** claim that
+the private Delta code already implements this Coinbase domain. Engineering
+must validate every Delta mapping against the actual private codebase before
+enabling Create.
 
-### The invariant
+## The invariant
 
-The model may propose an action. It must never decide whether that action executes.
+The model may interpret intent, inspect allowlisted Coinbase data, and propose a
+candidate. It must never authorize or execute its own proposal.
 
-Coinbase `Create Order` may be called only when a trusted, deterministic executor has:
+Coinbase Create Order is eligible only if a trusted deterministic executor has:
 
-1. received a terminal `success` from the delta Orchestrator;
-2. received `outcome: "success"` and the matching `Proof` from an independently operated delta Verifier;
-3. verified that the policy ID, signed intent ID, proposal solution, and exact Coinbase Create payload are the same artifacts that were authorized and evaluated;
-4. atomically consumed one execution-grant record binding the plan and
-   successful Delta intent; and
-5. re-checked expiry, portfolio, credential, preview freshness, and payload digest immediately before submission.
+1. the user's authenticated authorization of the closed policy and the
+   credential-scoped execution binding;
+2. one immutable Coinbase action record containing fresh market, funding, and
+   Preview evidence;
+3. a terminal Delta `PASS` for that exact record and a matching independently
+   verified proof;
+4. an unexpired one-time grant that binds the exact serialized Create body; and
+5. a transactionally successful consumption of that grant immediately before
+   submission.
 
-Every other state is fail-closed. No model instruction, tool result, timeout, unavailable verifier, malformed proof, or “likely safe” fallback can bypass this predicate.
+Every other state stops: `BLOCK`, `REVIEW`, missing evidence, Preview warnings,
+timeouts, unavailable services, malformed artifacts, stale data, digest
+mismatches, or uncertain submission. No prompt or agent tool result can relax
+that predicate.
 
-### Public V1 boundary
+## What v1.3 implements now
 
-The checked-in V1 supports natural-language planning, structured policy review,
-digest confirmation, credential-free simulation, immutable execution
-confirmation, and a Coinbase Preview probe. It cannot call Coinbase Create.
+The checked-in build supports:
 
-`src/integration/production-composition.js` is the only production composition
-seam. Its public V1 export always fails with
-`ENGINEERING_INTEGRATION_REQUIRED` before an execution command reads Coinbase
-credentials. There is no dynamic adapter path or runtime configuration that can
-enable execution. The module keeps a non-exported execution capability in its
-closure; both the LIVE pipeline and the Coinbase Create transport reject every
-caller that does not carry that exact capability.
+- natural-language compilation into a closed
+  `digital-asset-spot-order.v2` policy;
+- explicit policy and credential-scoped authorization digests;
+- Coinbase Advanced Trade **SPOT BUY and SELL** actions;
+- runtime validation of the requested pair, product flags, increments, and
+  size bounds rather than an ETH-specific allowlist;
+- exact BUY `quote_size` and SELL `base_size`;
+- a held-funds check using the quote asset for BUY or base asset for SELL,
+  with no silent conversion;
+- authenticated View-only List Accounts, Get Product, Best Bid/Ask, and
+  Preview through the REST adapter;
+- deterministic proposal and Preview checks with `PASS`, `BLOCK`, and
+  `REVIEW`;
+- an action descriptor, funding evidence, payload digests, decision receipt,
+  and bounded retry controller;
+- a production-shaped seven-operation Delta adapter port; and
+- a compile-time Create lock.
 
-The CLI confirms that supplied digests match the reviewed artifacts; it does
-not authenticate the human who supplied them. The current chat host must
-require a new user-authored message for each digest. A production integration
-must replace that procedural attribution with an authenticated Delta-native
-approval or signer session.
+The current implementation does not support transfers, Convert, recurring
+orders, percentages of balance, unrestricted market orders, GTC orders,
+staking, leverage, margin, derivatives, on-chain execution, or multi-action
+strategies. Product availability is resolved from fresh Coinbase product data;
+do not hardcode a public pair count.
 
-### Minimum integration without a rebuild
+The v1.2 plan format is not accepted. Recompile the original natural-language
+intent under v1.3 so BUY/SELL denomination, settlement semantics, funding, and
+the canonical action descriptor are bound explicitly.
 
-Engineering should:
+## Public Coinbase basis
 
-1. keep the compiler, plan/binding formats, fixed Coinbase order builder,
-   exact-byte checks, deterministic controller, reconciliation, and recovery;
-2. implement `CoinbaseSpotHooks`, the authenticated immutable action registry,
-   and deterministic Coinbase evidence extraction;
-3. connect the existing seven-operation adapter port to a real signer,
-   Orchestrator, and operationally independent Verifier;
-4. replace `src/integration/production-composition.js` in source with those
-   internal components;
-5. inject an isolated transactional execution-grant store whose only writer is
-   the trusted executor;
-6. return the module-private `LIVE_EXECUTION_CAPABILITY` from that reviewed
-   composition without exporting it or adding a runtime minting path; and
-7. keep Create disabled through the complete shadow and acceptance suite.
+The required exchange surfaces are documented as normal Advanced Trade v3
+endpoints:
 
-Do not add a runtime-loaded JavaScript adapter. An in-process module label or
-file hash cannot prove that the adapter, signer, evidence, or grant store is
-independent from the agent.
+- [endpoint and permission matrix](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/rest-api);
+- [List Accounts](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/accounts/list-accounts);
+- [Get Product](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/products/get-product);
+- [Preview Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders);
+- [Create Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order); and
+- [CDP API-key authentication](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication).
 
-## 1. Start-here system map
+Coinbase documents List Accounts, product/market reads, and Preview as View
+operations; Create requires Trade. The public
+[Coinbase CLI/MCP](https://docs.cdp.coinbase.com/coinbase-for-agents/overview)
+also exposes both `orders_preview` and mutating `orders_create`. A production
+agent topology must put an allowlisted read/Preview proxy in front of the
+agent-facing MCP or use this repository's pinned REST adapter. Merely asking
+the model not to call a mutating MCP tool is not an execution boundary.
+
+No key, live Coinbase response, Coinbase MCP session, private Delta service, or
+real order was used to validate this public build.
+
+## System map
 
 ```mermaid
 flowchart LR
-  U["User\nnatural-language request"] --> C["Harness\nclosed-schema compiler"]
-  C --> H["Host presents policy + digest\nnew authenticated user approval"]
-  H --> S["Trusted Delta-native signer\noutside agent process"]
-  S --> I["SignedIntent\nid + policy_id + attrs"]
+  U["User request"] --> C["Closed policy compiler"]
+  C --> A["Authenticated user authorization"]
+  A --> D["Canonical action descriptor"]
 
-  A["Agent / Coinbase MCP\nread and propose only"] --> P["Trusted executor\none Preview + exact Create bytes"]
-  P --> AR["Authenticated action registry\nimmutable content-addressed record"]
-  I --> O["delta Orchestrator"]
-  AR --> O
-  O --> PH["Coinbase PolicyHooks"]
-  PH --> E["Coinbase evidence service\nregistry resolution + deterministic extraction"]
-  AR --> E
-  E --> O
-  O --> Z["Policy evaluation + SP1 proof"]
-  Z --> V["Independent delta Verifier"]
+  M["Agent with allowlisted Coinbase reads"] --> P["Candidate proposer"]
+  P --> X["Trusted controller"]
+  D --> X
+  X --> F["Accounts / held-funds evidence"]
+  X --> B["Product + best bid/ask"]
+  X --> V["Coinbase Preview"]
 
-  V --> G["Trusted execution guard\ndeterministic predicate"]
-  AR --> G
-  H --> G
-  G -->|"verified success only"| X["Coinbase Create Order\nTrade credential"]
-  G -->|"anything else"| B["Block or deterministic retry"]
-  X --> R["Reconcile by client_order_id"]
+  F --> R["Frozen action record"]
+  B --> R
+  V --> R
+  R --> T["Delta policy + evidence evaluation"]
+  T --> Q["Independent proof verification"]
+  Q --> G["Deterministic one-time gate"]
+
+  G -->|"PASS + exact binding only"| E["Isolated Coinbase executor"]
+  G -->|"BLOCK / REVIEW / mismatch"| S["Stop or bounded retry"]
+  E --> O["Coinbase Create Order"]
+  O --> Y["Reconcile by client_order_id"]
 ```
 
-Trust boundaries:
+The agent does not receive the Trade key, write the action registry, issue a
+Delta result, consume a grant, or call Create.
 
-- The user authorizes the `parameters` of a delta `Policy` through an
-  authenticated host/signer boundary; the resulting `Intent` is submitted as a
-  `SignedIntent`.
-- The agent supplies only a `Proposal { solution: String }`. It does not supply authoritative evidence or an execution decision.
-- `PolicyHooks` declares the Coinbase evidence schema and builds the `ExtractionRequest`.
-- The evidence service resolves the proposal and derives evidence from trusted Coinbase data.
-- `policy_engine::evaluate_policy` is the authoritative constraint check.
-- The Verifier independently verifies the `Proof`.
-- The trusted executor owns the Coinbase write credential and is the only component allowed to call `Create Order`.
+## Canonical v1.3 action
 
-## 2. Real delta lifecycle the adapter must preserve
+`src/spot-action.js` turns the authorized policy into
+`delta.coinbase.spot_action.v1`. Its digest covers:
 
-The production adapter must map to the current delta lifecycle as-is:
+- venue, execution domain, and exact SPOT pair;
+- BUY or SELL;
+- SOR limit IOC and partial-fill policy;
+- exact side-specific size field, asset, and value;
+- funding source, asset, required available amount, and
+  `conversion_allowed: false`;
+- price reference and direction;
+- slippage, commission, and settlement limits; and
+- one-use validity.
 
-| Step | Current delta operation | Required binding |
-|---|---|---|
-| Compile/register policy | `POST /policies` with `Content-Type: text/plain` | Response is the content-addressed `PolicyId` |
-| Authorize | Construct and sign `Intent { id, policy_id, attrs }` | Submit the resulting `SignedIntent` to `POST /intents` |
-| Propose | `POST /intents/{id}/proposal` with exactly `{ "solution": "…" }` | Solution identifies the frozen Coinbase action |
-| Observe | `GET /intents/{id}/status` | `open`, `processing`, `success`, `failure`, or `expired` |
-| Verify outcome | Verifier `GET /intents/{id}` | Must return the matching successful intent and proposal |
-| Retrieve proof | Verifier `GET /proofs/{id}` | `Proof { sp1_proof, evidence, signed_intent, proposal }` |
-| Execute | Local trusted executor | Only after all bindings and one-time controls pass |
+The side-specific economics are intentional:
 
-Current delta vocabulary is important:
+| Side | Order size | Held funding | Price reference | Settlement rule |
+| --- | --- | --- | --- | --- |
+| BUY | Exact `quote_size` | Quote asset | Fresh best ask | Maximum quote debit |
+| SELL | Exact `base_size` | Base asset | Fresh best bid | Minimum net quote proceeds |
 
-- Policy source declares `parameters { ... }`; expressions reference `parameters.foo`.
-- The compiled type is `Policy`.
-- The domain extension seam is `PolicyHooks`.
-- Runtime domain selection is `PolicyKind`.
-- User authorization remains an `Intent` submitted as a `SignedIntent`, with parameter values carried in `attrs`.
-- The successful artifact is a `Proof`; delta core does not currently return a separate `ALLOW`, `BLOCK`, “receipt,” or JTI object.
+All monetary values cross the v1.3 Delta seam as canonical decimal strings.
+This avoids forcing an eight-decimal base-asset SELL into a universal
+six-decimal integer scale.
 
-The harness adapter interface in `src/mandate/contract.js` intentionally mirrors this lifecycle:
+## Current trust boundaries
+
+| Component | Current public-build status | Production disposition |
+| --- | --- | --- |
+| `src/intent-compiler.js` | Implemented | Keep upstream of authorization; retain strict grounding and clarification |
+| `src/plan.js` and `src/spot-action.js` | Implemented | Keep artifact formats; authenticate user approval |
+| `src/execution-binding.js` and `src/execution-confirmation.js` | Implemented, digest-based | Keep exact binding; replace procedural chat attribution with authenticated approval |
+| `src/coinbase-rest.js` | Read/Preview implemented | Run with a dedicated View-only key in an allowlisted process |
+| `src/funding.js`, `src/market.js`, `src/execution-policy.js` | Deterministic checks implemented | Keep; validate against real response fixtures and fail closed on schema drift |
+| `src/mandate/coinbase-policy.js` | Narrow simulated contract | Validate and compile against the private Delta policy engine |
+| `src/mandate/coinbase-solution.js` | Strict simulation envelope | Keep only for tests; production uses an authenticated action registry |
+| `src/mandate/coinbase-evidence.js` | Deterministic simulator extractor | Replace with independently trusted evidence extraction |
+| `src/mandate/simulated-adapter.js` | Test double | Never compose into live execution |
+| `src/mandate/orchestrator-adapter.js` | Production-shaped port | Connect only after validation against private Delta APIs and types |
+| `src/mandate/controller.js` | Deterministic gate and receipt | Keep; bind actual verified proof semantics |
+| `src/execution-pipeline.js` | Full flow; public LIVE capability unavailable | Keep as trusted controller/executor orchestration |
+| `src/integration/production-composition.js` | Always fails closed | Replace only in a reviewed internal build |
+| Durable execution-grant store | Interface only | Implement transactionally outside agent-writable state |
+| Coinbase Create adapter | Implemented behind private capability | Run only in isolated executor after acceptance |
+
+## Delta adapter contract
+
+The application port is:
 
 ```text
 submitPolicy
@@ -140,530 +179,215 @@ getVerificationOutcome
 getProof
 ```
 
-`prepareProposal` is the application-level action-registry handoff; it is not a
-Delta HTTP endpoint. `src/mandate/orchestrator-adapter.js` is the replacement
-seam. Its injected `signer.signIntent(...)` and
-`actionRegistry.registerAction(...)` are harness-local ports. Engineering
-should implement them with the production signing and registry paths and should
-replace the hand-written HTTP calls with the team's generated clients where
-available.
+`authorizeIntent` must return a signed intent bound to the exact policy ID,
+intent ID, and typed parameters. `prepareProposal` must register the frozen
+action record in authenticated append-only storage and return a content-addressed
+locator. The untrusted agent must not choose or overwrite that locator.
 
-## 3. What to reuse and what to replace
+The checked-in HTTP adapter models a policy submission, signed-intent
+submission, proposal submission, status, verifier outcome, and proof retrieval.
+Those paths and payload shapes are integration hypotheses until checked against
+the private Delta implementation. Preserve the application port even if the
+private clients or wire vocabulary differ.
 
-| Harness component | Disposition | Why |
-|---|---|---|
-| `src/intent-compiler.js` and closed input schema | Reuse | Keeps natural-language interpretation upstream of the security boundary |
-| `src/plan.js`, policy digest, and confirmation UX | Reuse the artifact format; integrate authenticated approval | Produces a reviewable authorization artifact, but the CLI alone does not authenticate a human |
-| `src/execution-confirmation.js` | Reuse the exact binding and fixed-expiry semantics | Prevents restarting the 120-second window; production approval should sign or otherwise authenticate the same binding |
-| `src/mandate/coinbase-policy.js` | Reuse as the V1 contract, then compile in real `PolicyHooks` tests | Already uses current `parameters` vocabulary, integer units, and a fixed policy |
-| `src/mandate/coinbase-solution.js` | Keep as strict simulation fixture logic | The embedded envelope is deliberately simulation-only; production uses a content-addressed registry locator |
-| `src/mandate/controller.js` | Reuse | Keeps execute/retry/stop deterministic and outside the agent |
-| `src/execution-pipeline.js` | Reuse | Owns final payload freezing, one-time consumption, Coinbase submission, and recovery; its public LIVE entrypoint requires the private composition capability |
-| `src/coinbase-rest.js` | Reuse | Public adapter exposes reads and Preview only; the separate Create adapter requires the same private composition capability |
-| `src/mandate/contract.js` | Reuse | Enforces adapter shape and proof/intent/proposal binding |
-| `src/mandate/simulated-adapter.js` | Replace at composition root | Test double only; it performs no real signature verification, evidence extraction, or SP1 proving |
-| `src/mandate/coinbase-evidence.js` | Keep only as simulator fixture logic | Production evidence must come from an independently trusted service, not proposal claims |
-| `src/mandate/orchestrator-adapter.js` | Complete and inject | This is the production delta seam |
-| `src/integration/production-composition.js` | Replace in source in the internal engineering build | Public V1 is hard-disabled before credentials; this is the only live composition seam |
-| Production execution-grant store | Implement behind the injected `consumeGrant`, `markGrant`, and `readGrant` ports | Public V1 ships no default live store, so execution cannot fall back to agent-writable local state |
-| Legacy custom signed `ALLOW` path | Removed | The live pipeline has one production-shaped Mandate path and no alternate decision primitive |
+The authoritative production result must be derived from actual Delta
+evaluation and proof verification. This public repository's
+`PASS`/`BLOCK`/`REVIEW` receipt is an application artifact, not evidence that
+Delta core currently exposes that exact decision vocabulary.
 
-The intended adapter change is small:
+## Decision and retry semantics
 
-```text
-createSimulatedMandateAdapter(...)
-              ↓
-createOrchestratorMandateAdapter({
-  orchestratorUrl,
-  verifierUrl,
-  signer,
-  actionRegistry,
-  ...
-})
-```
+There are three separate decision stages:
 
-No policy, proposal, Coinbase order, reconciliation, or recovery code should
-need to be rewritten. Wire the real adapter and durable grant-store hooks
-inside `src/integration/production-composition.js` at build time. Keep the
-public hard-disabled implementation for external builds, return its
-module-private `LIVE_EXECUTION_CAPABILITY` only from the reviewed internal
-composition, and keep the built-in simulator fixed to in-memory adapters.
+1. **Local proposal check.** A schema, pair, side, size, order-type, increment,
+   or price-bound mismatch is `BLOCK`.
+2. **Coinbase Preview check.** Preview errors or violated economics are
+   `BLOCK`; any nonempty Coinbase warning is `REVIEW`; otherwise the Preview
+   check is `PASS`.
+3. **Delta check.** Only terminal successful evaluation, matching independent
+   verification, nonempty proof material, and exact proof bindings produce
+   `PASS`. A terminal constraint failure or expiry is `BLOCK`; a bound terminal
+   adapter `review` becomes `REVIEW` with no proof or execution eligibility.
+   Infrastructure, timeout, proof, or artifact failures stop fail-closed and
+   must not be reclassified as authorization.
 
-## 4. Required delta-main implementation
+The terminal `review` state is part of this repository's application adapter
+contract. It is not a claim that private Delta already exposes that vocabulary;
+engineering must validate or map the actual runtime result explicitly.
 
-### 4.1 Add the Coinbase policy domain
+The controller can retry only a candidate-level constraint failure and only
+within an explicit attempt bound. The helper enforces 1–10 attempts and defaults
+to three; the showcase uses a smaller fixed bound. `REVIEW` is always `STOP`.
 
-In `Repyh-Labs/delta-mandate`:
+This repository does not claim that the private Delta runtime reopens one
+signed intent for multiple proposals. Production must select and test one:
 
-1. Add `orchestrator/server/src/policy_hooks/coinbase_spot.rs`.
-   - Implement the existing `PolicyHooks` trait.
-   - Build one fixed, static `EvidenceSchema`.
-   - Build the corresponding `ExtractionSchema` from the same field specification.
-   - Compile and validate only the intended Coinbase V1 policy shape.
-   - Build `ExtractionRequest { solution, attributes }` from the submitted `Proposal`.
-   - Return indexed `ConstraintFailure` data through the existing evaluation path; do not create a second decision vocabulary.
-2. Export the module from `orchestrator/server/src/policy_hooks.rs`.
-3. Add `CoinbaseSpot` to `PolicyKind` in `orchestrator/server/src/config.rs`.
-4. Instantiate `CoinbaseSpotHooks` in the `policy_hooks(...)` composition function in `orchestrator/server/src/main.rs`.
-5. Configure this Orchestrator instance with the Coinbase evidence extractor URL.
+- refine locally, then submit one final candidate to Delta;
+- authorize a fresh signed intent for each retry; or
+- implement an authenticated bounded-proposal window in Delta.
 
-`PolicyKind` and `evidence_extractor_url` are process-level configuration today. Unless engineering first changes that architecture, deploy Coinbase as its own Orchestrator instance rather than attempting to mix Shopify, Kalshi, and Coinbase policies in one process.
+Retry must never reuse a successful grant or resubmit after an uncertain Create.
 
-Use `orchestrator/server/src/policy_hooks/kalshi_wc26.rs` as the closest implementation precedent: it derives both schema views from one specification, passes `proposal.solution` to extraction, compiles fixed policy examples in unit tests, and preserves indexed failures.
+## Action registry and evidence service
 
-### 4.2 Add tests in the repository's expected layers
-
-Follow `AGENTS.md`:
-
-- Domain schema, policy compilation, extraction request, allowed-values, and failure-explanation tests belong beside `coinbase_spot.rs`.
-- Orchestrator business behavior should be exercised through `AppState` in `orchestrator/server/src/state.rs`; test doubles live in `orchestrator/server/src/state/tests/helpers.rs`.
-- Add a full lifecycle case under `orchestrator/e2e/`: policy submission, `SignedIntent`, proposal, extraction, evaluation, proof, Verifier success.
-- Add golden checks for every constraint index so a policy edit cannot silently change the meaning of a returned failure.
-
-Do not put Coinbase business logic in Axum endpoints. Current convention is conversion at the HTTP boundary and business behavior under state/domain components, with `snafu` error enums mapped to HTTP at the edge.
-
-### 4.3 OpenAPI and generated clients
-
-Adding a `PolicyKind` and `PolicyHooks` implementation does not itself change the public HTTP API. If no endpoint or response shape changes, do not create API churn.
-
-If retry semantics or any wire type changes:
-
-1. update the endpoint/type implementation;
-2. regenerate `orchestrator/openapi/orchestrator-openapi.json` using the server's `--openapi` path;
-3. regenerate and commit affected clients/specs using the repository's existing generators; and
-4. update the e2e and downstream consumer fixtures in the same change.
-
-### 4.4 Preserve repository quality gates
-
-The implementation must pass the repository's formatting, dependency sorting, warnings-as-errors build, Clippy, feature-matrix tests, and no-SP1 real-binary e2e gates. Preserve the workspace prohibitions on unsafe code, unreachable public items, and unused dependencies.
-
-## 5. Production Coinbase evidence service
-
-Create a deterministic Coinbase-specific evidence service adjacent to delta Mandate. This is not present in `delta-mandate` today. Use `Repyh-Labs/evidence-layer-kalshi` as the service-layout precedent, especially:
-
-- `src/extraction.ts`
-- `src/types.ts`
-- `src/schemas.ts`
-- `docs/openapi.yaml`
-- `tests/extraction.test.ts`
-- `tests/server.test.ts`
-
-Keep the existing delta evidence `/extract` contract unchanged. The Orchestrator's `PolicyHooks` should send the current `ExtractionRequest`; the service should return only the requested, schema-valid evidence attributes.
-
-### Evidence rules
-
-1. Evidence is deterministic. No LLM is in the evidence path.
-2. Coinbase amounts are integers in fixed units:
-   - quote amounts and fees: microunits;
-   - slippage: integer basis points;
-   - timestamps: integer epoch milliseconds.
-3. V1 evidence fields are flat `bool`, `int`, or `string` values. Do not put objects, arrays, floating-point numbers, or nullable values into the V1 schema.
-4. Reject unknown locator versions, missing registry records, mutable or
-   overwritten records, unknown/extra fields, digest mismatches, stale evidence,
-   and unsupported order configurations.
-5. Treat the simulation envelope and every embedded `claimed_evidence` value as
-   untrusted input. Production extraction accepts only a registry record
-   authenticated as originating from the trusted executor.
-6. Use a trusted service clock for `evaluated_at_epoch_ms`.
-7. Return a hard extraction error when required Coinbase data cannot be obtained. Do not synthesize “online,” `false`, zero, or other permissive defaults.
-
-### Production solution and action-registry contract
-
-Production uses this content-addressed solution:
+The production `prepareProposal` contract expects:
 
 ```text
 coinbase-order://proposal/v1/{sha256-of-canonical-action-record}
 ```
 
-This is an integration-specific convention carried inside Delta's existing
-`Proposal.solution` string; it is not a new Delta API. The digest identifies the
-entire `delta.coinbase.evaluation_request.v1` record, which contains the exact
-Create object and serialized bytes, Create digest, exact Preview request and
-digest, one trusted Preview result, market snapshot, collection timestamps, and
-portfolio/credential fingerprints.
+The registry must recompute the record digest, write it append-only, and return
+both that locator and the same digest. Only the trusted controller can write;
+the Delta evidence service receives read-only resolution access.
 
-The harness port is:
+The frozen `delta.coinbase.evaluation_request.v2` includes:
+
+- plan, policy, authorization, and action-descriptor bindings;
+- normalized market and complete account/funding evidence;
+- the selected Coinbase Preview evidence;
+- the exact Preview request and its digest;
+- the exact prospective Create object and serialized UTF-8 bytes;
+- the Create-body digest; and
+- portfolio and credential fingerprints.
+
+The production extractor must independently validate registry provenance,
+strict field sets, freshness, product tradability, funding sufficiency,
+Preview/Create consistency, and every digest. It must derive evidence
+deterministically without an LLM and must never accept the simulator's embedded
+claims as authoritative.
+
+The required proof binding set is exactly:
 
 ```text
-registerAction(actionRecord) -> {
-  solution,
-  action_record_digest
-}
+product_id
+action_descriptor_digest
+funding_evidence_digest
+preview_id
+create_payload_digest
+preview_request_digest
+portfolio_fingerprint
+credential_fingerprint
 ```
 
-The registry must:
+The controller also requires a matching intent, policy, typed attributes, and
+proposal locator. The isolated executor recomputes the serialized body digest
+immediately before submission; the transport must report the digest of bytes it
+sent. A missing or mismatched transport digest becomes
+`SUBMISSION_UNCERTAIN`, followed by reconciliation—never blind resubmission.
 
-1. accept records only from the authenticated trusted executor, never from the
-   agent or model-facing Coinbase MCP;
-2. validate the exact closed action-record schema and recompute every nested
-   digest before storage;
-3. compute `action_record_digest` over the same canonical JSON algorithm used by
-   `digest(actionRecord)`;
-4. store the record append-only under that digest and reject any attempted
-   overwrite or digest collision;
-5. return exactly
-   `coinbase-order://proposal/v1/{action_record_digest}` plus the matching
-   `action_record_digest`; and
-6. expose authenticated read-by-locator to the evidence service with an
-   auditable registration identity and timestamp.
+See [the evidence contract](COINBASE-EVIDENCE-CONTRACT.md) for the field-level
+mapping.
 
-The trusted executor calls Coinbase Preview exactly once, freezes the resulting
-Preview ID into the exact Create body, and registers that immutable record.
-The evidence service resolves that same record; it must not issue a second
-Preview with a potentially different ID or economics. It independently
-schema-checks the record, recomputes the Preview request from the Create payload,
-recomputes all digests and policy fields with exact decimal arithmetic, verifies
-freshness and trusted provenance, and returns only the requested flat evidence.
+## Credential and process isolation
 
-The simulator intentionally uses an embedded
-`coinbase-advanced://order/v1/...?...` envelope so it can run without a registry.
-That parser is not a production compatibility path.
+Use two independently scoped credentials:
 
-### V1 policy parameters
+- a **View-only** key for accounts, product/market reads, and Preview; and
+- a future **View + Trade** key available only to the trusted executor.
 
-The human-authorized `parameters` should remain:
+Both must be restricted to the intended portfolio and must lack transfer
+authority. The agent never sees the Trade key. The evidence service and Delta
+Verifier must not share the executor's write credential.
 
-| Parameter | Meaning |
-|---|---|
-| `product_id` | Exact Coinbase product, for example `ETH-USDC` |
-| `base_asset` / `quote_asset` | Exact asset pair |
-| `side` | Exact authorized side |
-| `exact_quote_size_microunits` | Exact quote amount, not a model-selected maximum |
-| `max_slippage_bps` | Maximum independently calculated slippage |
-| `max_commission_microunits` | Maximum Coinbase commission |
-| `max_all_in_debit_microunits` | Maximum total debit |
-| `portfolio_fingerprint` | Authorized Coinbase portfolio binding |
-| `credential_fingerprint` | Authorized execution credential binding |
-| `expires_at_epoch_ms` | Hard authorization deadline |
+The checked-in file validator requires an absolute external path, owner-only
+mode, ECDSA P-256 material, short-lived request-bound JWTs, and fresh
+permission verification. It persists fingerprints and permission booleans, not
+secret material or the key path. Verify the live Coinbase key-permissions
+response schema in shadow before treating credential setup as accepted.
 
-The signer must encode these into delta `attrs` using the policy-engine `ObjectValue` wire representation. The current harness conversion is in `toDeltaWireAttributes(...)`; compare its output byte-for-byte with the production client during contract tests.
+## Durable one-time execution
 
-Keep V1 narrow. The current order contract is a bounded SOR limit, immediate-or-cancel spot order. Add materially different actions—such as base-denominated sells or a different Coinbase order configuration—as new policy and solution versions, with their own fixtures and human-readable authorization text.
+The production grant store must implement the existing `consumeGrant`,
+`markGrant`, and `readGrant` ports with:
 
-### V1 evidence ownership
+- an authenticated writer available only to the trusted executor;
+- a transactional unique key for the plan and successful Delta intent;
+- bindings to the confirmation, proposal, proof, Preview, Create-body digest,
+  portfolio, credential, and deadlines;
+- durable states across restart; and
+- a read-only recovery path keyed by `client_order_id`.
 
-| Evidence group | Authoritative source |
-|---|---|
-| Product, assets, side, order type, time in force, quote size | Parsed exact Create payload |
-| Preview ID and Preview/Create consistency | Single trusted Preview frozen in the immutable action record plus exact Create payload |
-| Slippage, commission, all-in debit | Frozen trusted Preview and market snapshot; all-in is `max(order_total, quote_size + commission_total)` |
-| Market status and disabled flags | Frozen trusted Coinbase product response |
-| Create and Preview-request digests | Extractor recomputation over canonical bytes |
-| Portfolio binding | Trusted Coinbase read result plus final executor check |
-| Credential binding | Non-secret credential identity plus final executor check |
-| Evaluation timestamp | Evidence-service clock |
+Do not use an agent-writable file, in-memory map, Redis command without a
+transactional uniqueness guarantee, or a model-supplied “already executed”
+flag as the production one-use boundary.
 
-`usage_index == 1` is a simulator convenience unless backed by a trusted attempt ledger. The current `ExtractionRequest` contains `solution` and requested attributes, not an intent ID. Do not ship an extractor that returns a constant `1`. Either:
+## Acceptance checklist
 
-- remove that evidence constraint and rely on the Orchestrator's proposal state
-  plus the executor's single atomic execution-grant record; or
-- introduce a trusted proposal/attempt registry that can establish the value independently.
+### Policy and authorization
 
-## 6. Signing and credential boundaries
+- [ ] Validate the v1.3 policy parameters and evidence types against the actual
+      private Delta compiler.
+- [ ] Preserve BUY quote sizing and maximum debit.
+- [ ] Preserve SELL base sizing and minimum net proceeds.
+- [ ] Preserve exact pair, assets, side, one use, and expiry.
+- [ ] Authenticate the human authorization of both policy and
+      credential-scoped execution digests.
+- [ ] Reject all v1.2 artifacts and all unsupported action taxonomies.
 
-Keep these credentials in separate trust zones:
+### Coinbase reads and Preview
 
-| Secret/capability | May be visible to agent or Coinbase MCP? | Owner |
-|---|---:|---|
-| Public market/account read tools | Yes, if scoped read-only | Agent-facing Coinbase MCP |
-| Trusted-executor Coinbase read/Preview credential | No | Trusted executor |
-| delta signing key or passkey session | No | Trusted signer / explicit authorization UX |
-| Coinbase Trade credential | No | Trusted local executor |
-| Transfer/withdrawal capability | No and not required | Must not be granted |
+- [ ] Validate View-only key permissions against a real isolated-account
+      response without persisting secrets.
+- [ ] Validate account pagination, duplicate cursors, active/ready account
+      flags, and held funding in the exact asset.
+- [ ] Validate product flags, increments, min/max sizes, and bid/ask freshness
+      across several real SPOT pairs.
+- [ ] Run BUY and SELL shadow Previews and pin side-specific response semantics.
+- [ ] Confirm Preview `errs`, `warning`, `preview_id`, `order_total`,
+      `quote_size`, `base_size`, commission, and estimated-fill behavior.
+- [ ] Treat every schema change, warning, stale value, or mismatch fail-closed.
 
-### delta signer requirements
+### Delta and evidence
 
-The production signer must:
-
-1. authenticate a fresh user approval or a previously authorized signer
-   session through the team's approved trust boundary;
-2. bind that approval to the exact reviewed policy digest, execution digest,
-   key/portfolio binding, and non-renewable expiry represented by the local
-   confirmation receipt;
-3. generate a fresh caller-assigned `Intent.id`;
-4. bind the exact returned `PolicyId`;
-5. bind the exact `attrs` produced from the reviewed structured policy;
-6. JCS-canonicalize the `Intent` per RFC 8785;
-7. produce one of delta's supported real signature forms; and
-8. return a `SignedIntent` whose `id`, `policy_id`, and `attrs` are checked again by the adapter before submission.
-
-`primitives::SignedIntent::sign` in `crates/primitives/src/types.rs` is gated for tests/test helpers. Do not build production signing around that helper. Use the team's production signing client/service or the relevant `delta_crypto` production primitives.
-
-The `authorization` object passed into the harness signer port is local context for enforcing UX/session rules. It is not part of the delta Orchestrator wire API unless engineering deliberately includes its values in signed `attrs`.
-
-### Coinbase executor requirements
-
-- The agent-facing process cannot possess or invoke the Trade credential.
-- The executor must accept a frozen payload, not free-form order fields.
-- Immediately before Create, it must recompute the exact payload digest and match it to verified proof evidence.
-- It must re-check the local portfolio and execution-credential fingerprints.
-- It must atomically create one execution-grant record keyed by plan ID and
-  bound to the successful Delta intent before calling Coinbase.
-- Public V1 deliberately provides no default live grant store. Production must
-  inject `consumeGrant`, `markGrant`, and `readGrant` through the trusted
-  composition seam, backed by an isolated transactional store with a unique
-  plan-ID constraint. Only the trusted executor may write it; neither the agent
-  process nor the model-facing MCP may create, replace, or delete grants.
-- A network error after submission is `SUBMISSION_UNCERTAIN`; reconcile by `client_order_id` and never blind-retry Create.
-
-## 7. Current retry mismatch
-
-The product vision says: one human authorization, agent proposes, delta returns pass/fail, and a failed candidate is retried until one passes.
-
-Current delta core does not support multiple constraint-failing proposals under one `SignedIntent`:
-
-- evidence extraction failure reopens the intent in `orchestrator/server/src/job.rs`;
-- a policy-constraint failure is terminal;
-- proof-generation failure is terminal; and
-- a second proposal against a terminal intent conflicts.
-
-An extraction failure reopening to `open` is infrastructure recovery, not the desired agent constraint-retry behavior.
-
-Engineering must choose one of these explicit V1 semantics:
-
-### Option A — no core change, fastest
-
-Run deterministic local preflight checks while the agent iterates. Submit only the final candidate once to real delta. If real delta still returns a constraint failure, stop and require a new authorization.
-
-- Advantage: no delta storage/state changes.
-- Cost: intermediate retries are not authoritative delta evaluations.
-
-### Option B — new signed intent per failed candidate
-
-Each retry creates a fresh intent ID and `SignedIntent`.
-
-- Advantage: works with current core.
-- Cost: requires a new user signature or a separately authorized signing capability for every attempt; the audit trail spans multiple intents.
-
-### Option C — add bounded attempt semantics to delta core
-
-Preserve one authorized intent while recording immutable proposal attempts. A constraint failure records the attempt and reopens the intent until a signed maximum-attempt count or expiry is reached.
-
-At minimum this requires coordinated changes to:
-
-- `orchestrator/server/src/state/intents.rs`
-- `orchestrator/server/src/state/proposals.rs`
-- `orchestrator/server/src/job.rs`
-- `orchestrator/server/src/storage.rs`
-- `orchestrator/server/src/storage/delta.rs`
-- `orchestrator/server/src/storage/sql.rs`
-- public status/types and `crates/primitives/src/types.rs` if attempt data is exposed
-- `openapi/orchestrator-openapi.json` and generated clients
-- state, recovery, concurrency, and e2e tests
-
-Required invariants for Option C:
-
-- exactly one proposal is processing at a time;
-- every failed attempt remains immutable and queryable;
-- failures cannot be overwritten by later success;
-- attempt count and expiry are signed constraints, not agent inputs;
-- only the exact successful proposal may execute;
-- concurrent submissions cannot both be accepted; and
-- recovery after restart preserves the attempt ledger.
-
-Until one option is selected, do not describe “retry until pass under one
-authorization” as implemented. The generic controller has a deterministic
-retry classifier and attempt-loop helper, but the checked-in simulation and
-Preview paths each evaluate one candidate, and public execution is disabled.
-Current Delta core determines which multi-attempt semantics can be wired
-truthfully.
-
-## 8. SP1 proposal-commitment caveat
-
-The current SP1 guest in `crates/policy_engine_program/src/main.rs` commits:
-
-1. `policy_id`;
-2. the hash of signed intent attributes; and
-3. the evidence hash.
-
-It does not commit `Proposal.solution` directly. `Proof` contains the proposal, and `verifier/server/src/proof.rs` verifies the three current public values, but the proposal itself is outside those SP1 public values.
-
-For V1 without a guest change, execution is safe only if:
-
-- trusted extraction recomputes evidence from the exact Create bytes identified by the solution;
-- evidence includes the exact Create payload digest;
-- the policy requires all digest/Preview consistency checks;
-- the Verifier-returned proof and outcome contain the same proposal solution; and
-- the executor recomputes the exact outgoing Create-body digest and compares it to verified proof evidence before submission.
-
-Do not rely only on equality of the proposal object wrapped beside the proof.
-
-For stronger cryptographic binding, add a proposal/solution hash to SP1 public values. That change must be coordinated across:
-
-- `crates/policy_engine_program/src/main.rs`
-- `orchestrator/server/src/proof.rs`
-- `verifier/server/src/proof.rs`
-- proof fixtures, SP1 artifacts/keys, and full-stack tests
-
-This hardening is separable from the adapter swap, but it should be decided before claiming that the proof itself commits the exact Coinbase action.
-
-## 9. Adapter replacement sequence
-
-Use this order to minimize rework:
-
-1. **Freeze contract fixtures.** Commit one passing and several failing policy/parameter/solution/evidence fixtures from this harness.
-2. **Compile the policy in real hooks.** Add `CoinbaseSpotHooks` and prove the harness policy compiles against its evidence schema.
-3. **Build the registry and deterministic extraction.** Resolve the exact
-   content-addressed action record through real `/extract`; make the same
-   fixtures pass/fail without Coinbase Trade access in the evidence service.
-4. **Run real delta with mock proving.** Exercise policy → `SignedIntent` → proposal → status → Verifier proof locally.
-5. **Implement the authenticated approval and signer port.** Bind and compare
-   the reviewed policy digest, execution digest, fixed receipt expiry, policy
-   ID, intent ID, and exact `attrs`.
-6. **Replace the compile-time composition seam.** Wire
-   `OrchestratorMandateAdapter` and an isolated durable grant store inside
-   `src/integration/production-composition.js`, and return that module's private
-   `LIVE_EXECUTION_CAPABILITY` with the reviewed dependencies. Keep Coinbase
-   Create disabled and compare simulator and real-delta results for the golden
-   fixtures.
-7. **Confirm exact proof-evidence-to-payload verification.** The harness
-   already enforces the complete binding set; contract-test it against real
-   Verifier responses before any Trade credential is loaded.
-8. **Select retry semantics.** Implement and document Option A, B, or C above.
-9. **Run shadow Preview tests.** Real Coinbase reads and Preview, real delta evaluation, no Create.
-10. **Enable one tiny hard-coded live profile.** Authenticated Delta-native
-    approval, fixed short TTL, isolated portfolio, no transfer permission, and
-    reconciliation by `client_order_id`.
-
-## 10. Acceptance checklist
-
-### Contract and policy
-
-- [ ] The Coinbase policy compiles through real `CoinbaseSpotHooks`.
-- [ ] Every parameter and evidence field has one type, unit, owner, and source.
-- [ ] No floating-point monetary value crosses the policy/evidence boundary.
-- [ ] Unknown policy fields and unknown solution fields fail closed.
-- [ ] Constraint-index golden tests detect policy reordering or semantic drift.
-- [ ] The simulator and real policy engine agree on all committed fixtures.
-
-### Signing and authorization
-
-- [ ] The production approval boundary authenticates the human or an explicitly
-      authorized signer session; CLI digest equality is not treated as
-      authentication.
-- [ ] A real `SignedIntent` verifies in the Orchestrator.
-- [ ] Mutating intent ID, policy ID, or any `attrs` value after signing is rejected.
-- [ ] The signer cannot be invoked by an untrusted agent tool.
-- [ ] Expired authorization cannot reach Coinbase Create.
-- [ ] Replaying `confirm-execution` or any later command cannot restart the
-      receipt's fixed authorization window.
-- [ ] The displayed human policy and signed `attrs` have a tested byte-level mapping.
-
-### Evidence and proof
-
-- [ ] Evidence is derived only from an authenticated immutable registry record;
-      a simulation envelope or model-supplied claim cannot produce a pass.
-- [ ] Registry registration returns the exact content-addressed locator and
-      digest, records cannot be overwritten, and extraction never issues a
-      second Coinbase Preview for the candidate.
-- [ ] Wrong pair, asset, side, amount, order type, time in force, portfolio, or credential fails.
-- [ ] Excess slippage, commission, or all-in debit fails.
-- [ ] Stale/missing Preview, Preview/Create mismatch, digest mismatch, disabled product, and offline market fail.
-- [ ] Verifier unavailable, failure, expired, malformed response, or mismatched proof fails closed.
-- [ ] Orchestrator and Verifier use distinct origins, independently scoped
-      credentials, and an operational separation reviewed by engineering.
-- [ ] Proof policy ID, signed intent ID, typed attributes, proposal solution,
-      product ID, Preview ID, Create-body digest, Preview-request digest,
-      portfolio fingerprint, and credential fingerprint all match the frozen
-      local artifacts.
-- [ ] Extraction failure is bounded and observable; it cannot become an infinite poll or an execution pass.
+- [ ] Implement authenticated, append-only action registration.
+- [ ] Implement deterministic evidence extraction from trusted records.
+- [ ] Validate real signed-intent, status, verifier, and proof shapes.
+- [ ] Verify proof cryptography in an operationally independent component.
+- [ ] Cover all eight proof bindings and intentional tamper cases.
+- [ ] Define and test bounded retry using the private runtime's actual
+      lifecycle.
 
 ### Execution and recovery
 
-- [ ] A spy Create adapter proves that no failure path invokes Coinbase Create.
-- [ ] The exact serialized body evaluated by Delta is the body submitted to
-      Coinbase, and the Coinbase transport reports the matching sent-body
-      digest.
-- [ ] One atomic execution-grant record consumes the plan and binds the
-      confirmation receipt, successful Delta intent, proposal, and exact
-      Create-body digest.
-- [ ] Duplicate/concurrent execution attempts cannot both submit.
-- [ ] A multi-host executor uses a transactional shared store with a unique
-      plan-ID constraint, accepts writes only from the trusted executor, and
-      does not treat local `open(..., "wx")` as distributed atomicity.
-- [ ] Trade credential and delta signing secret never appear in model context, logs, receipts, fixtures, or proposal solution.
-- [ ] Post-submit timeout becomes `SUBMISSION_UNCERTAIN` and reconciles by `client_order_id`.
-- [ ] Restart recovery cannot re-submit an order whose outcome is unknown.
+- [ ] Keep the agent-facing key View-only.
+- [ ] Keep the Trade key in an isolated executor with no transfer authority.
+- [ ] Implement transactional one-time grant consumption.
+- [ ] Preserve byte-for-byte Preview/Create binding.
+- [ ] Make `SUBMISSION_UNCERTAIN` reconciliation-only.
+- [ ] Confirm `client_order_id` duplicate and recovery behavior in shadow.
+- [ ] Keep Create disabled through all prior stages.
 
-### Repository acceptance
+### Validation
 
-- [ ] Delta formatting, sort, build, lint, feature-matrix, unit, and e2e checks pass.
-- [ ] Evidence-service schema/OpenAPI, extraction, and server tests pass.
-- [ ] Generated Delta OpenAPI clients are used or the engineering owner records
-      why the hand-written transport remains appropriate.
-- [ ] Registry/evidence golden fixtures cover a passing action and every
-      fail-closed binding mutation.
-- [ ] Harness unit, adapter-contract, bypass, and recovery tests pass.
-- [ ] Documentation names current core types: `Policy`, `PolicyHooks`, `PolicyKind`, `Intent`, `SignedIntent`, and `Proof`.
-- [ ] No documentation claims that the simulator performs real delta verification.
-- [ ] A tiny real Coinbase Preview shadow run passes through real hooks,
-      registry, extraction, Orchestrator, Verifier, and Proof with Create
-      disabled.
-- [ ] The public build proves `ENGINEERING_INTEGRATION_REQUIRED` occurs before
-      Coinbase credentials are read and that no runtime configuration can
-      enable Create.
-- [ ] The internal build wires the reviewed real adapter and durable grant
-      store only through `src/integration/production-composition.js`; it does
-      not expose an arbitrary runtime-loaded adapter.
+- [ ] Unit tests cover multiple BUY and SELL pairs, USD and USDC funding,
+      eight-decimal base sizes, unsupported actions, missing funds, product
+      flags, Preview error/warning, tampering, expiry, and replay.
+- [ ] Contract tests cover the actual private Delta adapter and independent
+      Verifier.
+- [ ] End-to-end shadow tests use View-only credentials and never call Create.
+- [ ] Logs, reports, recordings, and failure messages contain no key material.
+- [ ] Independent security review signs off on credential isolation, evidence
+      authority, proof binding, grant atomicity, and recovery.
 
-## 11. Staged rollout
+## Staged rollout
 
-| Stage | delta path | Coinbase path | Exit criterion |
-|---|---|---|---|
-| 0. Contract lock | Simulator plus real policy compilation | Fixtures only | Simulator and real engine agree |
-| 1. Real delta shadow | Real Orchestrator, extraction, mock proof, Verifier | Real reads/Preview; Create disabled | All pass/fail and binding tests green |
-| 2. Proof shadow | SP1 proof and independent Verifier | Real reads/Preview; Create disabled | Stable proof latency and no unexplained divergence |
-| 3. Internal tiny live | Real delta and selected retry semantics | Hard-coded minimal order profile | Successful submit and reconciliation with complete audit artifact |
-| 4. Internal skill | Same trusted services | Team users; isolated credentials | Bypass testing and operational runbook complete |
-| 5. External decision | Hosted or local architecture chosen | Customer-scoped credentials | Security, authn/authz, rate limits, tenancy, and support model approved |
+1. **Public simulation:** no credentials, simulated Coinbase and simulated
+   Delta, Create locked.
+2. **Credentialed shadow:** isolated View-only key, real reads and Preview,
+   deterministic local decision, Create locked.
+3. **Private Delta shadow:** real signed intent, evaluation, evidence, Verifier,
+   and proof; View-only Coinbase key; Create locked.
+4. **Executor rehearsal:** isolated future Trade key, real grant store, exact
+   payload and recovery tests against non-money-moving doubles; Create locked.
+5. **First live test:** only after a new user decision, use the independent
+   hard safety profile—one `ETH-USDC` BUY, `5.00 USDC` principal, `5.50 USDC`
+   maximum debit, `0.50 USDC` commission, 50 bps slippage, IOC, one use, 120
+   seconds.
+6. **Any expansion:** requires a new reviewed safety profile, acceptance
+   evidence, and explicit authorization. Generic v1.3 Preview coverage does
+   not automatically widen live execution.
 
-Credentials are not needed to complete Stages 0 or the delta half of Stage 1. Coinbase read/Preview credentials are needed for the Coinbase half of Stage 1. The Trade credential should not be introduced until every Stage 1/2 acceptance check passes.
-
-## 12. Exact delta source-path index
-
-| Path in `Repyh-Labs/delta-mandate` | Why engineering will touch or consult it |
-|---|---|
-| `AGENTS.md` | Repository architecture and testing rules |
-| `Cargo.toml` | Workspace version, members, dependencies, and lint policy |
-| `crates/primitives/src/types.rs` | `Intent`, `SignedIntent`, `Proposal`, `Proof`, `ConstraintFailure`, and wire semantics |
-| `orchestrator/server/src/policy_hooks.rs` | `PolicyHooks` trait and Coinbase module export |
-| `orchestrator/server/src/policy_hooks/kalshi_wc26.rs` | Fixed-schema domain implementation and test precedent |
-| `orchestrator/server/src/policy_hooks/coinbase_spot.rs` | New Coinbase domain implementation |
-| `orchestrator/server/src/config.rs` | Add `PolicyKind::CoinbaseSpot` |
-| `orchestrator/server/src/main.rs` | Instantiate Coinbase hooks at the composition root |
-| `orchestrator/server/src/endpoints/policies.rs` | Existing plain-text Policy submission boundary |
-| `orchestrator/server/src/endpoints/intents.rs` | Existing `SignedIntent`, proposal, and status boundaries |
-| `orchestrator/server/src/state.rs` | `AppState` behavior tests |
-| `orchestrator/server/src/state/intents.rs` | Intent lifecycle and terminal/reopen semantics |
-| `orchestrator/server/src/state/proposals.rs` | Proposal acceptance and duplicate prevention |
-| `orchestrator/server/src/state/tests/helpers.rs` | Test doubles used by state tests |
-| `orchestrator/server/src/job.rs` | Extraction, deterministic evaluation, proof generation, and failure classification |
-| `orchestrator/server/src/proof.rs` | Orchestrator proof backend; relevant only if public commitments change |
-| `orchestrator/server/src/storage.rs` | Storage interface; relevant if retry attempts become persisted core state |
-| `orchestrator/server/src/storage/delta.rs` | RocksDB-backed implementation |
-| `orchestrator/server/src/storage/sql.rs` | SQLite-backed implementation |
-| `orchestrator/e2e/src/orchestrator.rs` | Current full-lifecycle test client and fixture pattern |
-| `crates/policy_engine_program/src/main.rs` | SP1 guest and current public-value commitments |
-| `verifier/server/src/proof.rs` | Independent SP1 public-value verification |
-| `orchestrator/openapi/orchestrator-openapi.json` | Regenerate only if public Orchestrator wire behavior changes |
-| `verifier/openapi/verifier-openapi.json` | Regenerate only if public Verifier wire behavior changes |
-
-The Coinbase evidence service is a separate deployable component, not an existing directory under `delta-mandate`. Use `Repyh-Labs/evidence-layer-kalshi` as the sibling repository precedent; do not add Coinbase API access directly to Orchestrator endpoints or policy evaluation.
-
-## 13. Definition of handoff complete
-
-Engineering should not need to reinterpret the product flow or rebuild the harness. The integration is complete when:
-
-- `SimulatedMandateAdapter` is selected only in tests and explicit demo mode;
-- the public build remains hard-disabled and the reviewed internal
-  `src/integration/production-composition.js` injects
-  `OrchestratorMandateAdapter`, the authenticated approval/signer boundary, and
-  an authenticated content-addressed action registry;
-- production composition injects an isolated transactional execution-grant
-  store that the agent cannot write and that remains one-use across
-  processes, hosts, and restarts;
-- real Coinbase `PolicyHooks` and deterministic extraction produce the evidence the fixed policy expects;
-- a verifier-confirmed proof is bound to the exact serialized Coinbase Create payload;
-- the deterministic controller, not the agent, is the only component that can release execution;
-- the chosen retry semantics are accurately represented in product copy and tests; and
-- all fail-closed, replay, concurrency, uncertain-submission, and recovery cases above are demonstrated.
+Handoff is complete only when the private Delta mapping, trusted evidence
+service, credential isolation, proof verification, transactional grant store,
+Coinbase shadow results, recovery behavior, and independent security review are
+all evidenced. A passing local simulator or Coinbase Preview is not sufficient.

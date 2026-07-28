@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://delta.network/schemas/coinbase-spot-policy-compilation.v1.json",
+  "$id": "https://delta.network/schemas/coinbase-spot-policy-compilation.v2.json",
   "title": "delta Coinbase spot-policy compilation",
   "type": "object",
   "additionalProperties": false,
@@ -16,11 +16,11 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "delta.coinbase.compilation.v1"
+      "const": "delta.coinbase.compilation.v2"
     },
     "taxonomy_version": {
       "type": "string",
-      "const": "digital-asset-spot-order.v1"
+      "const": "digital-asset-spot-order.v2"
     },
     "status": {
       "type": "string",
@@ -137,13 +137,13 @@
               "required": [
                 "max_slippage_bps",
                 "max_commission",
-                "max_all_in_debit"
+                "settlement"
               ],
               "properties": {
                 "max_slippage_bps": {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 10000
+                  "maximum": 9999
                 },
                 "max_commission": {
                   "type": "object",
@@ -163,14 +163,22 @@
                     }
                   }
                 },
-                "max_all_in_debit": {
+                "settlement": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
+                    "kind",
                     "asset",
                     "value"
                   ],
                   "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "MAX_QUOTE_DEBIT",
+                        "MIN_NET_QUOTE_PROCEEDS"
+                      ]
+                    },
                     "asset": {
                       "type": "string",
                       "pattern": "^[A-Z0-9]+$"

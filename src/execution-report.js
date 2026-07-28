@@ -65,7 +65,11 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
 <main>
   <div class="eyebrow">delta × Coinbase · mandate-gated execution</div>
   <h1>From human intent to one authorized action.</h1>
-  <p class="lede">Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh evidence; delta evaluates it and an independent verifier confirms the proof; only then can the executor submit the exact bytes.</p>
+  <p class="lede">${simulated
+    ? "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; labeled fixtures supply evidence; the simulated Delta contract checks the exact payload and same-process proof bindings before a one-use in-memory gate."
+    : probePassed
+      ? "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh Preview evidence; the probe then stops with Delta and Create locked."
+      : "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh evidence; production Delta evaluates the exact payload and an independent verifier confirms the proof before the executor can submit those bytes."}</p>
   <section class="status">
     <span class="pill ${statusClass}">${escapeHtml(statusLabel)}</span>
     <strong>${simulated ? "NO REAL ORDER CREATED · SIMULATED RESPONSE" : probePassed ? "COINBASE PREVIEW VERIFIED · CREATE NOT CALLED" : completed ? "COINBASE OUTCOME RECONCILED" : submitted ? "ORDER SUBMITTED · OUTCOME NEEDS ATTENTION" : submissionUnknown ? "SUBMISSION STATUS UNKNOWN · RECONCILE BEFORE ANY RETRY" : "NO ORDER SUBMITTED"}</strong>
@@ -75,9 +79,9 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
     <div class="step"><b>2 · Confirm</b><span>Human confirms policy digest.</span></div>
     <div class="step"><b>3 · Propose</b><span>Price-bounded IOC action.</span></div>
     <div class="step"><b>4 · Preview</b><span>Fresh fees, fill and preview ID.</span></div>
-    <div class="step"><b>5 · delta verify</b><span>Orchestrator success + independently verified proof.</span></div>
-    <div class="step"><b>6 · Submit</b><span>One-time idempotent Create Order.</span></div>
-    <div class="step"><b>7 · Reconcile</b><span>Read actual fill, fees and terminal status.</span></div>
+    <div class="step"><b>5 · delta verify</b><span>${simulated ? "Simulated decision + same-process binding check." : probePassed ? "NOT RUN · Preview-only stop." : "Production decision + independently verified proof."}</span></div>
+    <div class="step"><b>6 · Submit</b><span>${simulated || probePassed ? "LOCKED · Create not called." : "One-time idempotent Create Order."}</span></div>
+    <div class="step"><b>7 · Reconcile</b><span>${simulated || probePassed ? "No real Coinbase outcome." : "Read actual fill, fees and terminal status."}</span></div>
   </section>
   <section class="grid">
     <article class="card"><h2>Human-confirmed policy</h2><dl>
@@ -86,7 +90,7 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
       <dt>Exact size</dt><dd>${escapeHtml(policy.size?.value ?? "—")} ${escapeHtml(policy.size?.asset ?? "")}</dd>
       <dt>Order</dt><dd>${escapeHtml(policy.order_type ?? "—")}</dd>
       <dt>Slippage cap</dt><dd>${escapeHtml(policy.limits?.max_slippage_bps ?? "—")} bps</dd>
-      <dt>All-in cap</dt><dd>${escapeHtml(policy.limits?.max_all_in_debit?.value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
+      <dt>Settlement bound</dt><dd>${escapeHtml(policy.limits?.settlement?.kind ?? "—")} · ${escapeHtml(policy.limits?.settlement?.value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
     </dl></article>
     <article class="card"><h2>Agent proposal</h2><dl>
       <dt>Product</dt><dd>${escapeHtml(proposal.product_id ?? "—")}</dd>
@@ -96,7 +100,8 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
       <dt>Proposal check</dt><dd>${escapeHtml(record.proposal_check?.verdict ?? "—")}</dd>
     </dl></article>
     <article class="card"><h2>Coinbase preview evidence</h2><dl>
-      <dt>Best ask</dt><dd>${escapeHtml(record.market?.best_ask ?? "—")}</dd>
+      <dt>Price reference</dt><dd>${escapeHtml(policy.side === "SELL" ? record.market?.best_bid ?? "—" : record.market?.best_ask ?? "—")}</dd>
+      <dt>Funding</dt><dd>${escapeHtml(record.funding?.decision ?? "—")} · ${escapeHtml(record.funding?.available_balance ?? "—")} ${escapeHtml(record.funding?.funding_asset ?? "")}</dd>
       <dt>Estimated fill</dt><dd>${escapeHtml(preview.est_average_filled_price ?? "—")}</dd>
       <dt>Commission</dt><dd>${escapeHtml(preview.commission_total ?? "—")}</dd>
       <dt>Order total</dt><dd>${escapeHtml(preview.order_total ?? "—")}</dd>
@@ -113,7 +118,7 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
       <dt>Actual outcome</dt><dd>${escapeHtml(reconciliation.outcome ?? "—")}</dd>
       <dt>Actual fill</dt><dd>${escapeHtml(actual.filled_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
       <dt>Actual fees</dt><dd>${escapeHtml(actual.total_fees ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
-      <dt>Actual all-in</dt><dd>${escapeHtml(reconciliation.checks?.actual_all_in_debit ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
+      <dt>Actual settlement</dt><dd>${escapeHtml(reconciliation.checks?.actual_settlement_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
       <dt>Actual average</dt><dd>${escapeHtml(actual.average_filled_price ?? "—")}</dd>
       <dt>Post-trade check</dt><dd>${escapeHtml(reconciliation.checks?.verdict ?? "—")}</dd>
     </dl></article>

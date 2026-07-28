@@ -5,19 +5,20 @@ import {
   isPositiveDecimal,
   isSlippageWithinBps,
   parseDecimal,
+  priceBoundFromBps,
+  subtractDecimals,
 } from "./decimal.js";
 import { validatePolicy } from "./policy-validator.js";
 
-const ACTION_FIELDS = Object.freeze([
+const COMMON_ACTION_FIELDS = Object.freeze([
   "product_id",
   "side",
   "type",
   "time_in_force",
-  "quote_size",
   "limit_price",
 ]);
 
-function failure(code, message, expected, actual) {
+function issue(code, message, expected, actual) {
   return { code, message, expected, actual };
 }
 
@@ -25,77 +26,203 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function proposalDecision(failures) {
+  return failures.length ? "BLOCK" : "PASS";
+}
+
+function previewDecision(failures, reviewReasons) {
+  if (failures.length) return "BLOCK";
+  if (reviewReasons.length) return "REVIEW";
+  return "PASS";
+}
+
+function sideSize(policy, value) {
+  const field = policy.side === "BUY" ? "quote_size" : "base_size";
+  return { field, value: value?.[field] };
+}
+
+function deriveAuthorizedLimitPrice(policy, market) {
+  if (!isPlainObject(market)) {
+    throw new Error("trusted market evidence is required");
+  }
+  const priceReferenceValue =
+    policy.side === "BUY" ? market.best_ask : market.best_bid;
+  return {
+    price_reference_value: priceReferenceValue,
+    authorized_limit_price: priceBoundFromBps(
+      priceReferenceValue,
+      policy.limits.max_slippage_bps,
+      market.price_increment,
+      policy.side,
+    ),
+  };
+}
+
 export function evaluateExecutionProposal(policy, proposal, market) {
   validatePolicy(policy);
   const failures = [];
   if (!isPlainObject(proposal)) {
     return {
+      decision: "BLOCK",
       verdict: "BLOCK",
-      failures: [failure("INVALID_PROPOSAL", "Proposal must be an object", "object", typeof proposal)],
+      failures: [
+        issue(
+          "INVALID_PROPOSAL",
+          "Proposal must be an object",
+          "object",
+          typeof proposal,
+        ),
+      ],
     };
   }
-  const unknown = Object.keys(proposal).filter((field) => !ACTION_FIELDS.includes(field));
-  if (unknown.length) {
+  let priceBound = {
+    price_reference_value: null,
+    authorized_limit_price: null,
+  };
+  try {
+    priceBound = deriveAuthorizedLimitPrice(policy, market);
+  } catch (error) {
     failures.push(
-      failure("UNKNOWN_ORDER_FIELD", "Proposal contains unknown fields", ACTION_FIELDS, unknown),
+      issue(
+        "PRICE_BOUND_UNAVAILABLE",
+        "A side-specific limit price could not be derived from trusted market evidence",
+        {
+          reference_field:
+            policy.side === "BUY" ? "best_ask" : "best_bid",
+          max_slippage_bps: policy.limits.max_slippage_bps,
+        },
+        error.message,
+      ),
+    );
+  }
+  const size = sideSize(policy, proposal);
+  const actionFields = [...COMMON_ACTION_FIELDS, size.field];
+  const unknown = Object.keys(proposal).filter(
+    (field) => !actionFields.includes(field),
+  );
+  const missing = actionFields.filter(
+    (field) => !Object.hasOwn(proposal, field),
+  );
+  if (unknown.length || missing.length) {
+    failures.push(
+      issue(
+        "ORDER_FIELD_SET_MISMATCH",
+        "Proposal contains an unsupported or missing field",
+        actionFields,
+        { unknown, missing },
+      ),
     );
   }
   if (proposal.product_id !== policy.product_id) {
     failures.push(
-      failure("PRODUCT_MISMATCH", "Product differs from the policy", policy.product_id, proposal.product_id),
+      issue(
+        "PRODUCT_MISMATCH",
+        "Product differs from the policy",
+        policy.product_id,
+        proposal.product_id,
+      ),
     );
   }
   if (proposal.side !== policy.side) {
-    failures.push(failure("SIDE_MISMATCH", "Side differs from the policy", policy.side, proposal.side));
+    failures.push(
+      issue(
+        "SIDE_MISMATCH",
+        "Side differs from the policy",
+        policy.side,
+        proposal.side,
+      ),
+    );
   }
   if (proposal.type !== "limit" || proposal.time_in_force !== "IOC") {
     failures.push(
-      failure(
+      issue(
         "ORDER_TYPE_MISMATCH",
-        "V1 requires a price-bounded IOC limit order",
+        "The policy requires a price-bounded SOR limit IOC order",
         { type: "limit", time_in_force: "IOC" },
         { type: proposal.type, time_in_force: proposal.time_in_force },
       ),
     );
   }
-  if (proposal.quote_size !== policy.size.value || !isPositiveDecimal(proposal.quote_size)) {
+  if (
+    size.value !== policy.size.value ||
+    !isPositiveDecimal(size.value)
+  ) {
     failures.push(
-      failure(
+      issue(
         "SIZE_MISMATCH",
-        "Quote size differs from the exact human-confirmed amount",
+        `${size.field} differs from the exact human-authorized amount`,
         policy.size.value,
-        proposal.quote_size,
+        size.value,
       ),
     );
   }
   if (!isPositiveDecimal(proposal.limit_price)) {
     failures.push(
-      failure("INVALID_LIMIT_PRICE", "Limit price must be positive", "positive decimal", proposal.limit_price),
-    );
-  }
-  if (
-    market &&
-    (!isIncrementAligned(proposal.quote_size, market.quote_increment) ||
-      !isIncrementAligned(proposal.limit_price, market.price_increment))
-  ) {
-    failures.push(
-      failure(
-        "INCREMENT_MISMATCH",
-        "Size or price is not aligned to Coinbase increments",
-        {
-          quote_increment: market.quote_increment,
-          price_increment: market.price_increment,
-        },
-        {
-          quote_size: proposal.quote_size,
-          limit_price: proposal.limit_price,
-        },
+      issue(
+        "INVALID_LIMIT_PRICE",
+        "Limit price must be positive",
+        "positive decimal",
+        proposal.limit_price,
       ),
     );
+  } else if (priceBound.authorized_limit_price) {
+    const comparison = compareDecimals(
+      proposal.limit_price,
+      priceBound.authorized_limit_price,
+    );
+    const withinAuthorizedBound =
+      policy.side === "BUY" ? comparison <= 0 : comparison >= 0;
+    if (!withinAuthorizedBound) {
+      failures.push(
+        issue(
+          "LIMIT_PRICE_OUTSIDE_AUTHORIZED_BOUND",
+          `The ${policy.side} limit price is outside the human-authorized side-specific bound`,
+          {
+            operator: policy.side === "BUY" ? "<=" : ">=",
+            authorized_limit_price:
+              priceBound.authorized_limit_price,
+            reference_price: priceBound.price_reference_value,
+            reference_field:
+              policy.side === "BUY" ? "best_ask" : "best_bid",
+            max_slippage_bps: policy.limits.max_slippage_bps,
+          },
+          proposal.limit_price,
+        ),
+      );
+    }
   }
+  if (market) {
+    const sizeIncrement =
+      policy.side === "BUY"
+        ? market.quote_increment
+        : market.base_increment;
+    if (
+      !isIncrementAligned(size.value, sizeIncrement) ||
+      !isIncrementAligned(proposal.limit_price, market.price_increment)
+    ) {
+      failures.push(
+        issue(
+          "INCREMENT_MISMATCH",
+          "Size or price is not aligned to Coinbase increments",
+          {
+            size_field: size.field,
+            size_increment: sizeIncrement,
+            price_increment: market.price_increment,
+          },
+          {
+            size: size.value,
+            limit_price: proposal.limit_price,
+          },
+        ),
+      );
+    }
+  }
+  const decision = proposalDecision(failures);
   return {
-    verdict: failures.length ? "BLOCK" : "ALLOW",
+    decision,
+    verdict: decision,
     failures,
+    ...priceBound,
   };
 }
 
@@ -114,28 +241,80 @@ export function selectExecutionPreviewEvidence(preview) {
     "warning",
   ];
   return Object.fromEntries(
-    fields.filter((field) => Object.hasOwn(preview, field)).map((field) => [field, preview[field]]),
+    fields
+      .filter((field) => Object.hasOwn(preview, field))
+      .map((field) => [field, preview[field]]),
   );
 }
 
+export function derivePreviewSettlement(policy, proposal, preview) {
+  if (policy.side === "BUY") {
+    const requestedWithCommission = addDecimals(
+      proposal.quote_size,
+      preview.commission_total,
+    );
+    return {
+      kind: "MAX_QUOTE_DEBIT",
+      value:
+        compareDecimals(preview.order_total, requestedWithCommission) >= 0
+          ? preview.order_total
+          : requestedWithCommission,
+    };
+  }
+  const grossProceeds =
+    compareDecimals(preview.order_total, preview.quote_size) <= 0
+      ? preview.order_total
+      : preview.quote_size;
+  return {
+    kind: "MIN_NET_QUOTE_PROCEEDS",
+    value: subtractDecimals(grossProceeds, preview.commission_total),
+  };
+}
+
 export function evaluateExecutionPreview(policy, proposal, market, preview) {
+  validatePolicy(policy);
   const failures = [];
+  const reviewReasons = [];
   if (!isPlainObject(preview)) {
     return {
+      decision: "BLOCK",
       verdict: "BLOCK",
-      failures: [failure("INVALID_PREVIEW", "Preview must be an object", "object", typeof preview)],
+      failures: [
+        issue(
+          "INVALID_PREVIEW",
+          "Preview must be an object",
+          "object",
+          typeof preview,
+        ),
+      ],
+      review_reasons: [],
+      settlement: null,
     };
   }
   if (!Array.isArray(preview.errs) || preview.errs.length) {
     failures.push(
-      failure("PREVIEW_ERRORS", "Coinbase preview errors must be an empty array", [], preview.errs),
+      issue(
+        "PREVIEW_ERRORS",
+        "Coinbase Preview errors must be an empty array",
+        [],
+        preview.errs,
+      ),
     );
   }
-  if (!Array.isArray(preview.warning) || preview.warning.length) {
+  if (!Array.isArray(preview.warning)) {
     failures.push(
-      failure(
+      issue(
+        "PREVIEW_WARNINGS_INVALID",
+        "Coinbase Preview warning must be an array",
+        [],
+        preview.warning,
+      ),
+    );
+  } else if (preview.warning.length) {
+    reviewReasons.push(
+      issue(
         "PREVIEW_WARNINGS",
-        "V1 blocks every Coinbase preview warning",
+        "Coinbase returned a warning that requires human review",
         [],
         preview.warning,
       ),
@@ -143,7 +322,12 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
   }
   if (typeof preview.preview_id !== "string" || !preview.preview_id) {
     failures.push(
-      failure("MISSING_PREVIEW_ID", "Coinbase preview_id is required", "non-empty string", preview.preview_id),
+      issue(
+        "MISSING_PREVIEW_ID",
+        "Coinbase preview_id is required",
+        "non-empty string",
+        preview.preview_id,
+      ),
     );
   }
   for (const field of [
@@ -163,62 +347,76 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
       }
     } catch {
       failures.push(
-        failure(
+        issue(
           "INVALID_PREVIEW_DECIMAL",
-          `Coinbase preview ${field} is missing or invalid`,
+          `Coinbase Preview ${field} is missing or invalid`,
           "decimal string",
           preview[field],
         ),
       );
     }
   }
+  const size = sideSize(policy, proposal);
   if (
-    typeof preview.quote_size === "string" &&
-    isPositiveDecimal(preview.quote_size) &&
-    compareDecimals(preview.quote_size, proposal.quote_size) !== 0
+    typeof preview[size.field] === "string" &&
+    isPositiveDecimal(preview[size.field]) &&
+    compareDecimals(preview[size.field], size.value) !== 0
   ) {
     failures.push(
-      failure(
+      issue(
         "PREVIEW_SIZE_MISMATCH",
-        "Coinbase preview size differs from the proposal",
-        proposal.quote_size,
-        preview.quote_size,
+        `Coinbase Preview ${size.field} differs from the exact proposal`,
+        size.value,
+        preview[size.field],
       ),
     );
   }
-  let conservativeAllInDebit = null;
+
+  let settlement = null;
   try {
-    const quotePlusCommission = addDecimals(
-      proposal.quote_size,
-      preview.commission_total,
+    settlement = derivePreviewSettlement(policy, proposal, preview);
+    const comparison = compareDecimals(
+      settlement.value,
+      policy.limits.settlement.value,
     );
-    conservativeAllInDebit =
-      compareDecimals(preview.order_total, quotePlusCommission) >= 0
-        ? preview.order_total
-        : quotePlusCommission;
-  } catch {}
-  if (
-    conservativeAllInDebit !== null &&
-    compareDecimals(
-      conservativeAllInDebit,
-      policy.limits.max_all_in_debit.value,
-    ) > 0
-  ) {
+    const violates =
+      settlement.kind === "MAX_QUOTE_DEBIT"
+        ? comparison > 0
+        : comparison < 0;
+    if (violates) {
+      failures.push(
+        issue(
+          settlement.kind === "MAX_QUOTE_DEBIT"
+            ? "MAX_QUOTE_DEBIT_EXCEEDED"
+            : "MIN_NET_PROCEEDS_NOT_MET",
+          settlement.kind === "MAX_QUOTE_DEBIT"
+            ? "Conservative Preview debit exceeds the policy"
+            : "Conservative Preview net proceeds are below the policy",
+          policy.limits.settlement.value,
+          settlement.value,
+        ),
+      );
+    }
+  } catch {
     failures.push(
-      failure(
-        "ALL_IN_CAP_EXCEEDED",
-        "Conservative Preview all-in debit exceeds the policy",
-        policy.limits.max_all_in_debit.value,
-        conservativeAllInDebit,
+      issue(
+        "SETTLEMENT_ECONOMICS_INVALID",
+        "Preview settlement economics could not be derived safely",
+        policy.limits.settlement,
+        null,
       ),
     );
   }
   if (
     typeof preview.commission_total === "string" &&
-    compareDecimals(preview.commission_total, policy.limits.max_commission.value) > 0
+    isPositiveDecimal(preview.commission_total) &&
+    compareDecimals(
+      preview.commission_total,
+      policy.limits.max_commission.value,
+    ) > 0
   ) {
     failures.push(
-      failure(
+      issue(
         "COMMISSION_CAP_EXCEEDED",
         "Preview commission exceeds the policy",
         policy.limits.max_commission.value,
@@ -228,42 +426,57 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
   }
   if (
     typeof preview.est_average_filled_price === "string" &&
-    isPositiveDecimal(preview.est_average_filled_price) &&
-    compareDecimals(preview.est_average_filled_price, proposal.limit_price) > 0
+    isPositiveDecimal(preview.est_average_filled_price)
   ) {
-    failures.push(
-      failure(
-        "LIMIT_PRICE_EXCEEDED",
-        "Estimated fill price exceeds the proposed price bound",
-        proposal.limit_price,
-        preview.est_average_filled_price,
-      ),
-    );
-  }
-  if (
-    typeof preview.est_average_filled_price === "string" &&
-    isPositiveDecimal(preview.est_average_filled_price) &&
-    !isSlippageWithinBps(
+    const priceComparison = compareDecimals(
       preview.est_average_filled_price,
-      market.best_ask,
-      policy.limits.max_slippage_bps,
-      "BUY",
-    )
-  ) {
-    failures.push(
-      failure(
-        "SLIPPAGE_CAP_EXCEEDED",
-        "Estimated fill exceeds the allowed basis points above fresh best ask",
-        policy.limits.max_slippage_bps,
-        {
-          best_ask: market.best_ask,
-          estimated_fill: preview.est_average_filled_price,
-        },
-      ),
+      proposal.limit_price,
     );
+    const violatesLimit =
+      policy.side === "BUY"
+        ? priceComparison > 0
+        : priceComparison < 0;
+    if (violatesLimit) {
+      failures.push(
+        issue(
+          "LIMIT_PRICE_VIOLATION",
+          policy.side === "BUY"
+            ? "Estimated BUY fill exceeds the maximum price"
+            : "Estimated SELL fill is below the minimum price",
+          proposal.limit_price,
+          preview.est_average_filled_price,
+        ),
+      );
+    }
+    const reference =
+      policy.side === "BUY" ? market.best_ask : market.best_bid;
+    if (
+      !isSlippageWithinBps(
+        preview.est_average_filled_price,
+        reference,
+        policy.limits.max_slippage_bps,
+        policy.side,
+      )
+    ) {
+      failures.push(
+        issue(
+          "SLIPPAGE_CAP_EXCEEDED",
+          `Estimated fill exceeds the allowed ${policy.side === "BUY" ? "upside" : "downside"} slippage`,
+          {
+            max_bps: policy.limits.max_slippage_bps,
+            reference,
+          },
+          preview.est_average_filled_price,
+        ),
+      );
+    }
   }
+  const decision = previewDecision(failures, reviewReasons);
   return {
-    verdict: failures.length ? "BLOCK" : "ALLOW",
+    decision,
+    verdict: decision,
     failures,
+    review_reasons: reviewReasons,
+    settlement,
   };
 }

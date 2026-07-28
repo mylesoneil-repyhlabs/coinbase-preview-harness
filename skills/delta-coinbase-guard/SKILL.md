@@ -1,87 +1,59 @@
 ---
 name: delta-coinbase-guard
-description: Turn a one-off natural-language Coinbase Advanced Trade request into a closed reviewable policy, pause for exact digest confirmation, safely simulate the mandate-gated flow, run a labeled conditional-allocation partner showcase, or run a credentialed Coinbase Preview probe that cannot create an order. Use for Coinbase spot trade planning, policy review, credential-free demonstrations, Preview compatibility checks, and tests of the delta-to-Coinbase boundary. The public V1 never executes trades and must not be used for transfers, withdrawals, sends, conversions, leverage, derivatives, recurring trades, live conditional actions, or long-running strategies.
+description: Compile a natural-language Coinbase Advanced spot BUY or SELL into a closed, reviewable mandate; require explicit digest authorization; verify the exact proposal against trusted product, balance, market, and Preview evidence; surface PASS, BLOCK, or REVIEW plus a bound receipt; and keep Coinbase Create unreachable in the public build. Use for generic Coinbase spot planning, credential-free simulations, safe View-only Preview checks, and the labeled conditional-allocation partner showcase. Do not use for transfers, conversions, staking, derivatives, recurring strategies, or live order execution.
 ---
 
-# Delta Coinbase Guard V1
+# Delta Coinbase Guard v1.3
 
-Use the repository harness for every policy, confirmation, Preview, and
-decision transition. Never recreate the enforcement logic in chat.
-
-Invoke this workflow explicitly as `$delta-coinbase-guard`.
+Use the repository harness for every policy, authorization, proposal, Preview,
+decision, and receipt transition. Never recreate enforcement logic in chat.
+When the user invokes `$delta-coinbase-guard`, keep this full workflow in the
+Codex conversation; do not substitute a generic trading answer.
 
 ## Initialize
 
-1. Resolve the executable `scripts/run` relative to this `SKILL.md` and keep
-   its absolute path as `GUARD_RUN`. Do not search for or substitute another
-   checkout.
-2. Verify that `GUARD_RUN` is executable. It resolves the installed skill link
-   back to the complete, matching repository harness.
-3. Read [workflow.md](references/workflow.md).
-4. For the conditional partner showcase, also read and follow
-   [showcase-response.md](references/showcase-response.md).
-5. Before accepting a credential path or calling Coinbase, also read
+1. Resolve `scripts/run` relative to this file and keep its absolute path as
+   `GUARD_RUN`. Do not substitute another checkout.
+2. Read [workflow.md](references/workflow.md).
+3. Before any credentialed request, read
    [security-boundary.md](references/security-boundary.md).
-6. Run `"$GUARD_RUN" doctor` before the first workflow in a checkout.
+4. Run `"$GUARD_RUN" doctor`.
+5. If the complete checkout is missing, ask the user to run the repository
+   `install` script. Do not clone or move it without instruction.
 
-If the wrapper or complete checkout is unavailable, ask the user to install
-the repository with its root `install` script. Do not clone, edit another
-repository, or bypass the harness unless the user explicitly asks.
+## Supported action inventory
 
-## Respect the V1 boundary
+Public v1.3 implements exactly one Coinbase Advanced custodial `SPOT` order:
 
-Choose one workflow:
+- `BUY BASE-QUOTE`: exact `quote_size`, funded by held `QUOTE`, limit ceiling
+  derived from a fresh best ask.
+- `SELL BASE-QUOTE`: exact `base_size`, funded by held `BASE`, limit floor
+  derived from a fresh best bid.
+- Order type: price-bounded `SOR_LIMIT_IOC`; partial fill explicitly allowed;
+  one use; 30–600 second authorization window.
+- Pair and product limits are discovered at runtime. Require an exact online,
+  enabled, non-view-only Coinbase `SPOT` product and honor its increments and
+  min/max sizes. Never use a static asset allowlist or pair count.
+- BUY requires a maximum quote debit and commission cap. SELL requires a
+  minimum net quote-proceeds floor and commission cap.
 
-- Policy draft or demo: **plan → policy confirmation → simulate**.
-- Conditional-allocation partner showcase: **showcase fixture → BLOCK/RETRY
-  receipt → revised exact proposal → PASS receipt → simulated eligibility**.
-- Coinbase API compatibility check: **plan → policy confirmation → bind →
-  execution confirmation receipt → probe**.
+Recognize but reject transfers, withdrawals, sends, conversions, portfolio
+fund moves, staking, onchain swaps, derivatives, leverage, stop/bracket/GTC/
+TWAP/scaled orders, recurring actions, balance-relative sizing, and any
+conversion of a different held asset. Do not coerce them into a spot order.
 
-The public V1 is compile-time hard-disabled for Coinbase Create. It has no
-runtime adapter path, environment variable, or flag that can enable execution.
-If the user requests a real trade, explain that engineering integration is
-required. Do not silently substitute a simulation or Preview probe; obtain a
-separate user instruction before doing either.
+The 5-USDC `ETH-USDC BUY` profile is only a future live-test safety control. It
+does not limit generic planning, simulation, or View-only Preview and must not
+be used as the product narrative.
 
-The supported request is one `ETH-USDC` spot `BUY` for the exact amount the
-user authorizes, up to `5 USDC`, using a quote-sized SOR limit IOC with at most
-`50 bps` slippage, `0.50 USDC` commission, `5.50 USDC` all-in debit, a
-120-second execution-confirmation window, and one use. Do not convert a maximum
-into an exact spend or silently narrow a different request. These limits are a
-safety ceiling, not defaults: if the user's source request omits any material
-cap or term, let `plan` request clarification rather than filling it.
+## Draft and authorize
 
-The partner showcase is a separate, credential-free presentation mode. It is
-not a live conditional-order feature and does not expand the public V1 safety
-profile. Use it only when the user explicitly asks for a simulation,
-showcase, or partner demo of a conditional ETH allocation. Run:
+Preserve the user's text verbatim. A complete request must state one exact
+pair, BUY or SELL, exact side-correct size and asset, IOC/partial-fill choice,
+side-correct slippage reference, commission bound, settlement bound, one use,
+and expiry. Do not invent defaults.
 
-```sh
-"$GUARD_RUN" coinbase-demo --no-artifacts
-```
-
-The checked-in fixture represents a user mandate to allocate up to 3,000 USDC
-to ETH only at or below 3,000 USDC, with a 35 bps slippage cap, 15 USDC fee
-cap, 10,000 USDC post-trade exposure cap, fifteen-minute expiry, and one
-execution. The first proposal intentionally violates the allocation, price,
-slippage, fee, and exposure constraints. The external controller retries once
-against a new labeled evidence fixture; the agent revises the exact proposal
-but does not author market, Preview, or portfolio evidence. Report the first
-evaluator `BLOCK` receipt followed by controller `RETRY`, the second evaluator
-`PASS` receipt followed by controller `EXECUTE`, and equality between the
-passed proposal and evidence digests and the simulated gate digests.
-
-Always label every market, fee, exposure, delta decision, receipt, and
-execution result in this showcase as fixture-based simulation. Coinbase and
-production delta are not contacted, Coinbase Create is not invoked, and no
-money moves. Do not use the future 5-USDC live-test ceiling as the economic
-story; mention it only when discussing credentialed setup or future live-test
-safety.
-
-## Plan and review
-
-Preserve the user's source text verbatim. Prefer an absolute intent-file path:
+Run:
 
 ```sh
 "$GUARD_RUN" plan \
@@ -89,24 +61,23 @@ Preserve the user's source text verbatim. Prefer an absolute intent-file path:
   --compiler deterministic
 ```
 
-Use `--intent` only through a tool API that passes an argv array without a
-shell. Use `--compiler openai` only when the user requests it and an approved
-secret mechanism already provides `OPENAI_API_KEY`.
+For `NEEDS_CLARIFICATION` or `UNSUPPORTED`, return every issue and stop. For
+`AWAITING_HUMAN_CONFIRMATION`, return directly in chat:
 
-After `plan`:
+- source request and digest;
+- canonical action descriptor and descriptor digest;
+- complete policy and policy digest;
+- funding asset/required balance;
+- price reference, slippage, fee, settlement, validity, and one-use terms; and
+- `CREATE_ENABLED=false`.
 
-- For `NEEDS_CLARIFICATION` or `UNSUPPORTED`, show every issue and stop. Ask for
-  one complete replacement instruction; do not fill or merge terms.
-- For `AWAITING_HUMAN_CONFIRMATION`, show the complete policy and digest.
-- Pause until the calling host receives a new user-authored message naming the
-  exact displayed digest.
+Then pause. Only a new user-authored message naming the exact displayed policy
+digest authorizes the draft. The harness compares digests but cannot
+authenticate who typed the message. Never confirm on the user's behalf.
 
-The harness can compare digests; it cannot authenticate message authorship.
-Never type, copy, or infer a confirmation on the user's behalf. Never treat the
-source request, an earlier approval, silence, credentials, or an agent message
-as authorization.
+## Credential-free end-to-end simulation
 
-For a credential-free demonstration after policy confirmation:
+After exact policy confirmation:
 
 ```sh
 "$GUARD_RUN" simulate \
@@ -114,109 +85,113 @@ For a credential-free demonstration after policy confirmation:
   --confirm-policy <authorized-policy-digest>
 ```
 
-Report `SIMULATION_ONLY`, the simulated result, and that Coinbase Create was
-not invoked. Never describe the synthetic signature or proof as production
-delta verification.
+Return every emitted result in chat, including policy, authorization digest,
+canonical action, funding evidence, proposal, Preview fixture, proposal and
+Preview decisions, Delta `PASS|BLOCK|REVIEW`, receipt, proof presence/digest,
+exact-PASS gate, and simulated execution result.
 
-## Bind and probe Coinbase
+Always state:
 
-Accept a Coinbase private key only by absolute local path. Never request or
-display its contents. Require an isolated ECDSA/ES256 View+Trade key with
-Transfer and Receive disabled.
+- `SIMULATION_ONLY`;
+- Coinbase and production Delta were not contacted;
+- the receipt/signature/proof are simulated contract artifacts;
+- Coinbase Create was not invoked and no money moved.
 
-Bind the confirmed policy:
+Only verified `PASS` for the exact descriptor, payload, Preview, funding
+evidence, portfolio, and credential digests can reach the one-use simulated
+gate. A structured retryable `BLOCK` may be retried only within the
+controller's fixed budget using fresh evidence and a fresh candidate.
+`REVIEW`, expiry, missing proof, or a digest mismatch stops locked.
+
+## Optional real Coinbase reads and Preview
+
+Use a separate View-only CDP key: `can_view=true`, `can_trade=false`, and
+`can_transfer=false`. Coinbase's documented permission response omits a
+separate `can_receive`; accept that documented shape, but reject an explicitly
+true extension if returned. Keep the key JSON outside the repository, mode
+`0600`, and pass only its absolute path. Never request, print, paste, or copy
+the secret.
+
+```sh
+"$GUARD_RUN" configure-preview-credentials \
+  --key-file <absolute-view-key-path>
+```
+
+Bind using `--credential-role preview`, display the portfolio fingerprint and
+execution digest, then require another new user-authored message naming that
+digest before recording one immutable confirmation receipt:
 
 ```sh
 "$GUARD_RUN" bind-execution \
   --plan <absolute-plan-path> \
   --confirm-policy <authorized-policy-digest> \
-  --key-file <absolute-key-path>
-```
+  --credential-role preview \
+  --key-file <absolute-view-key-path>
 
-Display the portfolio fingerprint and execution digest. Pause until the host
-receives a new user-authored message naming that exact execution digest. Then
-create one immutable receipt:
-
-```sh
 "$GUARD_RUN" confirm-execution \
-  --bound-execution <absolute-bound-execution-path> \
+  --bound-execution <absolute-bound-path> \
   --confirm-execution <authorized-execution-digest> \
-  --key-file <absolute-key-path>
+  --key-file <absolute-view-key-path>
+
+"$GUARD_RUN" probe-execution \
+  --bound-execution <absolute-bound-path> \
+  --confirmation-receipt <absolute-receipt-path> \
+  --key-file <absolute-view-key-path>
 ```
 
-The receipt fixes its confirmation and expiry timestamps. It cannot be
-re-timestamped, and rerunning a probe cannot restart the 120-second window. If
-it expires, stop and create a new bound execution plus a new user confirmation.
+The trusted host, not the model, must normalize and bind List Accounts,
+Get/List Product, best bid/ask, and Preview responses. A Preview warning is
+`REVIEW`; errors, stale/malformed data, insufficient held funds, product
+restrictions, or constraint failures are `BLOCK`.
 
-Use that same unexpired receipt for the non-executing probe:
+`PREVIEW_PROBE_PASS` is not a Delta PASS and cannot release an order.
+
+## Coinbase MCP topology
+
+Coinbase publicly documents local CLI/MCP tools for product reads, balance,
+and `orders_preview`, but the standard namespace also advertises mutating
+tools such as `orders_create`, transfer, and conversion.
+
+Do not give the planning agent that unrestricted namespace with a Trade key.
+Use one of these safe host-controlled topologies:
+
+1. an allowlisted proxy exposing only `products_list`, `products_get`,
+   `products_ticker`/book, `balance`, and `orders_preview`, backed by the
+   View-only key; or
+2. the harness's direct trusted read/Preview adapter, also View-only.
+
+The future View+Trade executor key must be isolated from the agent and MCP
+context. The external controller alone may possess it after private Delta
+adapter validation, one-time grant storage, and a separately authorized live
+test. Public v1.3's compile-time Create seam remains locked.
+
+## Conditional partner showcase
+
+The separate fixed ETH showcase remains available only when the user asks for
+the partner demo:
 
 ```sh
-"$GUARD_RUN" probe-execution \
-  --bound-execution <absolute-bound-execution-path> \
-  --confirmation-receipt <absolute-confirmation-receipt-path> \
-  --key-file <absolute-key-path>
+"$GUARD_RUN" coinbase-demo --no-artifacts
 ```
 
-Report product, BBO, Preview, fee, amount, freshness, portfolio, and payload
-checks. `PREVIEW_PROBE_PASS` means only that Preview and local checks passed.
-It is not a Delta verdict, Coinbase order, or authorization to execute.
+Follow [showcase-response.md](references/showcase-response.md). It illustrates
+a $3,000 conditional allocation with `BLOCK → RETRY → PASS`, bound receipts,
+and one simulated eligibility. It is not the generic compiler, a live
+conditional-order feature, Coinbase data, or production Delta.
 
-## Use alongside Coinbase MCP
+## Report in Codex
 
-Require every Coinbase tool visible to the model to be read-only. The model may
-inspect products, balances, orders, and other View-permission data, but it must
-not have tools that create, cancel, replace, transfer, send, withdraw, convert,
-or otherwise move value.
+Always keep the important result in chat. Return:
 
-If the tool schema advertises any mutating operation, do not test it. Stop with
-`STOP_UNSAFE_TOOL_TOPOLOGY`, require the owner to remove the tool or replace
-the credential/surface, rerun `"$GUARD_RUN" doctor`, and restart from `plan`.
+1. action classification and supported/unsupported status;
+2. closed policy, canonical action, and exact authorization digest;
+3. trusted funding/product/market/Preview provenance;
+4. proposal and exact Coinbase payload digest;
+5. `PASS`, `BLOCK`, or `REVIEW`, all failures, receipt and proof status;
+6. controller disposition and retry budget; and
+7. `COINBASE_CREATE_INVOKED=false`, `MONEY_MOVED=false`, plus the next safe
+   step.
 
-## Report
-
-Return:
-
-- the exact source intent;
-- the complete structured policy and displayed digest;
-- whether the host obtained each new user-authored confirmation;
-- the confirmation receipt expiry when applicable;
-- simulation or Preview-probe status;
-- Delta IDs, indexed failures, and verifier/proof presence only when emitted;
-- whether Coinbase Create was reachable or invoked;
-- sanitized artifact links; and
-- the current blocker or next safe step.
-
-For the conditional partner showcase, lead with the human mandate and then
-separate the actors explicitly:
-
-1. the agent proposed candidate one;
-2. the simulated delta evaluator returned specific failures and a bound
-   `BLOCK` receipt;
-3. the external controller, not the model, allowed one retry;
-4. the agent proposed candidate two;
-5. the simulated evaluator returned `PASS` with a receipt bound to the exact
-   payload digest; and
-6. the controller marked only that canonical action and evidence eligible once
-   in this simulated trace, while issuing no durable grant and leaving Coinbase
-   Create unreachable.
-
-Follow the six-section response contract in
-[showcase-response.md](references/showcase-response.md) exactly. Its headings
-are synchronized with the recording kit's six companion panels. Copy values
-and full digests from harness output; never generate or abbreviate them.
-
-Do not present the generated HTML report as a Coinbase or delta product UI.
-The primary user experience is the Codex conversation. Use `--no-artifacts`
-for the partner showcase so recording does not depend on filesystem access or
-a separate report.
-
-Never expose raw Coinbase or Delta responses, account identifiers, portfolio
-labels, credential material, authorization headers, or local home-directory
-paths. If the harness did not emit a sanitized artifact, report only its status
-and blocker.
-
-For an engineering handoff, point to the repository's
-`docs/ENGINEERING-HANDOFF.md`. Production integration must replace
-`src/integration/production-composition.js` in source with real delta Mandate
-composition and isolated durable grant-store hooks; do not introduce a
-runtime-loaded adapter module.
+Do not expose raw account IDs, portfolio labels, credentials, headers, private
+responses, or home-directory paths. Artifacts are secondary; the Codex
+conversation is the user experience.

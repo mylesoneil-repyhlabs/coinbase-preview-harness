@@ -32,6 +32,17 @@ export function addDecimals(left, right) {
   return formatDecimal(toScale(a, scale) + toScale(b, scale), scale);
 }
 
+export function subtractDecimals(left, right) {
+  const a = parseDecimal(left, "left");
+  const b = parseDecimal(right, "right");
+  const scale = Math.max(a.scale, b.scale);
+  const difference = toScale(a, scale) - toScale(b, scale);
+  if (difference < 0n) {
+    throw new Error("decimal subtraction would be negative");
+  }
+  return formatDecimal(difference, scale);
+}
+
 export function multiplyDecimals(left, right) {
   const a = parseDecimal(left, "left");
   const b = parseDecimal(right, "right");
@@ -45,6 +56,24 @@ export function multiplyDecimals(left, right) {
     throw new Error("decimal product exceeds the supported precision");
   }
   return formatDecimal(coefficient, scale);
+}
+
+export function divideDecimals(
+  dividend,
+  divisor,
+  { scale = 18 } = {},
+) {
+  const a = parseDecimal(dividend, "dividend");
+  const b = parseDecimal(divisor, "divisor");
+  if (b.coefficient <= 0n) throw new Error("divisor must be positive");
+  if (!Number.isInteger(scale) || scale < 0 || scale > 18) {
+    throw new Error("division scale must be an integer between 0 and 18");
+  }
+  const numerator =
+    a.coefficient * 10n ** BigInt(scale + b.scale);
+  const denominator =
+    b.coefficient * 10n ** BigInt(a.scale);
+  return formatDecimal(numerator / denominator, scale);
 }
 
 export function isWithinDecimalTolerance(left, right, tolerance) {

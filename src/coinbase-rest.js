@@ -168,6 +168,57 @@ export function createCoinbaseRestAdapter(credentials, options = {}) {
   const request = createCoinbaseRequest(credentials, options);
 
   return Object.freeze({
+    async listAccounts() {
+      const accounts = [];
+      const cursors = new Set();
+      let cursor;
+      for (let page = 0; page < 20; page += 1) {
+        const query = { limit: "250" };
+        if (cursor !== undefined) query.cursor = safeCursor(cursor);
+        const result = await request(
+          "GET",
+          `${BROKERAGE_PATH}/accounts`,
+          { query },
+        );
+        const response = result.response;
+        if (!Array.isArray(response?.accounts)) {
+          throw new Error("Coinbase List Accounts response is malformed");
+        }
+        accounts.push(...response.accounts);
+        if (response.has_next !== true) {
+          return {
+            accounts,
+            has_next: false,
+            cursor: null,
+          };
+        }
+        cursor = safeCursor(response.cursor);
+        if (cursors.has(cursor)) {
+          throw new Error("Coinbase List Accounts cursor repeated");
+        }
+        cursors.add(cursor);
+      }
+      throw new Error("Coinbase List Accounts exceeded the pagination limit");
+    },
+    listProducts({ productIds } = {}) {
+      const query = {
+        product_type: "SPOT",
+        get_tradability_status: "true",
+      };
+      if (productIds !== undefined) {
+        if (
+          !Array.isArray(productIds) ||
+          productIds.length < 1 ||
+          productIds.length > 100
+        ) {
+          throw new Error("productIds must contain 1 through 100 products");
+        }
+        query.product_ids = productIds.map(safeProductId);
+      }
+      return request("GET", `${BROKERAGE_PATH}/products`, { query }).then(
+        (result) => result.response,
+      );
+    },
     getProduct(productId) {
       const safeId = safeProductId(productId);
       return request("GET", `${BROKERAGE_PATH}/products/${safeId}`, {

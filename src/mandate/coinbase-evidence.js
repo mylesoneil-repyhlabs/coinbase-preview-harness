@@ -1,18 +1,16 @@
 import {
-  addDecimals,
   compareDecimals,
   parseDecimal,
+  priceBoundFromBps,
 } from "../decimal.js";
 import { digest, digestBytes } from "../evidence.js";
-import {
-  COINBASE_EVIDENCE_CATEGORY,
-  decimalToMicrounits,
-} from "./coinbase-policy.js";
+import { derivePreviewSettlement } from "../execution-policy.js";
+import { COINBASE_EVIDENCE_CATEGORY } from "./coinbase-policy.js";
 import { parseCoinbaseSolution } from "./coinbase-solution.js";
 
-function decimalRatioBps(fillValue, referenceValue) {
+function slippageBps(fillValue, referenceValue, side) {
   const fill = parseDecimal(fillValue, "estimated fill price");
-  const reference = parseDecimal(referenceValue, "best ask");
+  const reference = parseDecimal(referenceValue, "reference price");
   const scale = Math.max(fill.scale, reference.scale);
   const fillScaled =
     fill.coefficient * 10n ** BigInt(scale - fill.scale);
@@ -21,8 +19,12 @@ function decimalRatioBps(fillValue, referenceValue) {
   if (referenceScaled <= 0n || fillScaled <= 0n) {
     throw new Error("fill and reference prices must be positive");
   }
-  if (fillScaled <= referenceScaled) return 0;
-  const numerator = (fillScaled - referenceScaled) * 10_000n;
+  const adverse =
+    side === "BUY"
+      ? fillScaled - referenceScaled
+      : referenceScaled - fillScaled;
+  if (adverse <= 0n) return 0;
+  const numerator = adverse * 10_000n;
   const quotient = numerator / referenceScaled;
   const roundedUp =
     numerator % referenceScaled === 0n ? quotient : quotient + 1n;
@@ -32,16 +34,38 @@ function decimalRatioBps(fillValue, referenceValue) {
   return Number(roundedUp);
 }
 
-export function extractSimulatedCoinbaseEvidence(solution, now = new Date()) {
+export function extractSimulatedCoinbaseEvidence(
+  solution,
+  now = new Date(),
+) {
   const envelope = parseCoinbaseSolution(solution);
   const payload = envelope.create_payload;
   const configuration = payload?.order_configuration?.sor_limit_ioc;
   const market = envelope.claimed_evidence?.market;
   const preview = envelope.claimed_evidence?.preview;
-  if (!configuration || !market || !preview) {
-    throw new Error("Coinbase proposal omitted required action or evidence claims");
+  const funding = envelope.claimed_evidence?.funding;
+  const descriptor = envelope.action_descriptor;
+  if (!configuration || !market || !preview || !funding || !descriptor) {
+    throw new Error(
+      "Coinbase proposal omitted required action or evidence claims",
+    );
   }
-
+  const sizeField = payload.side === "BUY" ? "quote_size" : "base_size";
+  const proposal = {
+    product_id: payload.product_id,
+    side: payload.side,
+    type: "limit",
+    time_in_force: "IOC",
+    [sizeField]: configuration[sizeField],
+    limit_price: configuration.limit_price,
+  };
+  const settlement = derivePreviewSettlement(
+    {
+      side: payload.side,
+    },
+    proposal,
+    preview,
+  );
   const createPayloadDigest = digestBytes(
     envelope.create_payload_serialized,
   );
@@ -51,18 +75,36 @@ export function extractSimulatedCoinbaseEvidence(solution, now = new Date()) {
     envelope.preview_request?.side === payload.side &&
     digest(envelope.preview_request?.order_configuration) ===
       digest(payload.order_configuration);
-  const requestedDebitWithCommission = addDecimals(
-    configuration.quote_size,
-    preview.commission_total,
+  const adverseSlippageBps = slippageBps(
+    preview.est_average_filled_price,
+    payload.side === "BUY" ? market.best_ask : market.best_bid,
+    payload.side,
   );
-  // Coinbase's order_total is treated as one estimate, not an authoritative
-  // ceiling. The mandate therefore uses the larger of that value and the exact
-  // requested quote debit plus commission, so an understated preview cannot
-  // weaken the all-in cap.
-  const conservativeAllInDebit =
-    compareDecimals(preview.order_total, requestedDebitWithCommission) >= 0
-      ? preview.order_total
-      : requestedDebitWithCommission;
+  const priceReferenceValue =
+    payload.side === "BUY" ? market.best_ask : market.best_bid;
+  const authorizedLimitPrice = priceBoundFromBps(
+    priceReferenceValue,
+    descriptor.constraints.max_slippage_bps,
+    market.price_increment,
+    payload.side,
+  );
+  const limitPriceComparison = compareDecimals(
+    configuration.limit_price,
+    authorizedLimitPrice,
+  );
+  const limitPriceWithinBound =
+    payload.side === "BUY"
+      ? limitPriceComparison <= 0
+      : limitPriceComparison >= 0;
+  const settlementComparison = compareDecimals(
+    settlement.value,
+    descriptor.constraints.settlement.value,
+  );
+  const settlementWithinLimit =
+    settlement.kind === descriptor.constraints.settlement.kind &&
+    (settlement.kind === "MAX_QUOTE_DEBIT"
+      ? settlementComparison <= 0
+      : settlementComparison >= 0);
   return {
     category: COINBASE_EVIDENCE_CATEGORY,
     environment: "production",
@@ -73,26 +115,35 @@ export function extractSimulatedCoinbaseEvidence(solution, now = new Date()) {
     side: payload.side,
     order_type: "sor_limit_ioc",
     time_in_force: "ioc",
-    quote_size_microunits: decimalToMicrounits(
-      configuration.quote_size,
-      "proposal quote size",
-    ),
-    limit_price_microunits: decimalToMicrounits(
-      configuration.limit_price,
-      "proposal limit price",
-    ),
-    slippage_bps: decimalRatioBps(
-      preview.est_average_filled_price,
-      market.best_ask,
-    ),
-    commission_microunits: decimalToMicrounits(
-      preview.commission_total,
-      "preview commission",
-    ),
-    all_in_debit_microunits: decimalToMicrounits(
-      conservativeAllInDebit,
-      "conservative all-in debit",
-    ),
+    size_field: sizeField,
+    size_value: configuration[sizeField],
+    limit_price: configuration.limit_price,
+    price_reference_value: priceReferenceValue,
+    authorized_limit_price: authorizedLimitPrice,
+    limit_price_within_bound: limitPriceWithinBound,
+    slippage_bps: adverseSlippageBps,
+    slippage_within_limit:
+      adverseSlippageBps <=
+      descriptor.constraints.max_slippage_bps,
+    commission_value: preview.commission_total,
+    commission_within_limit:
+      compareDecimals(
+        preview.commission_total,
+        descriptor.constraints.max_commission.value,
+      ) <= 0,
+    settlement_kind: settlement.kind,
+    settlement_value: settlement.value,
+    settlement_within_limit: settlementWithinLimit,
+    funding_asset: funding.funding_asset,
+    funding_available: funding.available_balance,
+    funding_required: funding.required_available,
+    funding_evidence_digest: funding.evidence_digest,
+    funding_sufficient:
+      compareDecimals(
+        funding.available_balance,
+        funding.required_available,
+      ) >= 0,
+    action_descriptor_digest: descriptor.descriptor_digest,
     portfolio_fingerprint:
       envelope.claimed_evidence.portfolio_fingerprint,
     credential_fingerprint:
@@ -111,5 +162,6 @@ export function extractSimulatedCoinbaseEvidence(solution, now = new Date()) {
     market_status: market.status,
     trading_disabled: market.product_flags.trading_disabled,
     product_disabled: market.product_flags.is_disabled,
+    view_only: market.product_flags.view_only,
   };
 }

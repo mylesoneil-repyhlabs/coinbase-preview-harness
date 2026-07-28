@@ -1,0 +1,21 @@
+{
+  "schema_version": "delta.coinbase.preview_capability_profile.v1",
+  "id": "coinbase-generic-spot-preview-v1",
+  "description": "Capabilities allowed for generic planning, trusted reads, simulation, and Coinbase Preview. This profile cannot authorize Create Order.",
+  "allowed_product_types": [
+    "SPOT"
+  ],
+  "allowed_sides": [
+    "BUY",
+    "SELL"
+  ],
+  "allowed_order_types": [
+    "SOR_LIMIT_IOC"
+  ],
+  "max_slippage_bps": 9999,
+  "max_ttl_seconds": 600,
+  "max_market_age_ms": 5000,
+  "max_preview_age_ms": 10000,
+  "max_executions": 1,
+  "create_enabled": false
+}

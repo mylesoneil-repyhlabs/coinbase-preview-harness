@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(SCRIPT_DIR, "..");
+const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
+const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_ROOT;
 const SKILL_NAME = "delta-coinbase-guard";
 const SKILL_DIR = path.join(ROOT, "skills", SKILL_NAME);
 
@@ -43,6 +44,7 @@ if (!/\$delta-coinbase-guard\b/.test(skill)) {
 for (const reference of [
   "references/workflow.md",
   "references/security-boundary.md",
+  "references/showcase-response.md",
 ]) {
   if (!skill.includes(reference)) {
     throw new Error(`SKILL.md must link ${reference}`);

@@ -6,15 +6,22 @@
   bearer tokens, or seed phrases.
 - Accept a Coinbase key only by absolute local file path.
 - Require an isolated Coinbase Advanced portfolio.
-- Require ECDSA/ES256, View and Trade enabled, Transfer and Receive disabled,
-  and the narrowest available portfolio/IP restriction.
+- For planning, authenticated account reads, and Preview, require ECDSA/ES256,
+  View enabled, Trade and Transfer disabled, and the narrowest available
+  portfolio/IP restriction.
+- Coinbase's documented key-permissions response exposes `can_view`,
+  `can_trade`, `can_transfer`, and `portfolio_uuid`; it does not currently
+  expose a separate `can_receive`. Reject an explicit `can_receive=true` if an
+  extended response supplies it, but do not invent a required field.
 - The key file must be outside the repository, owned by the current user,
   non-symlinked, regular, and mode `0600`.
-- A model-facing Coinbase MCP must use a different View-only credential.
-- If its schema advertises any mutating operation, do not probe the operation.
-  Stop with `STOP_UNSAFE_TOOL_TOPOLOGY`; remediation requires removing it or
-  replacing the credential/surface, rerunning `doctor`, and restarting the
-  workflow from `plan`.
+- Coinbase's standard local MCP advertises mutating tools alongside reads.
+  Do not expose that full namespace to the planner with a Trade credential.
+  Use the harness's direct View-only read/Preview adapter or a host allowlist
+  that exposes only product, balance, market, and Preview operations.
+- The future executor requires a separate View+Trade/no-Transfer key behind
+  the external controller. Do not configure it while simulation or Preview
+  work remains.
 
 ## Authorization
 
@@ -37,7 +44,7 @@
 
 ## Delta
 
-- The public V1 is compile-time hard-disabled for production composition and
+- Public v1.3 is compile-time hard-disabled for production composition and
   returns `ENGINEERING_INTEGRATION_REQUIRED` before reading credentials for
   execution.
 - Only an independently verified Delta `success` plus a matching `Proof` may
@@ -52,7 +59,7 @@
 
 ## Coinbase execution
 
-- The checked-in V1 cannot invoke Create Order. Engineering must replace
+- Checked-in v1.3 cannot invoke Create Order. Engineering must replace
   `src/integration/production-composition.js` in source and pass the documented
   acceptance suite before enabling it.
 - The public REST adapter has no Create method. The separate Create transport

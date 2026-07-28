@@ -19,7 +19,8 @@ test("credential readiness is safe to run before a key is supplied", async () =>
     result.stdout,
     /CREDENTIALS_NOT_CONFIGURED|CREDENTIAL_ATTESTATION_PRESENT/,
   );
-  assert.match(result.stdout, /REQUIRED_SCOPE=View\+Trade/);
+  assert.match(result.stdout, /PLANNER_SCOPE=View only/);
+  assert.match(result.stdout, /FUTURE_EXECUTOR_SCOPE=View\+Trade/);
   assert.match(result.stdout, /PERSISTED_SECRET_MATERIAL=false/);
   assert.match(result.stdout, /LIVE_CREATE=LOCKED/);
   assert.match(result.stdout, /5\.00 USDC principal/);

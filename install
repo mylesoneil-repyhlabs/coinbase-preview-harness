@@ -109,5 +109,9 @@ Installation complete.
    Use $delta-coinbase-guard to run the conditional-allocation partner
    showcase and return every result directly in this chat.
 
-No Coinbase, Delta, or OpenAI credentials are required for the showcase.
+4. For generic v1.3 BUY and SELL planning, use Track B of the same recording
+   kit or the copy-paste examples in README.md. The skill will show the closed
+   action and pause for your explicit policy-digest authorization.
+
+No Coinbase, Delta, or OpenAI credentials are required for either simulation.
 NEXT_STEPS

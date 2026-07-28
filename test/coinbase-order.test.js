@@ -55,7 +55,40 @@ test("raw Coinbase body derivation rejects unknown or unsupported action fields"
     /schema mismatch/,
   );
   assert.throws(
-    () => buildCoinbasePreviewRequest({ ...action, side: "SELL" }),
-    /only transports BUY/,
+    () =>
+      buildCoinbasePreviewRequest({
+        ...action,
+        base_size: "0.1",
+      }),
+    /schema mismatch/,
+  );
+});
+
+test("SELL transports only base_size through Preview and Create", () => {
+  const sell = {
+    product_id: "BTC-USD",
+    side: "SELL",
+    type: "limit",
+    time_in_force: "IOC",
+    base_size: "0.05000000",
+    limit_price: "64000.00",
+  };
+  assert.deepEqual(buildCoinbasePreviewRequest(sell), {
+    product_id: "BTC-USD",
+    side: "SELL",
+    order_configuration: {
+      sor_limit_ioc: {
+        base_size: "0.05000000",
+        limit_price: "64000.00",
+      },
+    },
+  });
+  assert.throws(
+    () =>
+      buildCoinbasePreviewRequest({
+        ...sell,
+        quote_size: "3200",
+      }),
+    /schema mismatch/,
   );
 });

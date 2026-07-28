@@ -95,7 +95,7 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.limits.max_slippage_bps",
     label: "slippage cap",
     expression:
-      /\b(?:do not pay|never pay|not)\s+more than\s+(\d+)\s+bps\s+(above|below)\b/gi,
+      /\b(?:do not (?:pay|accept)|never (?:pay|accept)|not)\s+more than\s+(\d+)\s+bps\s+(above|below)\b/gi,
     normalize: (match) =>
       `${canonicalDecimal(match[1])}:${match[2].toUpperCase()}`,
     policyValue: (policy) =>
@@ -107,21 +107,21 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.limits.max_commission.value",
     label: "commission cap",
     expression:
-      /(?:(?:do not (?:pay|spend)|never (?:pay|spend)|not)\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+in commission\b/gi,
+      /(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+in commission\b/gi,
     normalize: (match) =>
       `${canonicalDecimal(match[1])} ${match[2].toUpperCase()}`,
     policyValue: (policy) =>
       `${canonicalDecimal(policy.limits.max_commission.value)} ${policy.limits.max_commission.asset.toUpperCase()}`,
   },
   {
-    field: "policy.limits.max_all_in_debit.value",
-    label: "all-in debit cap",
+    field: "policy.limits.settlement.value",
+    label: "settlement bound",
     expression:
-      /(?:(?:do not (?:pay|spend)|never (?:pay|spend)|not)\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+total\b/gi,
+      /(?:(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+total|(?:receive|accept)\s+(?:at least|no less than)\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net))\b/gi,
     normalize: (match) =>
-      `${canonicalDecimal(match[1])} ${match[2].toUpperCase()}`,
+      `${canonicalDecimal(match[1] ?? match[3])} ${(match[2] ?? match[4]).toUpperCase()}`,
     policyValue: (policy) =>
-      `${canonicalDecimal(policy.limits.max_all_in_debit.value)} ${policy.limits.max_all_in_debit.asset.toUpperCase()}`,
+      `${canonicalDecimal(policy.limits.settlement.value)} ${policy.limits.settlement.asset.toUpperCase()}`,
   },
   {
     field: "policy.validity.ttl_seconds",
@@ -270,7 +270,7 @@ export function findUnrecognizedConstraints(intent) {
         code: "UNRECOGNIZED_CONSTRAINT",
         source_text: sourceText,
         reason:
-          "This clause is not represented in the v1 spot-order taxonomy and cannot be discarded.",
+          "This clause is not represented in the v2 spot-order taxonomy and cannot be discarded.",
       });
     }
   }

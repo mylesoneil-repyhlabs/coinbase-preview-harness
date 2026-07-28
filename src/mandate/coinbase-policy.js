@@ -1,20 +1,28 @@
 import { parseDecimal } from "../decimal.js";
 
-export const COINBASE_POLICY_KIND = "coinbase_spot";
+export const COINBASE_POLICY_KIND = "coinbase_spot_v2";
 export const COINBASE_EVIDENCE_CATEGORY =
   "COINBASE_ADVANCED_SPOT_ORDER";
 
-export const COINBASE_SPOT_POLICY_SOURCE = `name coinbase_spot_order_v1
+// This source is the narrow adapter contract exercised by the simulator. It is
+// intentionally kept separate from the private Delta implementation; the
+// production adapter must validate its concrete type mapping before Create can
+// be enabled.
+export const COINBASE_SPOT_POLICY_SOURCE = `name coinbase_spot_order_v2
 
 parameters {
   product_id: string
   base_asset: string
   quote_asset: string
   side: string
-  exact_quote_size_microunits: int
+  size_field: string
+  exact_size_value: string
+  funding_asset: string
   max_slippage_bps: int
-  max_commission_microunits: int
-  max_all_in_debit_microunits: int
+  max_commission_value: string
+  settlement_kind: string
+  settlement_value: string
+  action_descriptor_digest: string
   portfolio_fingerprint: string
   credential_fingerprint: string
   expires_at_epoch_ms: int
@@ -30,10 +38,15 @@ requires {
   evidence.side == parameters.side;
   evidence.order_type == "sor_limit_ioc";
   evidence.time_in_force == "ioc";
-  evidence.quote_size_microunits == parameters.exact_quote_size_microunits;
-  evidence.slippage_bps <= parameters.max_slippage_bps;
-  evidence.commission_microunits <= parameters.max_commission_microunits;
-  evidence.all_in_debit_microunits <= parameters.max_all_in_debit_microunits;
+  evidence.size_field == parameters.size_field;
+  evidence.size_value == parameters.exact_size_value;
+  evidence.funding_asset == parameters.funding_asset;
+  evidence.action_descriptor_digest == parameters.action_descriptor_digest;
+  evidence.limit_price_within_bound;
+  evidence.slippage_within_limit;
+  evidence.commission_within_limit;
+  evidence.settlement_within_limit;
+  evidence.funding_sufficient;
   evidence.portfolio_fingerprint == parameters.portfolio_fingerprint;
   evidence.credential_fingerprint == parameters.credential_fingerprint;
   evidence.evaluated_at_epoch_ms <= parameters.expires_at_epoch_ms;
@@ -45,6 +58,7 @@ requires {
   evidence.market_status == "online";
   not evidence.trading_disabled;
   not evidence.product_disabled;
+  not evidence.view_only;
 }
 `;
 
@@ -58,10 +72,15 @@ export const COINBASE_POLICY_CONSTRAINTS = Object.freeze([
   "evidence.side == parameters.side",
   'evidence.order_type == "sor_limit_ioc"',
   'evidence.time_in_force == "ioc"',
-  "evidence.quote_size_microunits == parameters.exact_quote_size_microunits",
-  "evidence.slippage_bps <= parameters.max_slippage_bps",
-  "evidence.commission_microunits <= parameters.max_commission_microunits",
-  "evidence.all_in_debit_microunits <= parameters.max_all_in_debit_microunits",
+  "evidence.size_field == parameters.size_field",
+  "evidence.size_value == parameters.exact_size_value",
+  "evidence.funding_asset == parameters.funding_asset",
+  "evidence.action_descriptor_digest == parameters.action_descriptor_digest",
+  "evidence.limit_price_within_bound",
+  "evidence.slippage_within_limit",
+  "evidence.commission_within_limit",
+  "evidence.settlement_within_limit",
+  "evidence.funding_sufficient",
   "evidence.portfolio_fingerprint == parameters.portfolio_fingerprint",
   "evidence.credential_fingerprint == parameters.credential_fingerprint",
   "evidence.evaluated_at_epoch_ms <= parameters.expires_at_epoch_ms",
@@ -73,8 +92,12 @@ export const COINBASE_POLICY_CONSTRAINTS = Object.freeze([
   'evidence.market_status == "online"',
   "not evidence.trading_disabled",
   "not evidence.product_disabled",
+  "not evidence.view_only",
 ]);
 
+// Retained only for reading/verifying legacy v1 evidence. V2 policy parameters
+// use canonical decimal strings so an eight-decimal base-asset SELL is not
+// truncated or rejected by a universal 1e6 scale.
 export function decimalToMicrounits(value, field = "value") {
   const parsed = parseDecimal(value, field);
   if (parsed.coefficient < 0n) {
@@ -96,7 +119,9 @@ export function buildCoinbasePolicyBundle({
   policyExpiresAt,
 }) {
   if (!plan?.policy || !(policyExpiresAt instanceof Date)) {
-    throw new Error("A confirmed execution plan and policy expiry are required");
+    throw new Error(
+      "A confirmed execution plan and policy expiry are required",
+    );
   }
   if (
     typeof attestation?.portfolio_fingerprint !== "string" ||
@@ -104,30 +129,31 @@ export function buildCoinbasePolicyBundle({
   ) {
     throw new Error("Credential and portfolio fingerprints are required");
   }
-
+  const descriptor = plan.action_descriptor;
+  if (
+    descriptor?.descriptor_digest == null ||
+    descriptor?.size?.field == null ||
+    descriptor?.funding?.asset == null
+  ) {
+    throw new Error("The canonical action descriptor is missing");
+  }
   const parameters = {
     product_id: plan.policy.product_id,
     base_asset: plan.policy.base_asset,
     quote_asset: plan.policy.quote_asset,
     side: plan.policy.side,
-    exact_quote_size_microunits: decimalToMicrounits(
-      plan.policy.size.value,
-      "policy.size.value",
-    ),
+    size_field: descriptor.size.field,
+    exact_size_value: plan.policy.size.value,
+    funding_asset: descriptor.funding.asset,
     max_slippage_bps: plan.policy.limits.max_slippage_bps,
-    max_commission_microunits: decimalToMicrounits(
-      plan.policy.limits.max_commission.value,
-      "policy.limits.max_commission.value",
-    ),
-    max_all_in_debit_microunits: decimalToMicrounits(
-      plan.policy.limits.max_all_in_debit.value,
-      "policy.limits.max_all_in_debit.value",
-    ),
+    max_commission_value: plan.policy.limits.max_commission.value,
+    settlement_kind: plan.policy.limits.settlement.kind,
+    settlement_value: plan.policy.limits.settlement.value,
+    action_descriptor_digest: descriptor.descriptor_digest,
     portfolio_fingerprint: attestation.portfolio_fingerprint,
     credential_fingerprint: attestation.key_fingerprint,
     expires_at_epoch_ms: policyExpiresAt.getTime(),
   };
-
   for (const [name, value] of Object.entries(parameters)) {
     if (
       !(
@@ -138,11 +164,12 @@ export function buildCoinbasePolicyBundle({
       throw new Error(`Invalid Delta policy parameter: ${name}`);
     }
   }
-
   return {
     policy_kind: COINBASE_POLICY_KIND,
     source: COINBASE_SPOT_POLICY_SOURCE,
     parameters,
+    integration_status:
+      "SIMULATED_CONTRACT_PENDING_PRIVATE_DELTA_VALIDATION",
   };
 }
 

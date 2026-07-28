@@ -13,12 +13,16 @@ import {
 import { canonicalize, digest, digestBytes } from "../src/evidence.js";
 import { createExecutionPlan } from "../src/plan.js";
 import { simulateExecution } from "../src/simulator.js";
+import { compileDeterministicIntent } from "../src/intent-compiler.js";
+import { createCanonicalSpotAction } from "../src/spot-action.js";
 
 const INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 5 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 50 bps above Coinbase's fresh best ask, more than 0.50 USDC in commission, or more than 5.50 USDC total. This authorization expires 2 minutes after I confirm it.";
 const FIXED_NOW = new Date("2026-07-23T18:00:00.000Z");
 
 function mandateFixture() {
+  const policy = compileDeterministicIntent(INTENT).policy;
+  const actionDescriptor = createCanonicalSpotAction(policy);
   const previewRequest = {
     product_id: "ETH-USDC",
     side: "BUY",
@@ -44,12 +48,17 @@ function mandateFixture() {
     base_increment: "0.00000001",
     quote_increment: "0.01",
     price_increment: "0.01",
+    base_min_size: "0.00000001",
+    base_max_size: "1000000",
+    quote_min_size: "0.01",
+    quote_max_size: "10000000",
     best_bid: "2999.00",
     best_ask: "3000.00",
     observed_at: FIXED_NOW.toISOString(),
     product_flags: {
       trading_disabled: false,
       is_disabled: false,
+      view_only: false,
       cancel_only: false,
       limit_only: false,
       post_only: false,
@@ -69,7 +78,22 @@ function mandateFixture() {
     warning: [],
   };
   const collectedAt = FIXED_NOW.toISOString();
+  const fundingUnsigned = {
+    schema_version: "delta.coinbase.funding_evidence.v1",
+    portfolio_fingerprint: "portfolio-1",
+    funding_asset: "USDC",
+    required_available: "5.50",
+    available_balance: "10",
+    account_fingerprints: [digest("account-usdc")],
+    complete: true,
+  };
+  const funding = {
+    ...fundingUnsigned,
+    evidence_digest: digest(fundingUnsigned),
+  };
   const evaluationRequest = {
+    schema_version: "delta.coinbase.evaluation_request.v2",
+    action_descriptor: actionDescriptor,
     create_payload: createPayload,
     create_payload_serialized: createPayloadSerialized,
     create_payload_digest: digestBytes(createPayloadSerialized),
@@ -78,9 +102,15 @@ function mandateFixture() {
     evidence: {
       market,
       preview,
+      funding,
       collected_at: collectedAt,
     },
-    evidence_digest: digest({ market, preview, collected_at: collectedAt }),
+    evidence_digest: digest({
+      market,
+      preview,
+      funding,
+      collected_at: collectedAt,
+    }),
     credential_binding: {
       portfolio_fingerprint: "portfolio-1",
       credential_fingerprint: "credential-1",
@@ -91,16 +121,23 @@ function mandateFixture() {
     base_asset: "ETH",
     quote_asset: "USDC",
     side: "BUY",
-    exact_quote_size_microunits: 5_000_000,
+    size_field: "quote_size",
+    exact_size_value: "5.00",
+    funding_asset: "USDC",
     max_slippage_bps: 50,
-    max_commission_microunits: 500_000,
-    max_all_in_debit_microunits: 5_500_000,
+    max_commission_value: "0.50",
+    settlement_kind: "MAX_QUOTE_DEBIT",
+    settlement_value: "5.50",
+    action_descriptor_digest: actionDescriptor.descriptor_digest,
     portfolio_fingerprint: "portfolio-1",
     credential_fingerprint: "credential-1",
     expires_at_epoch_ms: FIXED_NOW.getTime() + 120_000,
   };
   const proofEvidenceBindings = {
     product_id: parameters.product_id,
+    action_descriptor_digest: actionDescriptor.descriptor_digest,
+    authorized_limit_price: "3015.00",
+    funding_evidence_digest: funding.evidence_digest,
     preview_id: preview.preview_id,
     create_payload_digest: evaluationRequest.create_payload_digest,
     preview_request_digest: evaluationRequest.preview_request_digest,
@@ -176,6 +213,46 @@ test("simulated adapter returns indexed terminal constraint failures", async () 
     [3],
   );
   assert.match(result.constraint_failures[0].pretty_expr, /product_id/);
+});
+
+test("Delta REVIEW is terminal, bound, and never carries an execution proof", async () => {
+  const {
+    evaluationRequest,
+    parameters,
+    proofEvidenceBindings,
+  } = mandateFixture();
+  const adapter = createPreparedSimulatedAdapter({ now: () => FIXED_NOW });
+  const getStatus = adapter.getStatus.bind(adapter);
+  adapter.getStatus = async (input) => {
+    const status = await getStatus(input);
+    return {
+      status: "review",
+      intent_id: input.intentId,
+      proposal: status.proposal,
+      reason: "trusted evidence requires human review",
+      constraint_failures: [],
+    };
+  };
+
+  const result = await evaluateMandateCandidate({
+    adapter,
+    policySource: COINBASE_SPOT_POLICY_SOURCE,
+    parameters,
+    actionRecord: evaluationRequest,
+    authorization: { confirmed: true },
+    proofEvidenceBindings,
+    pollIntervalMs: 1,
+  });
+
+  assert.equal(result.status, "review");
+  assert.equal(result.decision, "REVIEW");
+  assert.equal(result.verified, false);
+  assert.equal(result.proof, null);
+  assert.equal(result.receipt.decision, "REVIEW");
+  assert.equal(
+    result.receipt.exact_payload_digest,
+    evaluationRequest.create_payload_digest,
+  );
 });
 
 test("verified success still fails closed when proof evidence is not bound to the outgoing bytes", async () => {

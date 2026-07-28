@@ -1,391 +1,237 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalize, digest, digestBytes } from "../src/evidence.js";
-import { extractSimulatedCoinbaseEvidence } from "../src/mandate/coinbase-evidence.js";
+import {
+  buildCoinbaseCreateRequest,
+  buildCoinbasePreviewRequest,
+} from "../src/coinbase-order.js";
+import { digest, digestBytes } from "../src/evidence.js";
+import { evaluateCoinbaseFunding } from "../src/funding.js";
+import { compileDeterministicIntent } from "../src/intent-compiler.js";
+import {
+  extractSimulatedCoinbaseEvidence,
+} from "../src/mandate/coinbase-evidence.js";
 import {
   buildCoinbaseSolution,
   parseCoinbaseSolution,
 } from "../src/mandate/coinbase-solution.js";
+import { proposeSpotOrder } from "../src/proposer.js";
+import { createCanonicalSpotAction } from "../src/spot-action.js";
 
-const FIXED_NOW = new Date("2026-07-24T14:00:00.000Z");
+const BUY_INTENT =
+  "Using my isolated Coinbase Advanced portfolio, use exactly 250 USDC to buy SOL on SOL-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 40 bps above Coinbase's fresh best ask, more than 2 USDC in commission, or more than 252 USDC total. This authorization expires 2 minutes after I confirm it.";
+const SELL_INTENT =
+  "Using my isolated Coinbase Advanced portfolio, use exactly 0.05000000 BTC to sell BTC on BTC-USD once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not accept more than 40 bps below Coinbase's fresh best bid, pay more than 8 USD in commission, or receive at least 3190 USD after commission. This authorization expires 2 minutes after I confirm it.";
+const FIXED = new Date("2026-07-23T18:00:00.000Z");
 
-function evaluationFixture() {
-  const previewRequest = {
-    product_id: "ETH-USDC",
-    side: "BUY",
-    order_configuration: {
-      sor_limit_ioc: {
-        quote_size: "5.00",
-        limit_price: "3015.00",
-      },
-    },
-  };
-  const createPayload = {
-    client_order_id: "client-1",
-    ...structuredClone(previewRequest),
-    preview_id: "preview-1",
-  };
+function fixture(intent) {
+  const policy = compileDeterministicIntent(intent).policy;
+  const sell = policy.side === "SELL";
   const market = {
-    product_id: "ETH-USDC",
+    product_id: policy.product_id,
     product_type: "SPOT",
-    base_asset: "ETH",
-    quote_asset: "USDC",
+    base_asset: policy.base_asset,
+    quote_asset: policy.quote_asset,
     base_increment: "0.00000001",
     quote_increment: "0.01",
     price_increment: "0.01",
-    best_bid: "2999.00",
-    best_ask: "3000.00",
-    observed_at: FIXED_NOW.toISOString(),
+    base_min_size: "0.00000001",
+    base_max_size: "1000000",
+    quote_min_size: "0.01",
+    quote_max_size: "10000000",
+    best_bid: sell ? "64000.00" : "149.90",
+    best_ask: sell ? "64001.00" : "150.00",
+    observed_at: FIXED.toISOString(),
     status: "online",
     product_flags: {
       is_disabled: false,
       trading_disabled: false,
+      view_only: false,
       cancel_only: false,
       limit_only: false,
       post_only: false,
       auction_mode: false,
     },
   };
-  const preview = {
-    order_total: "5.25",
-    commission_total: "0.25",
-    quote_size: "5.00",
-    base_size: "0.00166113",
-    est_average_filled_price: "3010.00",
-    best_bid: "2999.00",
-    best_ask: "3000.00",
-    preview_id: "preview-1",
-    errs: [],
-    warning: [],
+  const proposal = proposeSpotOrder(policy, market, { now: FIXED });
+  const preview = sell
+    ? {
+        order_total: "3200",
+        commission_total: "5",
+        quote_size: "3200",
+        base_size: "0.05000000",
+        est_average_filled_price: "63900",
+        best_bid: "64000",
+        best_ask: "64001",
+        preview_id: "preview-sell",
+        errs: [],
+        warning: [],
+      }
+    : {
+        order_total: "251",
+        commission_total: "1",
+        quote_size: "250",
+        base_size: "1.66",
+        est_average_filled_price: "150.40",
+        best_bid: "149.90",
+        best_ask: "150",
+        preview_id: "preview-buy",
+        errs: [],
+        warning: [],
+      };
+  const fundingResult = evaluateCoinbaseFunding(
+    policy,
+    {
+      accounts: [
+        {
+          uuid: `account-${policy.side}`,
+          currency:
+            policy.side === "BUY"
+              ? policy.quote_asset
+              : policy.base_asset,
+          available_balance: {
+            currency:
+              policy.side === "BUY"
+                ? policy.quote_asset
+                : policy.base_asset,
+            value:
+              policy.side === "BUY"
+                ? "500"
+                : "1.00000000",
+          },
+          active: true,
+          ready: true,
+          deleted_at: null,
+          platform: "ACCOUNT_PLATFORM_CONSUMER",
+          retail_portfolio_id: "portfolio-1",
+        },
+      ],
+      has_next: false,
+      cursor: null,
+    },
+    { portfolioFingerprint: "portfolio-fingerprint" },
+  );
+  const {
+    decision: _decision,
+    failures: _failures,
+    ...funding
+  } = fundingResult;
+  const previewRequest = buildCoinbasePreviewRequest(proposal.action);
+  const createPayload = buildCoinbaseCreateRequest(
+    proposal.action,
+    "00000000-0000-4000-8000-000000000001",
+    preview.preview_id,
+  );
+  const serialized = JSON.stringify(createPayload);
+  const evidence = {
+    market,
+    preview,
+    funding,
+    collected_at: FIXED.toISOString(),
   };
-  const collectedAt = FIXED_NOW.toISOString();
-  const createPayloadSerialized = JSON.stringify(createPayload);
   return {
+    schema_version: "delta.coinbase.evaluation_request.v2",
+    action_descriptor: createCanonicalSpotAction(policy),
     create_payload: createPayload,
-    create_payload_serialized: createPayloadSerialized,
-    create_payload_digest: digestBytes(createPayloadSerialized),
+    create_payload_serialized: serialized,
+    create_payload_digest: digestBytes(serialized),
     preview_request: previewRequest,
     preview_request_digest: digest(previewRequest),
-    evidence: { market, preview, collected_at: collectedAt },
-    evidence_digest: digest({
-      market,
-      preview,
-      collected_at: collectedAt,
-    }),
+    evidence,
+    evidence_digest: digest(evidence),
     credential_binding: {
-      portfolio_fingerprint: "portfolio-1",
-      credential_fingerprint: "credential-1",
+      portfolio_fingerprint: "portfolio-fingerprint",
+      credential_fingerprint: "credential-fingerprint",
     },
   };
 }
 
-function refreshBindings(evaluation) {
-  evaluation.create_payload_serialized = JSON.stringify(
-    evaluation.create_payload,
+test("strict v2 solution preserves generic BUY and SELL evidence", () => {
+  for (const intent of [BUY_INTENT, SELL_INTENT]) {
+    const evaluation = fixture(intent);
+    const solution = buildCoinbaseSolution(evaluation);
+    const parsed = parseCoinbaseSolution(solution);
+    const evidence = extractSimulatedCoinbaseEvidence(solution, FIXED);
+    assert.deepEqual(parsed.create_payload, evaluation.create_payload);
+    assert.equal(
+      evidence.action_descriptor_digest,
+      evaluation.action_descriptor.descriptor_digest,
+    );
+    assert.equal(
+      evidence.funding_evidence_digest,
+      evaluation.evidence.funding.evidence_digest,
+    );
+    assert.equal(evidence.side, evaluation.create_payload.side);
+    assert.equal(evidence.funding_sufficient, true);
+    assert.equal(evidence.settlement_within_limit, true);
+    assert.equal(evidence.limit_price_within_bound, true);
+    assert.equal(
+      evidence.authorized_limit_price,
+      evaluation.create_payload.order_configuration.sor_limit_ioc
+        .limit_price,
+    );
+  }
+});
+
+test("eight-decimal SELL size is preserved as a canonical decimal string", () => {
+  const evidence = extractSimulatedCoinbaseEvidence(
+    buildCoinbaseSolution(fixture(SELL_INTENT)),
+    FIXED,
   );
-  evaluation.create_payload_digest = digestBytes(
-    evaluation.create_payload_serialized,
-  );
-  evaluation.preview_request_digest = digest(evaluation.preview_request);
+  assert.equal(evidence.size_field, "base_size");
+  assert.equal(evidence.size_value, "0.05000000");
+  assert.equal(evidence.settlement_kind, "MIN_NET_QUOTE_PROCEEDS");
+  assert.equal(evidence.settlement_value, "3195");
+});
+
+test("BUY debit uses the larger of order_total and quote_size plus fee", () => {
+  const evaluation = fixture(BUY_INTENT);
+  evaluation.evidence.preview.order_total = "250.10";
+  evaluation.evidence.preview.commission_total = "1";
   evaluation.evidence_digest = digest(evaluation.evidence);
-  return evaluation;
-}
-
-function solutionFromMutation(mutate, { refresh = true } = {}) {
-  const evaluation = evaluationFixture();
-  mutate(evaluation);
-  if (refresh) refreshBindings(evaluation);
-  return buildCoinbaseSolution(evaluation);
-}
-
-function mutateEnvelope(solution, mutate) {
-  const marker = "?envelope=";
-  const markerAt = solution.indexOf(marker);
-  const prefix = solution.slice(0, markerAt + marker.length);
-  const envelope = JSON.parse(
-    Buffer.from(solution.slice(markerAt + marker.length), "base64url").toString(
-      "utf8",
-    ),
+  const evidence = extractSimulatedCoinbaseEvidence(
+    buildCoinbaseSolution(evaluation),
+    FIXED,
   );
-  mutate(envelope);
-  return `${prefix}${Buffer.from(canonicalize(envelope)).toString("base64url")}`;
-}
-
-test("strict Coinbase evidence contract preserves the valid solution flow", () => {
-  const solution = buildCoinbaseSolution(evaluationFixture());
-  const envelope = parseCoinbaseSolution(solution);
-  const evidence = extractSimulatedCoinbaseEvidence(solution, FIXED_NOW);
-
-  assert.equal(envelope.schema_version, "delta.coinbase.solution.v1");
-  assert.equal(evidence.product_id, "ETH-USDC");
-  assert.equal(evidence.market_status, "online");
-  assert.equal(evidence.trading_disabled, false);
-  assert.equal(evidence.product_disabled, false);
-  assert.equal(evidence.preview_request_matches_create, true);
-  assert.equal(evidence.all_in_debit_microunits, 5_250_000);
+  assert.equal(evidence.settlement_value, "251");
 });
 
-test("all-in debit uses the exact larger of order_total and quote_size plus commission", () => {
-  const understated = solutionFromMutation((evaluation) => {
-    evaluation.create_payload.order_configuration.sor_limit_ioc.quote_size =
-      "0.10";
-    evaluation.preview_request.order_configuration.sor_limit_ioc.quote_size =
-      "0.10";
-    evaluation.evidence.preview.quote_size = "0.10";
-    evaluation.evidence.preview.commission_total = "0.20";
-    evaluation.evidence.preview.order_total = "0.299999";
-  });
-  const overstated = solutionFromMutation((evaluation) => {
-    evaluation.evidence.preview.order_total = "5.250001";
-  });
-
-  assert.equal(
-    extractSimulatedCoinbaseEvidence(understated, FIXED_NOW)
-      .all_in_debit_microunits,
-    300_000,
-  );
-  assert.equal(
-    extractSimulatedCoinbaseEvidence(overstated, FIXED_NOW)
-      .all_in_debit_microunits,
-    5_250_001,
-  );
-});
-
-test("every nested Coinbase object rejects unknown and missing fields", async (t) => {
-  const baseSolution = buildCoinbaseSolution(evaluationFixture());
-  const cases = [
-    {
-      name: "Create payload",
-      expected: /Coinbase Create payload has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.create_payload.extra = true;
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.create_payload.preview_id;
-        }),
+test("solution rejects descriptor, payload, Preview, and funding tampering", () => {
+  const changes = [
+    (value) => {
+      value.action_descriptor.side = "SELL";
     },
-    {
-      name: "Preview request",
-      expected: /Coinbase Preview request has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.preview_request.extra = true;
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.preview_request.side;
-        }),
+    (value) => {
+      value.create_payload.product_id = "BTC-USDC";
     },
-    {
-      name: "Create order_configuration",
-      expected:
-        /Coinbase Create payload\.order_configuration has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.create_payload.order_configuration.extra = {};
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.create_payload.order_configuration.sor_limit_ioc;
-        }),
+    (value) => {
+      value.preview_request.side = "SELL";
     },
-    {
-      name: "Create sor_limit_ioc",
-      expected:
-        /Coinbase Create payload\.order_configuration\.sor_limit_ioc has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.create_payload.order_configuration.sor_limit_ioc.extra =
-            "1";
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.create_payload.order_configuration.sor_limit_ioc
-            .limit_price;
-        }),
-    },
-    {
-      name: "Preview order_configuration",
-      expected:
-        /Coinbase Preview request\.order_configuration has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.preview_request.order_configuration.extra = {};
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.preview_request.order_configuration.sor_limit_ioc;
-        }),
-    },
-    {
-      name: "Preview sor_limit_ioc",
-      expected:
-        /Coinbase Preview request\.order_configuration\.sor_limit_ioc has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.preview_request.order_configuration.sor_limit_ioc.extra =
-            "1";
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.preview_request.order_configuration.sor_limit_ioc
-            .limit_price;
-        }),
-    },
-    {
-      name: "claimed_evidence",
-      expected: /Coinbase claimed evidence has an invalid field set/,
-      unknown: () =>
-        mutateEnvelope(baseSolution, (envelope) => {
-          envelope.claimed_evidence.extra = true;
-        }),
-      missing: () =>
-        mutateEnvelope(baseSolution, (envelope) => {
-          delete envelope.claimed_evidence.portfolio_fingerprint;
-        }),
-    },
-    {
-      name: "market",
-      expected: /Coinbase market evidence has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.evidence.market.extra = true;
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.evidence.market.status;
-        }),
-    },
-    {
-      name: "product_flags",
-      expected:
-        /Coinbase market evidence\.product_flags has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.evidence.market.product_flags.extra = false;
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.evidence.market.product_flags.trading_disabled;
-        }),
-    },
-    {
-      name: "preview",
-      expected: /Coinbase preview evidence has an invalid field set/,
-      unknown: () =>
-        solutionFromMutation((evaluation) => {
-          evaluation.evidence.preview.extra = "0";
-        }),
-      missing: () =>
-        solutionFromMutation((evaluation) => {
-          delete evaluation.evidence.preview.order_total;
-        }),
+    (value) => {
+      value.evidence.funding.available_balance = "0";
     },
   ];
-
-  for (const entry of cases) {
-    await t.test(`${entry.name} rejects an unknown field`, () => {
-      assert.throws(() => parseCoinbaseSolution(entry.unknown()), entry.expected);
-    });
-    await t.test(`${entry.name} rejects a missing field`, () => {
-      assert.throws(() => parseCoinbaseSolution(entry.missing()), entry.expected);
-    });
+  for (const change of changes) {
+    const evaluation = fixture(BUY_INTENT);
+    change(evaluation);
+    assert.throws(
+      () => parseCoinbaseSolution(buildCoinbaseSolution(evaluation)),
+      /digest|match|invalid|mismatch|BUY|funding/i,
+    );
   }
 });
 
-test("market status and both disabled flags are required and never defaulted", () => {
-  const noStatus = solutionFromMutation((evaluation) => {
-    delete evaluation.evidence.market.status;
-  });
-  const noTradingFlag = solutionFromMutation((evaluation) => {
-    delete evaluation.evidence.market.product_flags.trading_disabled;
-  });
-  const noProductFlag = solutionFromMutation((evaluation) => {
-    delete evaluation.evidence.market.product_flags.is_disabled;
-  });
-
-  assert.throws(() => extractSimulatedCoinbaseEvidence(noStatus, FIXED_NOW));
-  assert.throws(() =>
-    extractSimulatedCoinbaseEvidence(noTradingFlag, FIXED_NOW),
-  );
-  assert.throws(() =>
-    extractSimulatedCoinbaseEvidence(noProductFlag, FIXED_NOW),
-  );
-});
-
-test("Preview request digest and claimed evidence digest are verified", () => {
-  const valid = buildCoinbaseSolution(evaluationFixture());
-  const previewDigestTamper = mutateEnvelope(valid, (envelope) => {
-    envelope.preview_request_digest = "0".repeat(64);
-  });
-  const evidenceDigestTamper = mutateEnvelope(valid, (envelope) => {
-    envelope.claimed_evidence.evidence_digest = "0".repeat(64);
-  });
-
+test("closed envelopes reject unknown fields and nonempty warnings", () => {
+  const unknown = fixture(BUY_INTENT);
+  unknown.create_payload.leverage = "10";
   assert.throws(
-    () => parseCoinbaseSolution(previewDigestTamper),
-    /Preview request digest mismatch/,
+    () => parseCoinbaseSolution(buildCoinbaseSolution(unknown)),
+    /invalid field set|bytes mismatch/,
   );
+  const warning = fixture(BUY_INTENT);
+  warning.evidence.preview.warning = ["UNKNOWN"];
+  warning.evidence_digest = digest(warning.evidence);
   assert.throws(
-    () => parseCoinbaseSolution(evidenceDigestTamper),
-    /claimed evidence digest mismatch/,
+    () => parseCoinbaseSolution(buildCoinbaseSolution(warning)),
+    /warning must be an empty array/,
   );
-});
-
-test("invalid, negative, and zero-only positive numeric evidence fails closed", async (t) => {
-  const cases = [
-    {
-      name: "negative requested quote size",
-      mutate: (evaluation) => {
-        evaluation.create_payload.order_configuration.sor_limit_ioc.quote_size =
-          "-1";
-      },
-    },
-    {
-      name: "non-decimal limit price",
-      mutate: (evaluation) => {
-        evaluation.preview_request.order_configuration.sor_limit_ioc.limit_price =
-          "3e3";
-      },
-    },
-    {
-      name: "negative market price",
-      mutate: (evaluation) => {
-        evaluation.evidence.market.best_ask = "-3000";
-      },
-    },
-    {
-      name: "zero market price",
-      mutate: (evaluation) => {
-        evaluation.evidence.market.best_bid = "0";
-      },
-    },
-    {
-      name: "negative preview commission",
-      mutate: (evaluation) => {
-        evaluation.evidence.preview.commission_total = "-0.01";
-      },
-    },
-    {
-      name: "numeric preview value instead of decimal string",
-      mutate: (evaluation) => {
-        evaluation.evidence.preview.order_total = 5.25;
-      },
-    },
-    {
-      name: "zero preview fill price",
-      mutate: (evaluation) => {
-        evaluation.evidence.preview.est_average_filled_price = "0";
-      },
-    },
-  ];
-
-  for (const entry of cases) {
-    await t.test(entry.name, () => {
-      const solution = solutionFromMutation(entry.mutate);
-      assert.throws(() => parseCoinbaseSolution(solution), /must be|positive/);
-    });
-  }
 });

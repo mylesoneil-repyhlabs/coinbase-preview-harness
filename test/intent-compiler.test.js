@@ -8,7 +8,7 @@ import {
 export const READY_INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 5 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 50 bps above Coinbase's fresh best ask, more than 0.50 USDC in commission, or more than 5.50 USDC total. This authorization expires 2 minutes after I confirm it.";
 
-test("compiles one explicit natural-language intent into the v1 taxonomy", () => {
+test("compiles one explicit natural-language intent into the v2 taxonomy", () => {
   const result = compileDeterministicIntent(READY_INTENT);
   assert.equal(result.status, "READY_FOR_CONFIRMATION");
   assert.equal(result.policy.product_id, "ETH-USDC");
@@ -69,7 +69,7 @@ test("fails closed instead of discarding an unrecognized material constraint", (
       code: "UNRECOGNIZED_CONSTRAINT",
       source_text: sourceText,
       reason:
-        "This clause is not represented in the v1 spot-order taxonomy and cannot be discarded.",
+        "This clause is not represented in the v2 spot-order taxonomy and cannot be discarded.",
     },
   ]);
 });
@@ -111,6 +111,26 @@ test("does not silently substitute ETH-USD for ETH-USDC", () => {
   assert.equal(result.status, "NEEDS_CLARIFICATION");
   assert.ok(
     result.ambiguities.some((item) => item.code === "BUY_SIZE_ASSET_MISMATCH"),
+  );
+});
+
+test("unsupported numeric bounds return a closed UNSUPPORTED result", () => {
+  const slippage = compileDeterministicIntent(
+    READY_INTENT.replace("50 bps", "10000 bps"),
+  );
+  assert.equal(slippage.status, "UNSUPPORTED");
+  assert.equal(
+    slippage.unsupported_constraints[0].code,
+    "SLIPPAGE_OUTSIDE_CAPABILITY",
+  );
+
+  const expiry = compileDeterministicIntent(
+    READY_INTENT.replace("2 minutes", "20 minutes"),
+  );
+  assert.equal(expiry.status, "UNSUPPORTED");
+  assert.equal(
+    expiry.unsupported_constraints[0].code,
+    "EXPIRY_OUTSIDE_CAPABILITY",
   );
 });
 

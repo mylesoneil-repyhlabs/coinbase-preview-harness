@@ -1,7 +1,7 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.2.0",
-  "description": "Mandate-gated Coinbase Advanced Trade skill and trusted local executor.",
+  "version": "1.3.0",
+  "description": "Generic mandate-gated Coinbase Advanced spot BUY/SELL planner, Preview guard, and locked executor reference.",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,8 @@
   "scripts": {
     "doctor": "node src/cli.js doctor",
     "credential-readiness": "node src/cli.js credential-readiness",
-    "configure-credentials": "node src/cli.js configure-credentials",
+    "configure-credentials": "node src/cli.js configure-preview-credentials",
+    "configure-executor-credentials": "node src/cli.js configure-executor-credentials",
     "coinbase-demo": "node src/cli.js coinbase-demo",
     "mastra-demo": "node src/cli.js mastra-demo",
     "plan": "node src/cli.js plan",
@@ -24,6 +25,8 @@
     "reconcile-execution": "node src/cli.js reconcile-execution",
     "check:links": "node scripts/check-local-links.mjs",
     "check:skill": "node scripts/validate-skill.mjs",
+    "check:release": "node scripts/validate-release-metadata.mjs",
+    "release:bundle": "bash scripts/build-release-bundle.sh HEAD",
     "visuals": "node scripts/generate-workflow-screenshots.mjs",
     "coinbase:panels": "node scripts/generate-coinbase-demo-panels.mjs",
     "mastra:assets": "node scripts/generate-mastra-partner-assets.mjs",

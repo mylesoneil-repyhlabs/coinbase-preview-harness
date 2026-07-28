@@ -1,9 +1,11 @@
 import { parseDecimal } from "../decimal.js";
 import { canonicalize, digest, digestBytes } from "../evidence.js";
+import { assertCanonicalSpotActionIntegrity } from "../spot-action.js";
 
-const PREFIX = "coinbase-advanced://order/v1/";
+const PREFIX = "coinbase-advanced://order/v2/";
 const ENVELOPE_FIELDS = Object.freeze([
   "schema_version",
+  "action_descriptor",
   "create_payload",
   "create_payload_serialized",
   "create_payload_digest",
@@ -24,10 +26,10 @@ const PREVIEW_REQUEST_FIELDS = Object.freeze([
   "order_configuration",
 ]);
 const ORDER_CONFIGURATION_FIELDS = Object.freeze(["sor_limit_ioc"]);
-const SOR_LIMIT_IOC_FIELDS = Object.freeze(["quote_size", "limit_price"]);
 const CLAIMED_EVIDENCE_FIELDS = Object.freeze([
   "market",
   "preview",
+  "funding",
   "collected_at",
   "evidence_digest",
   "portfolio_fingerprint",
@@ -41,6 +43,10 @@ const MARKET_FIELDS = Object.freeze([
   "base_increment",
   "quote_increment",
   "price_increment",
+  "base_min_size",
+  "base_max_size",
+  "quote_min_size",
+  "quote_max_size",
   "best_bid",
   "best_ask",
   "observed_at",
@@ -50,6 +56,7 @@ const MARKET_FIELDS = Object.freeze([
 const PRODUCT_FLAG_FIELDS = Object.freeze([
   "is_disabled",
   "trading_disabled",
+  "view_only",
   "cancel_only",
   "limit_only",
   "post_only",
@@ -66,6 +73,16 @@ const PREVIEW_FIELDS = Object.freeze([
   "preview_id",
   "errs",
   "warning",
+]);
+const FUNDING_FIELDS = Object.freeze([
+  "schema_version",
+  "portfolio_fingerprint",
+  "funding_asset",
+  "required_available",
+  "available_balance",
+  "account_fingerprints",
+  "complete",
+  "evidence_digest",
 ]);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -112,15 +129,16 @@ function assertDecimal(value, name, { positive = false } = {}) {
   }
 }
 
-function assertSorLimitIoc(configuration, name) {
+function assertSorLimitIoc(configuration, side, name) {
   assertExactFields(configuration, ORDER_CONFIGURATION_FIELDS, name);
   const sorLimitIoc = configuration.sor_limit_ioc;
+  const sizeField = side === "BUY" ? "quote_size" : "base_size";
   assertExactFields(
     sorLimitIoc,
-    SOR_LIMIT_IOC_FIELDS,
+    [sizeField, "limit_price"],
     `${name}.sor_limit_ioc`,
   );
-  assertDecimal(sorLimitIoc.quote_size, `${name}.sor_limit_ioc.quote_size`, {
+  assertDecimal(sorLimitIoc[sizeField], `${name}.sor_limit_ioc.${sizeField}`, {
     positive: true,
   });
   assertDecimal(sorLimitIoc.limit_price, `${name}.sor_limit_ioc.limit_price`, {
@@ -135,12 +153,13 @@ export function assertCoinbaseCreatePayload(payload) {
     "Coinbase Create payload.client_order_id",
   );
   assertNonEmptyString(payload.product_id, "Coinbase Create payload.product_id");
-  if (payload.side !== "BUY") {
-    throw new Error("Coinbase Create payload.side must be BUY");
+  if (!["BUY", "SELL"].includes(payload.side)) {
+    throw new Error("Coinbase Create payload.side must be BUY or SELL");
   }
   assertNonEmptyString(payload.preview_id, "Coinbase Create payload.preview_id");
   assertSorLimitIoc(
     payload.order_configuration,
+    payload.side,
     "Coinbase Create payload.order_configuration",
   );
 }
@@ -155,11 +174,12 @@ function assertPreviewRequest(request) {
     request.product_id,
     "Coinbase Preview request.product_id",
   );
-  if (request.side !== "BUY") {
-    throw new Error("Coinbase Preview request.side must be BUY");
+  if (!["BUY", "SELL"].includes(request.side)) {
+    throw new Error("Coinbase Preview request.side must be BUY or SELL");
   }
   assertSorLimitIoc(
     request.order_configuration,
+    request.side,
     "Coinbase Preview request.order_configuration",
   );
 }
@@ -179,6 +199,10 @@ function assertMarket(market) {
     "base_increment",
     "quote_increment",
     "price_increment",
+    "base_min_size",
+    "base_max_size",
+    "quote_min_size",
+    "quote_max_size",
     "best_bid",
     "best_ask",
   ]) {
@@ -235,6 +259,51 @@ function assertPreview(preview) {
   }
 }
 
+function assertFunding(funding) {
+  assertExactFields(
+    funding,
+    FUNDING_FIELDS,
+    "Coinbase funding evidence",
+  );
+  if (
+    funding.schema_version !== "delta.coinbase.funding_evidence.v1" ||
+    funding.complete !== true
+  ) {
+    throw new Error("Coinbase funding evidence is incomplete");
+  }
+  for (const field of [
+    "portfolio_fingerprint",
+    "funding_asset",
+    "evidence_digest",
+  ]) {
+    assertNonEmptyString(
+      funding[field],
+      `Coinbase funding evidence.${field}`,
+    );
+  }
+  for (const field of ["required_available", "available_balance"]) {
+    assertDecimal(
+      funding[field],
+      `Coinbase funding evidence.${field}`,
+    );
+  }
+  if (
+    !Array.isArray(funding.account_fingerprints) ||
+    funding.account_fingerprints.length < 1 ||
+    funding.account_fingerprints.some(
+      (value) => typeof value !== "string" || !SHA256_PATTERN.test(value),
+    )
+  ) {
+    throw new Error(
+      "Coinbase funding evidence account fingerprints are invalid",
+    );
+  }
+  const { evidence_digest: claimedDigest, ...unsigned } = funding;
+  if (digest(unsigned) !== claimedDigest) {
+    throw new Error("Coinbase funding evidence digest mismatch");
+  }
+}
+
 function assertClaimedEvidence(claimedEvidence, payload) {
   assertExactFields(
     claimedEvidence,
@@ -243,6 +312,7 @@ function assertClaimedEvidence(claimedEvidence, payload) {
   );
   assertMarket(claimedEvidence.market);
   assertPreview(claimedEvidence.preview);
+  assertFunding(claimedEvidence.funding);
   assertIsoTimestamp(
     claimedEvidence.collected_at,
     "Coinbase claimed evidence.collected_at",
@@ -264,17 +334,19 @@ function assertClaimedEvidence(claimedEvidence, payload) {
       "Coinbase market evidence does not match the Create payload product",
     );
   }
+  const sizeField = payload.side === "BUY" ? "quote_size" : "base_size";
   if (
-    claimedEvidence.preview.quote_size !==
-    payload.order_configuration.sor_limit_ioc.quote_size
+    claimedEvidence.preview[sizeField] !==
+    payload.order_configuration.sor_limit_ioc[sizeField]
   ) {
     throw new Error(
-      "Coinbase preview evidence quote size does not match the Create payload",
+      `Coinbase preview evidence ${sizeField} does not match the Create payload`,
     );
   }
   const expectedEvidenceDigest = digest({
     market: claimedEvidence.market,
     preview: claimedEvidence.preview,
+    funding: claimedEvidence.funding,
     collected_at: claimedEvidence.collected_at,
   });
   if (claimedEvidence.evidence_digest !== expectedEvidenceDigest) {
@@ -284,7 +356,8 @@ function assertClaimedEvidence(claimedEvidence, payload) {
 
 export function buildCoinbaseSolution(evaluationRequest) {
   const envelope = {
-    schema_version: "delta.coinbase.solution.v1",
+    schema_version: "delta.coinbase.solution.v2",
+    action_descriptor: evaluationRequest.action_descriptor,
     create_payload: evaluationRequest.create_payload,
     create_payload_serialized: evaluationRequest.create_payload_serialized,
     create_payload_digest: evaluationRequest.create_payload_digest,
@@ -293,6 +366,7 @@ export function buildCoinbaseSolution(evaluationRequest) {
     claimed_evidence: {
       market: evaluationRequest.evidence.market,
       preview: evaluationRequest.evidence.preview,
+      funding: evaluationRequest.evidence.funding,
       collected_at: evaluationRequest.evidence.collected_at,
       evidence_digest: evaluationRequest.evidence_digest,
       portfolio_fingerprint:
@@ -330,7 +404,7 @@ export function parseCoinbaseSolution(solution) {
     throw new Error("Coinbase proposal envelope is not valid JSON");
   }
   assertExactFields(envelope, ENVELOPE_FIELDS, "Coinbase proposal envelope");
-  if (envelope.schema_version !== "delta.coinbase.solution.v1") {
+  if (envelope.schema_version !== "delta.coinbase.solution.v2") {
     throw new Error("Unsupported Coinbase proposal envelope version");
   }
   if (
@@ -353,6 +427,7 @@ export function parseCoinbaseSolution(solution) {
   }
   assertCoinbaseCreatePayload(envelope.create_payload);
   assertPreviewRequest(envelope.preview_request);
+  assertCanonicalSpotActionIntegrity(envelope.action_descriptor);
   assertClaimedEvidence(envelope.claimed_evidence, envelope.create_payload);
   assertSha256(
     envelope.preview_request_digest,

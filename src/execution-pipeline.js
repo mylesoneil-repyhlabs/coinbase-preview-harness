@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  addDecimals,
+  compareDecimals,
+  divideDecimals,
+  multiplyDecimals,
+} from "./decimal.js";
+import {
   buildCoinbaseCreateRequest,
   buildCoinbasePreviewRequest,
 } from "./coinbase-order.js";
@@ -15,13 +21,19 @@ import {
   selectExecutionPreviewEvidence,
 } from "./execution-policy.js";
 import { normalizeCoinbaseMarketData } from "./market.js";
+import { evaluateCoinbaseFunding } from "./funding.js";
 import {
   buildCoinbasePolicyBundle,
   createSimulatedMandateAdapter,
   evaluateMandateCandidate,
 } from "./mandate/index.js";
-import { loadSafetyProfile } from "./plan.js";
-import { assertPolicyWithinSafetyProfile } from "./policy-validator.js";
+import {
+  loadPreviewCapabilityProfile,
+} from "./plan.js";
+import {
+  assertPolicyWithinPreviewCapability,
+  assertPolicyWithinSafetyProfile,
+} from "./policy-validator.js";
 import { proposeSpotOrder } from "./proposer.js";
 import { sanitize } from "./sanitize.js";
 import { JWT_PROFILE } from "./permissions.js";
@@ -38,10 +50,11 @@ function finalRecord(record) {
   return { ...safe, record_digest: digest(safe) };
 }
 
-function validAttestation(attestation) {
+function validAttestation(attestation, { tradeRequired = false } = {}) {
   return (
     attestation?.can_view === true &&
-    attestation?.can_trade === true &&
+    typeof attestation?.can_trade === "boolean" &&
+    (!tradeRequired || attestation.can_trade === true) &&
     attestation?.can_transfer === false &&
     attestation?.can_receive === false &&
     attestation?.jwt_profile === JWT_PROFILE &&
@@ -174,8 +187,10 @@ async function runExecutionPipelineCore({
   confirmPolicyDigest,
   boundExecution,
   executionConfirmation,
-  safetyProfile,
+  capabilityProfile,
+  executionSafetyProfile,
   attestation,
+  listAccounts,
   getProduct,
   getBestBidAsk,
   previewAdapter,
@@ -190,9 +205,11 @@ async function runExecutionPipelineCore({
   if (mode !== "LIVE" && mode !== "PROBE") {
     throw new Error("Execution mode must be exactly LIVE or PROBE");
   }
+  const builtInSimulation =
+    executionCapability === BUILT_IN_SIMULATION_CAPABILITY;
   if (
     mode === "LIVE" &&
-    executionCapability !== BUILT_IN_SIMULATION_CAPABILITY
+    !builtInSimulation
   ) {
     assertProductionExecutionCapability(executionCapability);
   }
@@ -202,6 +219,15 @@ async function runExecutionPipelineCore({
   ) {
     throw new Error(
       "LIVE execution requires injected durable consumeGrant() and markGrant() ports",
+    );
+  }
+  if (
+    mode === "LIVE" &&
+    !builtInSimulation &&
+    !executionSafetyProfile
+  ) {
+    throw new Error(
+      "LIVE execution requires the independent future-live safety profile",
     );
   }
   const startedAt = now();
@@ -219,14 +245,25 @@ async function runExecutionPipelineCore({
     throw new Error("Execution plan does not match its confirmed binding");
   }
   const record = {
-    schema_version: "delta.coinbase.execution_record.v1",
+    schema_version: "delta.coinbase.execution_record.v2",
     artifact_class: mode,
     generated_at: startedAt.toISOString(),
     status: "BLOCKED",
     source_intent_digest: plan?.source_intent?.digest ?? null,
     policy: plan?.policy ?? null,
     policy_digest: plan?.policy_digest ?? null,
-    safety_profile: plan?.safety_profile ?? null,
+    action_descriptor: plan?.action_descriptor ?? null,
+    capability_profile: plan?.capability_profile ?? null,
+    execution_safety_profile:
+      mode === "LIVE" && !builtInSimulation
+        ? {
+            id: executionSafetyProfile?.id ?? null,
+            digest:
+              executionSafetyProfile == null
+                ? null
+                : digest(executionSafetyProfile),
+          }
+        : null,
     confirmation: {
       supplied_digest: confirmPolicyDigest ?? null,
       matched: false,
@@ -245,6 +282,7 @@ async function runExecutionPipelineCore({
         }
       : null,
     market: null,
+    funding: null,
     proposal: null,
     proposal_check: null,
     preview: null,
@@ -265,7 +303,7 @@ async function runExecutionPipelineCore({
 
   let consumedGrantPlanId = null;
   try {
-    if (plan?.schema_version !== "delta.coinbase.execution_plan.v1") {
+    if (plan?.schema_version !== "delta.coinbase.execution_plan.v2") {
       throw new Error("Execution plan schema is invalid");
     }
     if (plan.status !== "AWAITING_HUMAN_CONFIRMATION") {
@@ -289,14 +327,37 @@ async function runExecutionPipelineCore({
     record.confirmation.matched = true;
 
     if (
-      plan.safety_profile?.id !== safetyProfile.id ||
-      plan.safety_profile?.digest !== digest(safetyProfile)
+      plan.capability_profile?.id !== capabilityProfile?.id ||
+      plan.capability_profile?.digest !== digest(capabilityProfile) ||
+      plan.capability_profile?.create_enabled !== false
     ) {
-      throw new Error("Execution safety profile has changed since planning");
+      throw new Error(
+        "Preview capability profile has changed since planning",
+      );
     }
-    assertPolicyWithinSafetyProfile(plan.policy, safetyProfile);
-    if (!validAttestation(attestation)) {
-      throw new Error("Coinbase Trade credential attestation is missing or unsafe");
+    assertPolicyWithinPreviewCapability(
+      plan.policy,
+      capabilityProfile,
+    );
+    if (
+      mode === "LIVE" &&
+      !builtInSimulation
+    ) {
+      assertPolicyWithinSafetyProfile(
+        plan.policy,
+        executionSafetyProfile,
+      );
+    }
+    if (
+      !validAttestation(attestation, {
+        tradeRequired: mode === "LIVE" && !builtInSimulation,
+      })
+    ) {
+      throw new Error(
+        mode === "LIVE" && !builtInSimulation
+          ? "Coinbase View+Trade credential attestation is missing or unsafe"
+          : "Coinbase View credential attestation is missing or unsafe",
+      );
     }
 
     const policyExpiresAt = confirmedExpiresAt;
@@ -308,9 +369,19 @@ async function runExecutionPipelineCore({
       );
     }
 
-    const [productResponse, bestBidAskResponse] = await Promise.all([
+    if (typeof listAccounts !== "function") {
+      throw new Error(
+        "Trusted Coinbase account/balance evidence is required",
+      );
+    }
+    const [
+      productResponse,
+      bestBidAskResponse,
+      accountsResponse,
+    ] = await Promise.all([
       getProduct(plan.policy.product_id),
       getBestBidAsk(plan.policy.product_id),
+      listAccounts(),
     ]);
     const market = normalizeCoinbaseMarketData(
       productResponse,
@@ -320,20 +391,43 @@ async function runExecutionPipelineCore({
     assertFreshTimestamp(
       market.observed_at,
       now(),
-      safetyProfile.max_market_age_ms,
+      capabilityProfile.max_market_age_ms,
       "Coinbase market evidence",
     );
     record.market = market;
+    const funding = evaluateCoinbaseFunding(
+      plan.policy,
+      accountsResponse,
+      {
+        portfolioFingerprint: attestation.portfolio_fingerprint,
+      },
+    );
+    record.funding = funding;
+    if (funding.decision !== "PASS") {
+      throw new Error(
+        `Coinbase funding check blocked the proposal: ${funding.failures
+          .map((failure) => failure.code)
+          .join(", ")}`,
+      );
+    }
 
     const proposed = proposeSpotOrder(plan.policy, market, { now: startedAt });
     record.proposal = proposed;
+    if (
+      digest(proposed.action_descriptor) !==
+      digest(plan.action_descriptor)
+    ) {
+      throw new Error(
+        "Agent proposal action descriptor differs from authorization",
+      );
+    }
     const proposalCheck = evaluateExecutionProposal(
       plan.policy,
       proposed.action,
       market,
     );
     record.proposal_check = proposalCheck;
-    if (proposalCheck.verdict !== "ALLOW") {
+    if (proposalCheck.decision !== "PASS") {
       throw new Error("Agent proposal failed the deterministic policy check");
     }
 
@@ -348,6 +442,16 @@ async function runExecutionPipelineCore({
       evidence_digest: digest({
         market,
         preview: selectedPreview,
+        funding: {
+          schema_version: funding.schema_version,
+          portfolio_fingerprint: funding.portfolio_fingerprint,
+          funding_asset: funding.funding_asset,
+          required_available: funding.required_available,
+          available_balance: funding.available_balance,
+          account_fingerprints: funding.account_fingerprints,
+          complete: funding.complete,
+          evidence_digest: funding.evidence_digest,
+        },
         collected_at: previewCollectedAt,
       }),
     };
@@ -358,8 +462,13 @@ async function runExecutionPipelineCore({
       previewResponse,
     );
     record.preview_check = previewCheck;
-    if (previewCheck.verdict !== "ALLOW") {
-      throw new Error("Coinbase preview failed the deterministic policy check");
+    if (previewCheck.decision !== "PASS") {
+      record.status = previewCheck.decision;
+      throw new Error(
+        previewCheck.decision === "REVIEW"
+          ? "Coinbase Preview requires human review; execution remains locked"
+          : "Coinbase Preview failed the deterministic policy check",
+      );
     }
     if (mode === "PROBE") {
       assertSubmissionWindow({
@@ -368,7 +477,7 @@ async function runExecutionPipelineCore({
         proposalExpiresAt: proposed.expires_at,
         marketObservedAt: market.observed_at,
         previewCollectedAt,
-        safetyProfile,
+        safetyProfile: capabilityProfile,
       });
       record.status = "PREVIEW_PROBE_PASS";
       return finalRecord(record);
@@ -387,7 +496,7 @@ async function runExecutionPipelineCore({
     record.execution.client_order_id = clientOrderId;
     record.execution.create_payload_digest = createPayloadDigest;
     const evaluationRequest = deepFreeze(structuredClone({
-      schema_version: "delta.coinbase.evaluation_request.v1",
+      schema_version: "delta.coinbase.evaluation_request.v2",
       requested_at: now().toISOString(),
       plan_id: plan.plan_id,
       execution_digest: boundExecution.execution_digest,
@@ -396,11 +505,22 @@ async function runExecutionPipelineCore({
       source_intent_digest: plan.source_intent.digest,
       policy: plan.policy,
       policy_digest: plan.policy_digest,
+      action_descriptor: plan.action_descriptor,
       proposal: proposed,
       proposal_digest: proposed.proposal_digest,
       evidence: {
         market,
         preview: selectedPreview,
+        funding: {
+          schema_version: funding.schema_version,
+          portfolio_fingerprint: funding.portfolio_fingerprint,
+          funding_asset: funding.funding_asset,
+          required_available: funding.required_available,
+          available_balance: funding.available_balance,
+          account_fingerprints: funding.account_fingerprints,
+          complete: funding.complete,
+          evidence_digest: funding.evidence_digest,
+        },
         collected_at: previewCollectedAt,
       },
       evidence_digest: record.preview.evidence_digest,
@@ -428,7 +548,7 @@ async function runExecutionPipelineCore({
       parameters: policyBundle.parameters,
       actionRecord: evaluationRequest,
       authorization: {
-        schema_version: "delta.coinbase.authorization_context.v1",
+        schema_version: "delta.coinbase.authorization_context.v2",
         plan_id: plan.plan_id,
         policy_digest: plan.policy_digest,
         execution_digest: boundExecution.execution_digest,
@@ -437,6 +557,11 @@ async function runExecutionPipelineCore({
       },
       proofEvidenceBindings: {
         product_id: plan.policy.product_id,
+        action_descriptor_digest:
+          plan.action_descriptor.descriptor_digest,
+        authorized_limit_price:
+          proposalCheck.authorized_limit_price,
+        funding_evidence_digest: funding.evidence_digest,
         preview_id: previewResponse.preview_id,
         create_payload_digest: createPayloadDigest,
         preview_request_digest: evaluationRequest.preview_request_digest,
@@ -448,6 +573,7 @@ async function runExecutionPipelineCore({
       surface: "delta_orchestrator_and_verifier",
       adapter: mandateAdapter.name ?? "mandate-adapter",
       status: mandate.status,
+      decision: mandate.decision,
       policy_id: mandate.policy_id,
       intent_id: mandate.intent_id,
       proposal: mandate.proposal,
@@ -457,12 +583,14 @@ async function runExecutionPipelineCore({
       verifier_confirmed: mandate.verified,
       proof_present: Boolean(mandate.proof),
       proof_digest: digest(mandate.proof),
+      receipt: mandate.receipt,
       one_time_grant_digest: digest({
         plan_id: plan.plan_id,
         intent_id: mandate.intent_id,
       }),
     };
-    if (mandate.status !== "success" || mandate.verified !== true) {
+    if (mandate.decision !== "PASS" || mandate.verified !== true) {
+      record.status = mandate.decision;
       const failed = mandate.constraint_failures
         .map((failure) => `#${failure.index}: ${failure.reason}`)
         .join("; ");
@@ -472,7 +600,7 @@ async function runExecutionPipelineCore({
     }
     const deltaDecision = {
       decision_id: mandate.intent_id,
-      decision: "SUCCESS",
+      decision: "PASS",
       evaluated_at: now().toISOString(),
       expires_at: policyExpiresAt.toISOString(),
     };
@@ -495,7 +623,7 @@ async function runExecutionPipelineCore({
       deltaExpiresAt: deltaDecision.expires_at,
       marketObservedAt: market.observed_at,
       previewCollectedAt,
-      safetyProfile,
+      safetyProfile: capabilityProfile,
     });
 
     consumedGrantPlanId = plan.plan_id;
@@ -524,7 +652,7 @@ async function runExecutionPipelineCore({
       deltaExpiresAt: deltaDecision.expires_at,
       marketObservedAt: market.observed_at,
       previewCollectedAt,
-      safetyProfile,
+      safetyProfile: capabilityProfile,
     });
     if (
       JSON.stringify(createPayload) !== createPayloadSerialized ||
@@ -775,10 +903,10 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
   const consumed = new Set();
   const consumedPlans = new Set();
   let submittedOrder = null;
-  const safetyProfile = await loadSafetyProfile();
+  const capabilityProfile = await loadPreviewCapabilityProfile();
   const attestation = {
     can_view: true,
-    can_trade: true,
+    can_trade: false,
     can_transfer: false,
     can_receive: false,
     jwt_profile: JWT_PROFILE,
@@ -796,6 +924,42 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     confirmedExecutionDigest: boundExecution.execution_digest,
     confirmedAt: fixedNow,
   });
+  const decimalQuantum = (value, fallback = "0.00000001") => {
+    const fraction = String(value).split(".")[1] ?? "";
+    if (!fraction.length) return "1";
+    if (fraction.length > 18) return fallback;
+    return `0.${"0".repeat(fraction.length - 1)}1`;
+  };
+  const sizeValue = plan.policy.size.value;
+  const settlementValue = plan.policy.limits.settlement.value;
+  const sellReference =
+    plan.policy.side === "SELL" &&
+    compareDecimals(settlementValue, "0") > 0
+      ? divideDecimals(settlementValue, sizeValue, { scale: 8 })
+      : "100.00000000";
+  const priceIncrement =
+    plan.policy.side === "SELL"
+      ? decimalQuantum(sellReference, "0.00000001")
+      : "0.01";
+  const bestBid =
+    plan.policy.side === "SELL" ? sellReference : "99.99";
+  const bestAsk =
+    plan.policy.side === "SELL"
+      ? addDecimals(bestBid, priceIncrement)
+      : "100.00";
+  const previewBaseSize =
+    plan.policy.side === "BUY"
+      ? divideDecimals(sizeValue, bestAsk, { scale: 18 })
+      : sizeValue;
+  const previewQuoteSize =
+    plan.policy.side === "BUY"
+      ? sizeValue
+      : compareDecimals(settlementValue, "0") > 0
+        ? settlementValue
+        : multiplyDecimals(sizeValue, bestBid);
+  const fillPrice =
+    plan.policy.side === "BUY" ? bestAsk : bestBid;
+  const funding = plan.action_descriptor.funding;
 
   const liveShapedRecord = await runExecutionPipelineCore({
     mode: "LIVE",
@@ -804,20 +968,56 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     confirmPolicyDigest,
     boundExecution,
     executionConfirmation,
-    safetyProfile,
+    capabilityProfile,
     attestation,
     now,
+    listAccounts: async () => ({
+      accounts: [
+        {
+          uuid: "simulated-funding-account",
+          currency: funding.asset,
+          available_balance: {
+            currency: funding.asset,
+            value: funding.required_available,
+          },
+          active: true,
+          ready: true,
+          deleted_at: null,
+          platform: "ACCOUNT_PLATFORM_CONSUMER",
+          retail_portfolio_id: "simulated-portfolio",
+        },
+      ],
+      has_next: false,
+      cursor: null,
+    }),
     getProduct: async (productId) => ({
       product_id: productId,
       product_type: "SPOT",
       status: "online",
-      base_currency_id: "ETH",
-      quote_currency_id: "USDC",
-      base_increment: "0.00000001",
-      quote_increment: "0.01",
-      price_increment: "0.01",
+      base_currency_id: plan.policy.base_asset,
+      quote_currency_id: plan.policy.quote_asset,
+      base_increment:
+        plan.policy.side === "SELL"
+          ? decimalQuantum(sizeValue)
+          : "0.00000001",
+      quote_increment:
+        plan.policy.side === "BUY"
+          ? decimalQuantum(sizeValue)
+          : "0.00000001",
+      price_increment: priceIncrement,
+      base_min_size:
+        plan.policy.side === "SELL"
+          ? decimalQuantum(sizeValue)
+          : "0.00000001",
+      base_max_size: "999999999999999999",
+      quote_min_size:
+        plan.policy.side === "BUY"
+          ? decimalQuantum(sizeValue)
+          : "0.00000001",
+      quote_max_size: "999999999999999999",
       is_disabled: false,
       trading_disabled: false,
+      view_only: false,
       cancel_only: false,
       limit_only: false,
       post_only: false,
@@ -827,22 +1027,21 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
       pricebooks: [
         {
           product_id: productId,
-          bids: [{ price: "2999.00", size: "1.0" }],
-          asks: [{ price: "3000.00", size: "1.0" }],
+          bids: [{ price: bestBid, size: "1.0" }],
+          asks: [{ price: bestAsk, size: "1.0" }],
           time: fixedNow.toISOString(),
         },
       ],
     }),
     previewAdapter: async (requestBody) => ({
       response: {
-        order_total: "5.25",
-        commission_total: "0.25",
-        quote_size:
-          requestBody.order_configuration.sor_limit_ioc.quote_size,
-        base_size: "0.00166113",
-        est_average_filled_price: "3010.00",
-        best_bid: "2999.00",
-        best_ask: "3000.00",
+        order_total: previewQuoteSize,
+        commission_total: "0",
+        quote_size: previewQuoteSize,
+        base_size: previewBaseSize,
+        est_average_filled_price: fillPrice,
+        best_bid: bestBid,
+        best_ask: bestAsk,
         preview_id: `sim-preview-${randomUUID()}`,
         errs: [],
         warning: [],
@@ -887,12 +1086,12 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
         order_type: "LIMIT",
         time_in_force: "IMMEDIATE_OR_CANCEL",
         completion_percentage: "100",
-        average_filled_price: "3010.00",
+        average_filled_price: fillPrice,
         number_of_fills: "1",
-        filled_size: "0.00166113",
-        filled_value: "5.00",
-        total_fees: "0.25",
-        total_value_after_fees: "5.25",
+        filled_size: previewBaseSize,
+        filled_value: previewQuoteSize,
+        total_fees: "0",
+        total_value_after_fees: previewQuoteSize,
         settled: true,
         created_time: fixedNow.toISOString(),
         last_fill_time: fixedNow.toISOString(),
@@ -909,15 +1108,15 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
           trade_id: `sim-trade-${randomUUID()}`,
           order_id: orderId,
           trade_time: fixedNow.toISOString(),
-          price: "3010.00",
-          size: "0.00166113",
-          commission: "0.25",
+          price: fillPrice,
+          size: previewBaseSize,
+          commission: "0",
           product_id: submittedOrder.payload.product_id,
           side: submittedOrder.payload.side,
         },
       ],
       cursor: "",
-      proof_token_required: false,
+      has_next: false,
     }),
     consumeGrant: async (planId, intentId) => {
       const grant = `${planId}:${intentId}`;

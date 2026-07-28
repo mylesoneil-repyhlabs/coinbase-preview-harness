@@ -68,7 +68,7 @@ export function createExecutionConfirmation({
     confirmedAt.getTime() + plan.policy.validity.ttl_seconds * 1_000,
   );
   const receipt = {
-    schema_version: "delta.coinbase.execution_confirmation.v1",
+    schema_version: "delta.coinbase.execution_confirmation.v2",
     confirmation_id: randomUUID(),
     binding_id: boundExecution.binding_id,
     plan_id: plan.plan_id,
@@ -97,7 +97,7 @@ export function assertExecutionConfirmation({
     "execution confirmation receipt",
   );
   if (
-    receipt.schema_version !== "delta.coinbase.execution_confirmation.v1" ||
+    receipt.schema_version !== "delta.coinbase.execution_confirmation.v2" ||
     digest(withoutReceiptDigest(receipt)) !== receipt.receipt_digest
   ) {
     throw new Error("execution confirmation receipt digest is invalid");

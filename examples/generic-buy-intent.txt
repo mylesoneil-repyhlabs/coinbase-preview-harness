@@ -1,0 +1,1 @@
+Using my isolated Coinbase Advanced portfolio, use exactly 250 USDC to buy SOL on SOL-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 40 bps above Coinbase's fresh best ask, more than 1.25 USDC in commission, or more than 251.25 USDC total. This authorization expires 3 minutes after I confirm it.

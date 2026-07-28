@@ -1,107 +1,191 @@
 # Coinbase credential setup
 
-This is the user-facing path for making Delta Coinbase Guard credential-ready.
-Do not paste a Coinbase private key into chat, a prompt, an environment
-variable, or this repository.
+Delta Coinbase Guard v1.3 needs no credential to compile a request, present a
+closed policy for authorization, or run the local end-to-end simulation.
 
-No credential is required for planning or the complete local Delta simulation.
-The optional credential path enables authenticated Coinbase reads and Preview
-only. Real Coinbase Create remains compile-time locked until the reviewed
-production delta adapter and durable one-time grant store are installed.
+The optional credential path is narrower: a dedicated **View-only** CDP API key
+lets the guard authenticate Coinbase account, product, market, and Preview
+requests. It does not give the agent Trade, Transfer, or Receive authority.
+Coinbase Create Order remains compile-time locked in this public build.
 
-## Public API availability
+Never paste a Coinbase key, key ID, or private key into Codex chat, a prompt, an
+environment variable, a screenshot, or this repository.
 
-Verified against Coinbase's public documentation on 2026-07-27: the required
-Advanced Trade endpoints are public and use ordinary user-created CDP API
-credentials. No private Coinbase developer program is required for:
+## What Coinbase publicly supports
 
-- [Get API Key Permissions](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/data-api/get-api-key-permissions);
-- [Get Best Bid/Ask and the other Advanced Trade endpoints](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/rest-api);
-- [Preview Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders); or
-- [Create Order](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order).
+Coinbase documents the Advanced Trade v3 API as available through CDP API keys
+created by ordinary Coinbase users; no private Coinbase developer program is
+required for the surfaces used here:
 
-Coinbase documents Preview as requiring `view`, Create as requiring `trade`,
-and CDP keys as defaulting to their permissioned portfolio. A normal user can
-[create an ECDSA CDP key](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication)
-with portfolio and permission restrictions. The remaining missing capability
-in this public build is not Coinbase access: it is the reviewed production
-delta adapter, independent verification, and durable one-time execution grant.
+| Guard operation | Coinbase endpoint | Documented permission |
+| --- | --- | --- |
+| Verify key scope | [`GET /key_permissions`](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/data-api/get-api-key-permissions) | View |
+| Discover held funds | [`GET /accounts`](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/accounts/list-accounts) | View |
+| Resolve a requested pair and increments | [`GET /products/{product_id}`](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/products/get-product) | View |
+| Read the current book | [`GET /best_bid_ask`](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/rest-api) | View |
+| Dry-run the exact order | [`POST /orders/preview`](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/preview-orders) | View |
+| Submit an order, not enabled here | [`POST /orders`](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order) | Trade |
 
-## 1. Check readiness without a credential
+Coinbase's [API key authentication guide](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication)
+describes ECDSA/ES256 CDP keys and request-bound JWTs. The harness independently
+generates a short-lived JWT for each pinned Advanced Trade request.
+
+Coinbase also publishes a local [CLI/MCP server](https://docs.cdp.coinbase.com/coinbase-for-agents/overview)
+for Codex and other clients. Its standard tool set includes both
+`orders_preview` and the mutating `orders_create` tool. Do not expose that
+unfiltered namespace to an autonomous agent for this demo. The checked-in
+adapter is an allowlisted read/Preview boundary; a production MCP deployment
+needs an equivalent proxy or tool allowlist that makes Create unreachable.
+This repository does not claim to have exercised a live Coinbase MCP session.
+
+## Credential roles
+
+| Role | Required scope | Where it may run | Current use |
+| --- | --- | --- | --- |
+| Planner / Preview | View only; Trade and Transfer disabled | Guard process or an allowlisted read/Preview proxy | Supported, optional |
+| Future executor | View + Trade; Transfer disabled | Isolated trusted executor, never the agent process | Configuration validator only |
+
+The guard binds a key fingerprint and the key's permissioned portfolio
+fingerprint into the execution scope. It does not silently convert assets or
+move funds between portfolios. A BUY requires available quote asset; a SELL
+requires available base asset.
+
+## 1. Check local readiness
 
 ```sh
 ./run credential-readiness
 ```
 
-This reads no key and contacts no external service. It reports the required
-scope, persistence boundary, non-overridable safety cap, and whether a prior
-non-secret permission attestation exists.
+This command reads no key and contacts no external service. It reports the
+presence of non-secret View and future-executor attestations, the credential
+roles, the external-file requirement, and the locked Create boundary.
 
-## 2. Create a narrowly scoped Coinbase key
+## 2. Create a dedicated View-only key
 
-In Coinbase Developer Platform, create a new ECDSA/ES256 key dedicated to this
-harness:
+In Coinbase Developer Platform, create a new ECDSA key dedicated to this
+Preview harness:
 
-- enable **View** and **Trade**;
-- disable **Transfer** and **Receive**;
-- restrict it to the intended isolated portfolio;
+- enable **View**;
+- disable **Trade** and **Transfer**;
+- restrict it to the intended portfolio;
 - add the narrowest available IP restriction; and
 - do not reuse a production or general-purpose key.
 
-The first future live profile is hard-capped in source at one `ETH-USDC` BUY,
-exactly `5.00 USDC` principal, `5.50 USDC` all-in, `0.50 USDC` maximum
-commission, 50 bps slippage, IOC, and a 120-second authorization window.
-Human authorization can narrow these limits but cannot broaden them.
+Coinbase's current public key-permissions reference documents `can_view`,
+`can_trade`, `can_transfer`, and `portfolio_uuid`. The harness validates the
+documented response shape and also rejects an explicitly true `can_receive`
+extension if Coinbase returns one. Because no credential was used for this
+release, the first real permission check remains an isolated shadow-validation
+step.
 
-## 3. Store the downloaded key outside the repository
+## 3. Store the key outside the repository
 
-Choose a permanent path outside this checkout and restrict the file:
+Keep the downloaded JSON at a permanent absolute path outside this checkout:
 
 ```sh
-chmod 600 /absolute/outside-repo/cdp_key.json
+chmod 600 /absolute/outside-repo/coinbase_view_key.json
 ```
 
 The guard rejects relative paths, symlinks, non-regular files, files owned by
 another user, permissive file modes, oversized files, unknown JSON fields,
-non-ECDSA keys, and any key stored inside the repository.
+non-ECDSA P-256 keys, and keys stored inside the repository.
 
-## 4. Validate and attest the configuration
+## 4. Validate the View-only configuration
 
-Only after the user provides the key separately, run:
+Only after the user supplies the key separately:
 
 ```sh
-./run configure-credentials \
-  --key-file /absolute/outside-repo/cdp_key.json
+./run configure-preview-credentials \
+  --key-file /absolute/outside-repo/coinbase_view_key.json
 ```
 
+`configure-credentials` is retained as an alias for this View-only command.
 The command:
 
-1. reads the key only from the supplied external path;
-2. signs a request-bound, 120-second ES256 JWT for Coinbase's key-permissions
+1. reads the key only from the external path;
+2. signs a request-bound, 120-second ES256 JWT for Coinbase's permission
    endpoint;
-3. rejects any key whose effective permissions are not exactly View+Trade with
-   Transfer+Receive disabled; and
-4. persists only a `0600` attestation containing permission booleans and
-   one-way key/portfolio fingerprints under ignored `runtime/`.
+3. rejects a scope that can trade or transfer; and
+4. writes only a mode-`0600` attestation under ignored `runtime/`, containing
+   permission booleans plus one-way key and portfolio fingerprints.
 
-It never prints or copies the key ID or private key. The key file path is not
-persisted. Subsequent Preview commands require the path again at command time.
+It never prints or copies the key ID or private key. It does not persist the
+key-file path. Every authenticated command requires the path again.
 
-## 5. Keep execution locked
+## 5. Authorize a credential-scoped Preview
 
-Credential configuration does not enable Coinbase Create. The public build
-fails before reading credentials if `execute` or reconciliation is attempted
-without the reviewed production composition. The later live path additionally
-requires:
+Planning writes a v1.3 plan and prints the complete policy, canonical action,
+and policy digest:
 
-- an authenticated delta signer;
-- terminal Orchestrator success;
-- matching independent Verifier outcome and proof;
-- exact Preview/Create payload binding;
-- fresh market and Preview evidence;
-- a transactionally consumed one-time execution grant; and
-- both explicit real-money CLI acknowledgements.
+```sh
+./run plan --intent "<one explicit SPOT BUY or SELL request>"
+```
 
-Until those dependencies are installed in the compile-time composition seam,
-the safe credentialed endpoint is `probe-execution`: authenticated reads,
-Coinbase Preview, deterministic local checks, then stop.
+After the user authorizes that displayed policy digest in a new message, bind
+the plan to the View-only credential and portfolio:
+
+```sh
+./run bind-execution \
+  --plan /absolute/path/to/plan.json \
+  --confirm-policy <policy-digest> \
+  --credential-role preview \
+  --key-file /absolute/outside-repo/coinbase_view_key.json
+```
+
+The guard prints a second execution digest covering the plan, capability
+profile, portfolio, key fingerprint, and permissions. After a separate
+user-authored authorization of that digest:
+
+```sh
+./run confirm-execution \
+  --bound-execution /absolute/path/to/bound-execution.json \
+  --confirm-execution <execution-digest> \
+  --key-file /absolute/outside-repo/coinbase_view_key.json
+
+./run probe-execution \
+  --bound-execution /absolute/path/to/bound-execution.json \
+  --confirmation-receipt /absolute/path/to/confirmation-receipt.json \
+  --key-file /absolute/outside-repo/coinbase_view_key.json
+```
+
+The probe performs authenticated List Accounts, Get Product, Best Bid/Ask, and
+Preview requests. It requires a complete account listing and enough available
+funds in the exact source asset, checks live product flags and increments,
+builds the side-specific order (`quote_size` for BUY, `base_size` for SELL),
+and stops at `PREVIEW_PROBE_PASS`. Preview errors are `BLOCK`; any Preview
+warning is `REVIEW` and also stops.
+
+The CLI records supplied digests but does not authenticate the person typing
+them. A production host must replace that procedural pause with an
+authenticated user-approval or Delta signing session.
+
+## 6. Keep the future executor separate
+
+Do not configure a Trade key while read/Preview validation is still underway.
+The future-only command is:
+
+```sh
+./run configure-executor-credentials \
+  --key-file /absolute/outside-repo/coinbase_trade_key.json
+```
+
+That key must be View + Trade with Transfer disabled, restricted to the same
+isolated portfolio, and accessible only to a trusted executor outside the agent
+process. Configuring it still cannot unlock Create in this repository.
+
+The independent future live-test profile is a second, non-overridable
+restriction: one `ETH-USDC` BUY, `5.00 USDC` principal, `5.50 USDC` maximum
+debit, `0.50 USDC` maximum commission, 50 bps slippage, IOC, one execution, and
+a 120-second window. This is operational blast-radius control for a later
+explicitly approved real-money test. It is not the economic logic or product
+story for generic v1.3 planning and Preview.
+
+Create must remain disabled until all of the following exist and pass review:
+
+- the actual private Delta policy, signer, Orchestrator, Verifier, and proof
+  mapping;
+- authoritative Coinbase evidence extraction;
+- exact action-record, Preview, proof, and serialized Create-payload binding;
+- an isolated transactional one-time grant store;
+- deterministic recovery by `client_order_id`; and
+- a fresh, explicit user decision authorizing the first live order.

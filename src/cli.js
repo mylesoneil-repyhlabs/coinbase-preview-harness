@@ -26,8 +26,11 @@ import {
   productionExecutionStatus,
 } from "./integration/production-composition.js";
 import {
+  loadAndVerifyViewCredentials,
   loadAndVerifyTradeCredentials,
   TRADE_ATTESTATION_PATH,
+  VIEW_ATTESTATION_PATH,
+  verifyViewKeyFileAndConfigure,
   verifyTradeKeyFileAndConfigure,
 } from "./permissions.js";
 import { HARNESS_ROOT } from "./paths.js";
@@ -41,6 +44,7 @@ import {
 } from "./partner-demo.js";
 import {
   createExecutionPlan,
+  loadPreviewCapabilityProfile,
   loadSafetyProfile,
   readExecutionPlan,
   writeExecutionPlan,
@@ -61,6 +65,49 @@ function printPaths(paths) {
   );
 }
 
+function printPreviewProbeSummary(record) {
+  process.stdout.write("COINBASE_PREVIEW_PROBE\n");
+  process.stdout.write(
+    `AUTHORIZED_POLICY=${JSON.stringify(record.policy)}\n`,
+  );
+  process.stdout.write(
+    `AUTHORIZATION_DIGEST=${record.policy_digest ?? "none"}\n`,
+  );
+  process.stdout.write(
+    `CANONICAL_ACTION=${JSON.stringify(record.action_descriptor)}\n`,
+  );
+  process.stdout.write(
+    `FUNDING_CHECK=${JSON.stringify(record.funding)}\n`,
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL=${JSON.stringify(record.proposal)}\n`,
+  );
+  process.stdout.write(
+    `PROPOSAL_DECISION=${record.proposal_check?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `COINBASE_PREVIEW_EVIDENCE=${JSON.stringify(record.preview)}\n`,
+  );
+  process.stdout.write(
+    `PREVIEW_DECISION=${record.preview_check?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `PREVIEW_REVIEW_REASONS=${JSON.stringify(
+      record.preview_check?.review_reasons ?? [],
+    )}\n`,
+  );
+  process.stdout.write(
+    `FAILURE=${JSON.stringify(record.failure ?? null)}\n`,
+  );
+  process.stdout.write("DELTA_DECISION=NOT_RUN_PREVIEW_ONLY\n");
+  process.stdout.write("EXACT_PASS_GATE=false\n");
+  process.stdout.write("EXECUTION_ELIGIBILITY=LOCKED\n");
+  process.stdout.write("COINBASE_CONTACTED=true\n");
+  process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
+  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
+  process.stdout.write("MONEY_MOVED=false\n");
+}
+
 async function doctor() {
   const checks = [
     {
@@ -70,7 +117,8 @@ async function doctor() {
     },
   ];
   const requiredFiles = [
-    "config/coinbase-spot-policy.v1.schema.json",
+    "config/coinbase-spot-policy.v2.schema.json",
+    "config/preview-capability-profile.json",
     "config/execution-safety-profile.json",
     "skills/delta-coinbase-guard/SKILL.md",
   ];
@@ -79,15 +127,16 @@ async function doctor() {
       requiredFiles.map((file) => access(path.join(HARNESS_ROOT, file))),
     );
     checks.push({
-      name: "V1 contracts and skill",
+      name: "v1.3 contracts and skill",
       status: "PASS",
-      detail: "Policy schema, safety profile, and installable skill are present.",
+      detail:
+        "Generic spot policy, Preview capability, live safety profile, and installable skill are present.",
     });
   } catch {
     checks.push({
-      name: "V1 contracts and skill",
+      name: "v1.3 contracts and skill",
       status: "FAIL",
-      detail: "One or more required V1 files are missing.",
+      detail: "One or more required v1.3 files are missing.",
     });
   }
   checks.push({
@@ -130,9 +179,16 @@ async function createPlanCommand(args) {
     process.stdout.write(
       `\nCompiled policy:\n${JSON.stringify(plan.policy, null, 2)}\n\n`,
     );
+    process.stdout.write(
+      `Canonical Coinbase action:\n${JSON.stringify(
+        plan.action_descriptor,
+        null,
+        2,
+      )}\n\n`,
+    );
     process.stdout.write(`Policy digest: ${plan.policy_digest}\n`);
     process.stdout.write(
-      "PAUSE: a trusted host must wait for a new user-authored message authorizing the displayed policy digest.\n",
+      "PAUSE: nothing may be proposed or previewed until a trusted host receives a new user-authored message authorizing the displayed policy digest.\n",
     );
   } else {
     process.stdout.write(`${JSON.stringify(plan.compilation, null, 2)}\n`);
@@ -154,22 +210,54 @@ async function configureExecution(args) {
   );
 }
 
-async function credentialReadiness() {
-  let configured = false;
-  try {
-    await access(TRADE_ATTESTATION_PATH);
-    configured = true;
-  } catch {
-    configured = false;
+async function configurePreview(args) {
+  const keyFile = optionValue(args, "--key-file");
+  if (!keyFile) {
+    throw new Error(
+      "Usage: configure-preview-credentials --key-file /absolute/path/to/cdp_key.json",
+    );
   }
+  const result = await verifyViewKeyFileAndConfigure(keyFile);
+  process.stdout.write(`${JSON.stringify(result.attestation, null, 2)}\n`);
   process.stdout.write(
-    `${configured ? "CREDENTIAL_ATTESTATION_PRESENT" : "CREDENTIALS_NOT_CONFIGURED"}\n`,
+    "View-only credential verified; Trade/Transfer/Receive are absent. The key remains outside this repository and is not copied by the guard.\n",
+  );
+}
+
+async function credentialReadiness() {
+  const [viewConfigured, tradeConfigured] = await Promise.all([
+    access(VIEW_ATTESTATION_PATH).then(
+      () => true,
+      () => false,
+    ),
+    access(TRADE_ATTESTATION_PATH).then(
+      () => true,
+      () => false,
+    ),
+  ]);
+  process.stdout.write(
+    `${
+      viewConfigured || tradeConfigured
+        ? "CREDENTIAL_ATTESTATION_PRESENT"
+        : "CREDENTIALS_NOT_CONFIGURED"
+    }\n`,
+  );
+  process.stdout.write(
+    `VIEW_ATTESTATION=${viewConfigured ? "PRESENT" : "NOT_CONFIGURED"}\n`,
+  );
+  process.stdout.write(
+    `FUTURE_EXECUTOR_ATTESTATION=${
+      tradeConfigured ? "PRESENT" : "NOT_CONFIGURED"
+    }\n`,
   );
   process.stdout.write(
     "KEY_LOCATION=external absolute path supplied only at command time\n",
   );
   process.stdout.write(
-    "REQUIRED_SCOPE=View+Trade enabled; Transfer+Receive disabled\n",
+    "PLANNER_SCOPE=View only; Trade+Transfer+Receive disabled\n",
+  );
+  process.stdout.write(
+    "FUTURE_EXECUTOR_SCOPE=View+Trade; Transfer+Receive disabled; key isolated from the agent\n",
   );
   process.stdout.write(
     "PERSISTED_SECRET_MATERIAL=false\n",
@@ -178,10 +266,10 @@ async function credentialReadiness() {
     "LIVE_CREATE=LOCKED_PENDING_REVIEWED_DELTA_ADAPTER_AND_ONE_TIME_GRANT_STORE\n",
   );
   process.stdout.write(
-    "SAFETY_CAP=5.00 USDC principal; 5.50 USDC all-in; one ETH-USDC IOC order; 120 seconds\n",
+    "FUTURE_LIVE_SAFETY_CAP=5.00 USDC principal; 5.50 USDC all-in; one ETH-USDC IOC order; 120 seconds\n",
   );
   process.stdout.write(
-    "When ready, keep the downloaded key outside this repository with mode 0600, then run configure-credentials with its absolute path.\n",
+    "For trusted reads/Preview, keep a View-only key outside this repository with mode 0600, then run configure-preview-credentials with its absolute path. Do not supply a View+Trade executor key until live testing is the only remaining blocker.\n",
   );
 }
 
@@ -200,10 +288,20 @@ async function bindExecution(args) {
       "Human confirmation digest does not match the compiled policy",
     );
   }
-  const verifiedTrade = await loadAndVerifyTradeCredentials(keyFile);
+  const credentialRole =
+    optionValue(args, "--credential-role") ?? "preview";
+  if (!["preview", "executor"].includes(credentialRole)) {
+    throw new Error(
+      "--credential-role must be preview or executor",
+    );
+  }
+  const verified =
+    credentialRole === "preview"
+      ? await loadAndVerifyViewCredentials(keyFile)
+      : await loadAndVerifyTradeCredentials(keyFile);
   const boundExecution = createBoundExecution(
     plan,
-    verifiedTrade.attestation,
+    verified.attestation,
     policyConfirmation,
   );
   const filePath = await writeBoundExecution(boundExecution);
@@ -230,10 +328,15 @@ async function confirmExecution(args) {
     );
   }
   const boundExecution = await readBoundExecution(boundPath);
-  const verifiedTrade = await loadAndVerifyTradeCredentials(keyFile);
+  const tradeBound =
+    boundExecution.authorization_scope?.credential_binding?.can_trade ===
+    true;
+  const verified = tradeBound
+    ? await loadAndVerifyTradeCredentials(keyFile)
+    : await loadAndVerifyViewCredentials(keyFile);
   const receipt = createExecutionConfirmation({
     boundExecution,
-    attestation: verifiedTrade.attestation,
+    attestation: verified.attestation,
     confirmedExecutionDigest: confirmation,
     confirmedAt: new Date(),
   });
@@ -260,8 +363,65 @@ async function simulate(args) {
   const record = await simulateExecution(plan, confirmation);
   const paths = await writeExecutionReport(record, "execution-readiness");
   process.stdout.write("SIMULATION_ONLY\n");
+  process.stdout.write(
+    `AUTHORIZED_POLICY=${JSON.stringify(record.policy)}\n`,
+  );
+  process.stdout.write(
+    `AUTHORIZATION_DIGEST=${record.policy_digest}\n`,
+  );
+  process.stdout.write(
+    `CANONICAL_ACTION=${JSON.stringify(record.action_descriptor)}\n`,
+  );
+  process.stdout.write(
+    `FUNDING_CHECK=${JSON.stringify(record.funding)}\n`,
+  );
+  process.stdout.write(
+    `AGENT_PROPOSAL=${JSON.stringify(record.proposal)}\n`,
+  );
+  process.stdout.write(
+    `PROPOSAL_DECISION=${record.proposal_check?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `COINBASE_PREVIEW_FIXTURE=${JSON.stringify(record.preview)}\n`,
+  );
+  process.stdout.write(
+    `PREVIEW_DECISION=${record.preview_check?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `DELTA_DECISION=${record.delta?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `DELTA_DECISION_RECEIPT=${JSON.stringify(record.delta?.receipt ?? null)}\n`,
+  );
+  process.stdout.write(
+    `PROOF_PRESENT=${record.delta?.proof_present === true}\n`,
+  );
+  process.stdout.write(
+    `PROOF_DIGEST=${record.delta?.proof_digest ?? "none"}\n`,
+  );
+  process.stdout.write(
+    `FAILURE=${JSON.stringify(record.failure ?? null)}\n`,
+  );
+  process.stdout.write(
+    "RETRY_POLICY=Only a structured retryable BLOCK may be retried; maximum attempts are controller-bounded; REVIEW stops locked.\n",
+  );
+  process.stdout.write(
+    `EXACT_PASS_GATE=${
+      record.delta?.decision === "PASS" &&
+      record.delta?.verifier_confirmed === true
+    }\n`,
+  );
   process.stdout.write(`SIMULATED_RESULT=${record.status}\n`);
+  process.stdout.write(
+    `SIMULATED_EXECUTOR_INVOKED=${record.execution.adapter_invoked}\n`,
+  );
+  process.stdout.write(
+    "SIMULATED_EXECUTOR_TYPE=IN_MEMORY_COINBASE_SHAPED_ADAPTER; NO_NETWORK\n",
+  );
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
+  process.stdout.write("COINBASE_CONTACTED=false\n");
+  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
+  process.stdout.write("MONEY_MOVED=false\n");
   printPaths(paths);
   if (!["FILLED", "PARTIAL_FILL", "NO_FILL"].includes(record.status)) {
     process.exitCode = 1;
@@ -451,13 +611,13 @@ async function probeExecution(args) {
       "Usage: probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/cdp_key.json",
     );
   }
-  const [boundExecution, executionConfirmation, safetyProfile] =
+  const [boundExecution, executionConfirmation, capabilityProfile] =
     await Promise.all([
       readBoundExecution(boundPath),
       readExecutionConfirmation(receiptPath),
-      loadSafetyProfile(),
+      loadPreviewCapabilityProfile(),
     ]);
-  const verifiedTrade = await loadAndVerifyTradeCredentials(keyFile);
+  const verifiedTrade = await loadAndVerifyViewCredentials(keyFile);
   const { plan } = assertExecutionConfirmation({
     receipt: executionConfirmation,
     boundExecution,
@@ -471,8 +631,9 @@ async function probeExecution(args) {
     confirmPolicyDigest: boundExecution.policy_confirmation.supplied_digest,
     boundExecution,
     executionConfirmation,
-    safetyProfile,
+    capabilityProfile,
     attestation: verifiedTrade.attestation,
+    listAccounts: coinbase.listAccounts,
     getProduct: coinbase.getProduct,
     getBestBidAsk: coinbase.getBestBidAsk,
     previewAdapter: coinbase.previewOrder,
@@ -486,12 +647,13 @@ async function probeExecution(args) {
     `execution-probe-${timestamp}`,
   );
   process.stdout.write(`${record.status}\n`);
+  printPreviewProbeSummary(record);
   printPaths(paths);
   if (record.status !== "PREVIEW_PROBE_PASS") {
     process.exitCode = 1;
   } else {
     process.stdout.write(
-      "Coinbase Preview passed and Create was not called. Public V1 cannot submit an order; engineering integration is required.\n",
+      "Coinbase Preview passed and Create was not called. Public v1.3 cannot submit an order; reviewed Delta and executor integration is required.\n",
     );
   }
 }
@@ -516,10 +678,16 @@ async function execute(args) {
       "Usage: execute --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/cdp_key.json --live-execution --accept-real-money-risk",
     );
   }
-  const [boundExecution, executionConfirmation, safetyProfile] =
+  const [
+    boundExecution,
+    executionConfirmation,
+    capabilityProfile,
+    executionSafetyProfile,
+  ] =
     await Promise.all([
       readBoundExecution(boundPath),
       readExecutionConfirmation(receiptPath),
+      loadPreviewCapabilityProfile(),
       loadSafetyProfile(),
     ]);
   const verifiedTrade = await loadAndVerifyTradeCredentials(keyFile);
@@ -541,8 +709,10 @@ async function execute(args) {
     confirmPolicyDigest: boundExecution.policy_confirmation.supplied_digest,
     boundExecution,
     executionConfirmation,
-    safetyProfile,
+    capabilityProfile,
+    executionSafetyProfile,
     attestation: verifiedTrade.attestation,
+    listAccounts: coinbase.listAccounts,
     getProduct: coinbase.getProduct,
     getBestBidAsk: coinbase.getBestBidAsk,
     previewAdapter: coinbase.previewOrder,
@@ -614,26 +784,27 @@ async function reconcileExecution(args) {
 }
 
 function usage() {
-  return `Delta Coinbase Guard V1
+  return `Delta Coinbase Guard v1.3
 
 Commands:
   doctor
   credential-readiness
-  configure-credentials --key-file /outside/repo/cdp_key.json
+  configure-preview-credentials --key-file /outside/repo/view_key.json
+  configure-executor-credentials --key-file /outside/repo/trade_key.json
   coinbase-demo [--no-artifacts]
   mastra-demo [--scenario pass|block|review]
   plan --intent "..." [--compiler deterministic|openai]
   plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
   simulate --plan /path/to/plan.json --confirm-policy <digest>
   configure-execution --key-file /outside/repo/cdp_key.json
-  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/cdp_key.json
+  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/cdp_key.json [--credential-role preview|executor]
   confirm-execution --bound-execution /path/to/bound.json --confirm-execution <digest> --key-file /outside/repo/cdp_key.json
   probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /absolute/path/to/receipt.json --key-file /outside/repo/cdp_key.json
   execute --bound-execution /path/to/bound.json --confirmation-receipt /absolute/path/to/receipt.json --key-file /outside/repo/cdp_key.json --live-execution --accept-real-money-risk
   reconcile-execution --bound-execution /path/to/bound.json --key-file /outside/repo/cdp_key.json
 
-The public V1 supports planning, deterministic simulation, credential-scoped
-confirmation, and a real Coinbase Preview probe. Coinbase Create and recovery are
+The public v1.3 supports generic SPOT BUY/SELL planning, deterministic simulation,
+credential-scoped confirmation, and a real Coinbase Preview probe. Coinbase Create and recovery are
 compile-time locked until Delta engineering installs the reviewed mandate adapter
 and durable one-time grant store in src/integration/production-composition.js.
 `;
@@ -648,7 +819,12 @@ try {
     await doctor();
   } else if (command === "credential-readiness") {
     await credentialReadiness();
-  } else if (command === "configure-credentials") {
+  } else if (
+    command === "configure-credentials" ||
+    command === "configure-preview-credentials"
+  ) {
+    await configurePreview(args);
+  } else if (command === "configure-executor-credentials") {
     await configureExecution(args);
   } else if (command === "coinbase-demo") {
     await coinbaseDemo(args);

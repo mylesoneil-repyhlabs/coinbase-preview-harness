@@ -17,24 +17,43 @@ If a mutating Coinbase tool is advertised to the model, transition to
 surface with a verified View-only credential, rerun `doctor`, and restart at
 `plan`.
 
-## Checked-in V1 sequence
+## Checked-in v1.3 sequence
 
-1. Preserve the natural-language instruction verbatim.
-2. Compile it into the closed `digital-asset-spot-order.v1` policy.
-3. Display every material field and the policy digest.
-4. Pause for a new user-authored policy-digest confirmation supplied by the
-   host.
-5. For a credentialed probe, verify a View+Trade/no-Transfer/no-Receive key and
-   bind the policy to its key and portfolio fingerprints.
-6. Display the execution digest and pause for a second new user-authored
+1. Preserve the natural-language instruction verbatim and classify the action.
+2. Reject unsupported actions rather than translating them into a spot order.
+3. Compile one BUY or SELL into the closed
+   `digital-asset-spot-order.v2` policy.
+4. Derive the side-correct canonical action: a BUY consumes held quote funds
+   through `quote_size`; a SELL consumes held base funds through `base_size`.
+5. Display the complete policy, canonical action, funding source, provenance
+   for every material field, and both digests.
+6. Pause for a new user-authored policy-digest confirmation supplied by the
+   host. A draft or the original request is not authorization.
+7. In credential-free mode, use only clearly labeled product, balance, market,
+   Preview, Delta, and execution fixtures. The simulator prepares exact
+   Coinbase-shaped bytes, evaluates them through the replaceable adapter
+   contract, and lets a verified simulated `PASS` reach one in-memory
+   executor. It never contacts Coinbase or production Delta.
+8. For a credentialed Preview, verify a View-only/no-Trade/no-Transfer key and
+   bind the policy to its credential and portfolio fingerprints.
+9. Display the execution digest and pause for a second new user-authored
    confirmation supplied by the host.
-7. Record one immutable confirmation receipt with fixed `confirmed_at` and
-   `expires_at`. The receipt cannot be re-timestamped or renewed.
-8. Fetch fresh Coinbase product and best-bid/ask data, construct the fixed V1
-   candidate, and call Coinbase Preview.
-9. Run the local fee, amount, freshness, portfolio, and Preview checks.
-10. Stop with `PREVIEW_PROBE_PASS` or a fail-closed probe result. Production
-    composition and Coinbase Create are never invoked.
+10. Record one immutable confirmation receipt with fixed `confirmed_at` and
+    `expires_at`. It cannot be re-timestamped or renewed.
+11. Fetch the complete List Accounts result plus fresh exact-product and
+    best-bid/ask evidence. Require sufficient held quote funds for a BUY or
+    held base funds for a SELL; never substitute USD, USDC, or another asset.
+12. Validate Coinbase product type, status, tradability flags, increments, and
+    side-specific min/max size before proposing.
+13. Prepare one exact SOR limit IOC candidate and call Preview. Bind the
+    request, `preview_id`, economics, funding evidence, descriptor, portfolio,
+    and credential digests. The credentialed probe stops before constructing
+    a Create payload.
+14. Map Preview errors or constraint failures to `BLOCK`, warnings to
+    `REVIEW`, and a complete clean result to `PASS`.
+15. Stop with `PREVIEW_PROBE_PASS`, `BLOCK`, or `REVIEW`. A Preview pass is
+    not a Delta PASS. Production composition and Coinbase Create remain
+    unreachable.
 
 The CLI verifies digest equality and receipt integrity; it does not
 authenticate the author of a chat message. The calling host owns that control.
@@ -45,7 +64,7 @@ signer session.
 
 The separate `coinbase-demo` command is a presentation fixture for showing the
 verification gap in a meaningful delegated trade. It does not compile the
-3,000-USDC scenario into the public V1 live policy and cannot contact Coinbase
+3,000-USDC scenario into the generic v1.3 policy and cannot contact Coinbase
 or production delta.
 
 1. Display the simulated human mandate and its digest.
@@ -71,8 +90,8 @@ or production delta.
 10. Report that Coinbase Create was unreachable and uninvoked.
 
 This sequence uses labeled market, fee, exposure, and decision fixtures. Its
-content-addressed receipts make tampering evident within the artifact; they are
-not production delta signatures or trusted identities.
+digest-bound receipts make tampering evident within the artifact; they are not
+production delta signatures or trusted identities.
 
 When clarification is required, request one complete replacement instruction
 and compile it as a new source intent. Do not merge fragments on the user's
@@ -81,7 +100,8 @@ before substituting simulation or Preview-only testing.
 
 ## Post-integration sequence
 
-Engineering retains steps 1–9 and adds:
+Engineering retains the planning, explicit authorization, trusted evidence,
+exact binding, and fail-closed decision invariants above, then adds:
 
 1. Freeze the exact prospective Create bytes and register that action in an
    authenticated, append-only,
@@ -107,10 +127,13 @@ loader.
 
 ## Retry caveat
 
-Current Delta main treats a constraint failure as terminal for an intent. The
-controller can classify such a result as retryable, but the checked-in V1 does
-not claim a multi-attempt authoritative workflow. One authorization spanning
-multiple failed proposals requires one explicit design:
+The public adapter contract treats a constraint failure as terminal for that
+intent. The generic v1.3 simulator evaluates one candidate. The controller
+library can classify a structured constraint failure as retryable within a
+fixed budget, and the separate conditional showcase exercises two labeled
+fixture attempts, but the public build does not claim a production Delta
+multi-proposal workflow. One authorization spanning multiple failed proposals
+requires one explicit design:
 
 1. local candidate iteration followed by one authoritative Delta proposal;
 2. a fresh authenticated `SignedIntent` for each candidate; or

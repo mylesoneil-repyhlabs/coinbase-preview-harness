@@ -8,9 +8,10 @@ import {
   compileIntentWithOpenAI,
 } from "./intent-compiler.js";
 import {
-  assertPolicyWithinSafetyProfile,
+  assertPolicyWithinPreviewCapability,
   validateCompilation,
 } from "./policy-validator.js";
+import { createCanonicalSpotAction } from "./spot-action.js";
 
 export const PLAN_DIR = path.join(HARNESS_ROOT, "runtime", "plans");
 export const SAFETY_PROFILE_PATH = path.join(
@@ -18,9 +19,20 @@ export const SAFETY_PROFILE_PATH = path.join(
   "config",
   "execution-safety-profile.json",
 );
+export const PREVIEW_CAPABILITY_PROFILE_PATH = path.join(
+  HARNESS_ROOT,
+  "config",
+  "preview-capability-profile.json",
+);
 
 export async function loadSafetyProfile() {
   return JSON.parse(await readFile(SAFETY_PROFILE_PATH, "utf8"));
+}
+
+export async function loadPreviewCapabilityProfile() {
+  return JSON.parse(
+    await readFile(PREVIEW_CAPABILITY_PROFILE_PATH, "utf8"),
+  );
 }
 
 export async function createExecutionPlan(
@@ -32,7 +44,7 @@ export async function createExecutionPlan(
   if (compiler === "deterministic") {
     compilation = compileDeterministicIntent(intent);
     compilerMetadata = {
-      mode: "DETERMINISTIC_V1",
+      mode: "DETERMINISTIC_V2",
       model: null,
       response_id: null,
     };
@@ -50,7 +62,7 @@ export async function createExecutionPlan(
   validateCompilation(compilation, intent);
   if (compilation.status !== "READY_FOR_CONFIRMATION") {
     return {
-      schema_version: "delta.coinbase.execution_plan.v1",
+      schema_version: "delta.coinbase.execution_plan.v2",
       plan_id: randomUUID(),
       created_at: new Date().toISOString(),
       status: compilation.status,
@@ -66,12 +78,16 @@ export async function createExecutionPlan(
     };
   }
 
-  const safetyProfile = await loadSafetyProfile();
-  assertPolicyWithinSafetyProfile(compilation.policy, safetyProfile);
+  const capabilityProfile = await loadPreviewCapabilityProfile();
+  assertPolicyWithinPreviewCapability(
+    compilation.policy,
+    capabilityProfile,
+  );
   const policyDigest = digest(compilation.policy);
-  const safetyProfileDigest = digest(safetyProfile);
+  const capabilityProfileDigest = digest(capabilityProfile);
+  const actionDescriptor = createCanonicalSpotAction(compilation.policy);
   return {
-    schema_version: "delta.coinbase.execution_plan.v1",
+    schema_version: "delta.coinbase.execution_plan.v2",
     plan_id: randomUUID(),
     created_at: new Date().toISOString(),
     status: "AWAITING_HUMAN_CONFIRMATION",
@@ -85,13 +101,15 @@ export async function createExecutionPlan(
     },
     policy: compilation.policy,
     policy_digest: policyDigest,
-    safety_profile: {
-      id: safetyProfile.id,
-      digest: safetyProfileDigest,
+    action_descriptor: actionDescriptor,
+    capability_profile: {
+      id: capabilityProfile.id,
+      digest: capabilityProfileDigest,
+      create_enabled: false,
     },
     confirmation: {
       required: true,
-      instruction: `Review the policy, then pass --confirm-policy ${policyDigest}`,
+      instruction: `Review the canonical action and every closed constraint, then authorize policy digest ${policyDigest} in a new message.`,
     },
   };
 }
@@ -107,8 +125,10 @@ export async function readExecutionPlan(filePath) {
   const resolved = path.resolve(filePath);
   const raw = await readFile(resolved, "utf8");
   const plan = JSON.parse(raw);
-  if (plan.schema_version !== "delta.coinbase.execution_plan.v1") {
-    throw new Error("Unsupported execution plan schema");
+  if (plan.schema_version !== "delta.coinbase.execution_plan.v2") {
+    throw new Error(
+      "Unsupported execution plan schema; v1.2 plans must be recompiled under v1.3",
+    );
   }
   return plan;
 }
