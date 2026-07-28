@@ -275,10 +275,45 @@ Exact contracts:
 - [Delta adapter contract](docs/MANDATE-ADAPTER-CONTRACT.md)
 - [Coinbase evidence contract](docs/COINBASE-EVIDENCE-CONTRACT.md)
 
+## Mastra payment integration reference
+
+The repository also contains a partner-ready Mastra package that reuses the
+same invariant at a Brex-style vendor-payment boundary:
+
+```text
+agent proposes
+→ trusted runtime resolves fixture evidence and prepares the exact payment
+→ delta returns signed PASS / BLOCK / REVIEW
+→ only exact PASS can consume one execution grant
+```
+
+Start with the
+[sendable brief](docs/MASTRA-PARTNER-BRIEF.md), the
+[technical package](docs/MASTRA-BREX-PARTNER-PACKAGE.md), or the checked-in
+[browser-ready three-outcome proof](output/mastra/mastra-delta-partner-proof.html).
+
+```sh
+# One browser-friendly PASS/BLOCK/REVIEW bundle
+./run mastra-demo
+
+# Pinned @mastra/core 1.53 tool + persisted REVIEW suspend/resume
+cd examples/mastra
+pnpm install --ignore-workspace --ignore-scripts
+pnpm run validate
+```
+
+The isolated Mastra example requires Node.js 22.13 or later. It uses a real
+Mastra `createTool`, workflow engine, and configured in-memory LibSQL snapshot
+store. The evidence, delta evaluator, signer, grant store and payment adapter
+remain explicit local simulations. This is not a Brex integration, no Mastra
+server or Studio was contacted, no production delta service was invoked, and
+no money moved.
+
 ## Develop and verify
 
 ```sh
 ./run doctor
+./run mastra-demo
 pnpm test
 pnpm run check:skill
 pnpm run check:links
@@ -300,9 +335,13 @@ src/execution-pipeline.js             deterministic fail-closed controller
 src/coinbase-rest.js                  reads/Preview + locked Create transport
 src/mandate/                          Delta adapter, controller, and simulator
 src/coinbase-demo.js                  one-command complete simulation showcase
+src/partner-demo.js                   vendor-payment evidence, receipt and gate
+src/mastra-partner.js                 Mastra-shaped boundary and bundle
 src/reconciliation.js                 uncertainty and recovery checks
+examples/mastra/                      pinned createTool + REVIEW workflow proof
 test/                                 safety and behavior tests
 output/coinbase-demo-panels/          recording companion panels and timeline
+output/mastra/                         partner visual and browser-ready proof
 runtime/                              ignored local plans and private reports
 ```
 

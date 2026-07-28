@@ -13,6 +13,7 @@
     "credential-readiness": "node src/cli.js credential-readiness",
     "configure-credentials": "node src/cli.js configure-credentials",
     "coinbase-demo": "node src/cli.js coinbase-demo",
+    "mastra-demo": "node src/cli.js mastra-demo",
     "plan": "node src/cli.js plan",
     "simulate": "node src/cli.js simulate",
     "configure-execution": "node src/cli.js configure-execution",
@@ -25,6 +26,8 @@
     "check:skill": "node scripts/validate-skill.mjs",
     "visuals": "node scripts/generate-workflow-screenshots.mjs",
     "coinbase:panels": "node scripts/generate-coinbase-demo-panels.mjs",
+    "mastra:assets": "node scripts/generate-mastra-partner-assets.mjs",
+    "check:mastra": "node scripts/validate-mastra-partner-assets.mjs",
     "test": "node --test test/*.test.js"
   }
 }

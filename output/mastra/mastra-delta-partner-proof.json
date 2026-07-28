@@ -1,0 +1,700 @@
+{
+  "schema_version": "delta.mastra.partner_bundle.v1",
+  "artifact_class": "SIMULATED_MASTRA_INTEGRATION_SHAPE",
+  "generated_at": "2026-07-27T20:00:00.000Z",
+  "outcomes": [
+    {
+      "decision": "PASS",
+      "proposal_id": "proposal-d02c2a3bbcd80ef274cf1644",
+      "receipt_digest": "afc1ccb5c7e353e97a6e79299b6cf4fd3e31725ec8e7519c8956ab9ca05bbc9e",
+      "execution_eligibility": "GRANT_CONSUMED",
+      "adapter_invoked": true
+    },
+    {
+      "decision": "BLOCK",
+      "proposal_id": "proposal-33bf998a473146b5047d67b3",
+      "receipt_digest": "70132084fdd96498ee94396d819717bd62724e5132f3b562ca589dc65ff65444",
+      "execution_eligibility": "LOCKED",
+      "adapter_invoked": false
+    },
+    {
+      "decision": "REVIEW",
+      "proposal_id": "proposal-3992c950030ca50543185a54",
+      "receipt_digest": "55bdd12080cf1b6ff1a17db9a38395114111117166b4e17567ea4faf44c75455",
+      "execution_eligibility": "SUSPEND_FOR_REVIEW",
+      "adapter_invoked": false
+    }
+  ],
+  "records": [
+    {
+      "schema_version": "delta.partner_demo.record.v2",
+      "artifact_class": "SIMULATED_PARTNER_DEMO",
+      "generated_at": "2026-07-27T20:00:00.000Z",
+      "commercial_frame": "Mastra agent to Brex-style vendor-payment and procurement boundary.",
+      "integration_disclaimer": "Local Mastra-shaped simulation only. No Mastra runtime, Studio, Brex API, or production delta service was contacted.",
+      "agent": {
+        "framework": "Mastra integration shape",
+        "role": "simulated-procurement-agent",
+        "action": "call_delta_gated_vendor_payment_tool",
+        "model_controls_execution": false
+      },
+      "mastra": {
+        "proposed_tool_id": "delta-gated-vendor-payment",
+        "integration_pattern": "Deploy createTool in the trusted Mastra app/server runtime; keep the only executor reference inside the gated closure.",
+        "runtime_exercised": false,
+        "trace_artifact_class": "HANDCRAFTED_LOCAL_DEMO_TRACE",
+        "trace": [
+          {
+            "step": "agent_proposes",
+            "output_digest": "8dd8052abe89d772704af4dd17edc1813df5b74217ae9cac9ce7a82d44d58478"
+          },
+          {
+            "step": "server_resolves_fixture_evidence",
+            "output": "COMPLETE"
+          },
+          {
+            "step": "delta_boundary_evaluates",
+            "output": "PASS"
+          },
+          {
+            "step": "controller_pinned_receipt_verifies",
+            "output": true
+          },
+          {
+            "step": "one_use_executor_gate",
+            "output": "GRANT_CONSUMED"
+          }
+        ]
+      },
+      "mandate": {
+        "schema_version": "delta.vendor_payment.mandate.v2",
+        "mandate_id": "demo-mandate-procurement-001",
+        "authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "tenant_id": "demo-company-001",
+        "authorized_user_id": "demo-procurement-owner",
+        "authorized_by": "Demo procurement owner",
+        "authorized_at": "2026-07-27T20:00:00.000Z",
+        "expires_at": "2026-07-27T21:00:00.000Z",
+        "payment_rail": "vendor_payment",
+        "currency": "USD",
+        "allowed_vendor_ids": [
+          "vendor-approved-017"
+        ],
+        "allowed_destination_account_ids": [
+          "operating-usd-001"
+        ],
+        "allowed_bank_account_fingerprints": [
+          "sha256:demo-approved-bank-017"
+        ],
+        "max_payment_cents": 1000000,
+        "human_review_above_cents": 500000,
+        "max_evidence_age_seconds": 300,
+        "required_fields": [
+          "purchase_order_id",
+          "invoice_id",
+          "cost_center"
+        ],
+        "allowed_cost_centers": [
+          "infrastructure"
+        ]
+      },
+      "proposal": {
+        "vendor_id": "vendor-approved-017",
+        "vendor_name": "Northstar Cloud Services",
+        "amount_cents": 240000,
+        "currency": "USD",
+        "destination_account_id": "operating-usd-001",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-7741",
+        "cost_center": "infrastructure",
+        "memo": "July managed infrastructure",
+        "schema_version": "delta.vendor_payment.proposal.v2",
+        "proposal_id": "proposal-d02c2a3bbcd80ef274cf1644",
+        "proposed_by": "mastra-procurement-agent",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "authorization_context": {
+          "tenant_id": "demo-company-001",
+          "user_id": "demo-procurement-owner",
+          "workflow_run_id": "demo-mastra-run-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808"
+        }
+      },
+      "evidence": {
+        "schema_version": "delta.vendor_payment.evidence.v1",
+        "artifact_class": "SERVER_OWNED_DEMO_FIXTURE",
+        "collected_by": "simulated-procurement-evidence-adapter",
+        "collected_at": "2026-07-27T20:00:00.000Z",
+        "vendor_id": "vendor-approved-017",
+        "vendor_status": "ACTIVE",
+        "invoice_id": "INV-7741",
+        "invoice_duplicate": false,
+        "purchase_order_id": "PO-2026-1042",
+        "purchase_order_status": "OPEN",
+        "purchase_order_remaining_cents": 300000,
+        "bank_account_fingerprint": "sha256:demo-approved-bank-017",
+        "bank_details_changed": false,
+        "destination_account_id": "operating-usd-001"
+      },
+      "execution_payload": {
+        "schema_version": "delta.vendor_payment.execution_payload.v1",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "idempotency_key": "671f565a36ecdbc6887e2da4c803487f04466fae9a72ce46c3010472deaff6ff",
+        "source_account_id": "operating-usd-001",
+        "vendor_id": "vendor-approved-017",
+        "destination_bank_fingerprint": "sha256:demo-approved-bank-017",
+        "amount_cents": 240000,
+        "currency": "USD",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-7741",
+        "memo": "July managed infrastructure"
+      },
+      "decision": {
+        "schema_version": "delta.vendor_payment.decision.v2",
+        "decision": "PASS",
+        "evaluated_at": "2026-07-27T20:00:00.000Z",
+        "mandate_id": "demo-mandate-procurement-001",
+        "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "proposal_id": "proposal-d02c2a3bbcd80ef274cf1644",
+        "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+        "proposal_digest": "3445ef2da09b816da196a8afb333dab9fb8cb9ed5ae191e06e02b48862c48a85",
+        "evidence_digest": "03849351bb6112d523ebdfc55d7e7187c25d44257a4a54030eeaf13664412c1f",
+        "execution_payload_digest": "5dd4005e54b9a7573f7bc3ba3cf7ee588fff2586b5204be84deccf68962cddce",
+        "constraints": [],
+        "blocking_failures": [],
+        "review_reasons": []
+      },
+      "receipt": {
+        "schema_version": "delta.vendor_payment.signed_receipt.v2",
+        "signature_algorithm": "Ed25519",
+        "trust_note": "Controller pins this ephemeral key for one local demo run. It is not a production delta identity.",
+        "payload": {
+          "schema_version": "delta.vendor_payment.receipt_payload.v2",
+          "receipt_id": "a252cdb6-5fe5-4509-96b1-9834f1cb7193",
+          "artifact_class": "SIMULATED_PARTNER_DEMO",
+          "issuer": "local-delta-simulation",
+          "signer_key_fingerprint": "ed30583467c0717c7dffdf01acf657111e8b824665614a5de817079ffc0efd98",
+          "decision": "PASS",
+          "evaluated_at": "2026-07-27T20:00:00.000Z",
+          "not_before": "2026-07-27T20:00:00.000Z",
+          "expires_at": "2026-07-27T21:00:00.000Z",
+          "mandate_id": "demo-mandate-procurement-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+          "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+          "proposal_id": "proposal-d02c2a3bbcd80ef274cf1644",
+          "proposal_digest": "3445ef2da09b816da196a8afb333dab9fb8cb9ed5ae191e06e02b48862c48a85",
+          "evidence_digest": "03849351bb6112d523ebdfc55d7e7187c25d44257a4a54030eeaf13664412c1f",
+          "execution_payload_digest": "5dd4005e54b9a7573f7bc3ba3cf7ee588fff2586b5204be84deccf68962cddce",
+          "execution_target": "brex-style-vendor-payment-boundary",
+          "blocking_failures": [],
+          "review_reasons": [],
+          "execution_grant": {
+            "grant_id": "fa6cc0b909a6b785572befea86118dce0acc4ae0700e3e3a20e1c3797575ebf4",
+            "execution_payload_digest": "5dd4005e54b9a7573f7bc3ba3cf7ee588fff2586b5204be84deccf68962cddce",
+            "expires_at": "2026-07-27T21:00:00.000Z",
+            "max_uses": 1
+          }
+        },
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAhBX3DQcSOEgbxqJA0Ww2yfOb4ngdTxaRHNGQl+s4ZSg=\n-----END PUBLIC KEY-----\n",
+        "signature": "THqK4UAvgy7BXKSoQrj+48h+2FsGf3d17clgvlOLqP9zdvMaM4assCxMF011ZhFMmr1XJikTsROSbDWI50lDCQ==",
+        "receipt_digest": "afc1ccb5c7e353e97a6e79299b6cf4fd3e31725ec8e7519c8956ab9ca05bbc9e"
+      },
+      "receipt_verification": {
+        "artifact_verified": true,
+        "execution_authorized": true,
+        "checks": {
+          "closed_schema": true,
+          "receipt_digest_match": true,
+          "cryptographic_signature_valid": true,
+          "signer_key_pinned": true,
+          "signer_fingerprint_match": true,
+          "time_window_active": true,
+          "exact_mandate_match": true,
+          "exact_proposal_match": true,
+          "exact_evidence_match": true,
+          "exact_execution_payload_match": true,
+          "exact_decision_match": true,
+          "execution_grant_consistent": true,
+          "decision_is_pass": true
+        }
+      },
+      "execution": {
+        "gate": "trusted receipt + exact mandate/proposal/evidence/payload + PASS + active window + one-use grant",
+        "eligibility": "GRANT_CONSUMED",
+        "receipt_verified": true,
+        "exact_payload_match": true,
+        "grant_id": "fa6cc0b909a6b785572befea86118dce0acc4ae0700e3e3a20e1c3797575ebf4",
+        "grant_consumed": true,
+        "replay_blocked": false,
+        "submission_state": "SUBMITTED_REQUIRES_RECONCILIATION",
+        "adapter_invoked": true,
+        "money_moved": false,
+        "result": {
+          "execution_id": "sim-payment-924149e6-9409-4843-b27b-4f6a0024e6ed",
+          "status": "SIMULATED_ACCEPTED"
+        }
+      },
+      "record_digest": "892aab3fc386be5ca89b6a906f69f55dfaa5d45578b1e86fc1c82f67331eb0ce"
+    },
+    {
+      "schema_version": "delta.partner_demo.record.v2",
+      "artifact_class": "SIMULATED_PARTNER_DEMO",
+      "generated_at": "2026-07-27T20:00:00.000Z",
+      "commercial_frame": "Mastra agent to Brex-style vendor-payment and procurement boundary.",
+      "integration_disclaimer": "Local Mastra-shaped simulation only. No Mastra runtime, Studio, Brex API, or production delta service was contacted.",
+      "agent": {
+        "framework": "Mastra integration shape",
+        "role": "simulated-procurement-agent",
+        "action": "call_delta_gated_vendor_payment_tool",
+        "model_controls_execution": false
+      },
+      "mastra": {
+        "proposed_tool_id": "delta-gated-vendor-payment",
+        "integration_pattern": "Deploy createTool in the trusted Mastra app/server runtime; keep the only executor reference inside the gated closure.",
+        "runtime_exercised": false,
+        "trace_artifact_class": "HANDCRAFTED_LOCAL_DEMO_TRACE",
+        "trace": [
+          {
+            "step": "agent_proposes",
+            "output_digest": "cf8802888b8f8746775d7b025eb0de778f73187dd455318175375bee0f466b79"
+          },
+          {
+            "step": "server_resolves_fixture_evidence",
+            "output": "COMPLETE"
+          },
+          {
+            "step": "delta_boundary_evaluates",
+            "output": "BLOCK"
+          },
+          {
+            "step": "controller_pinned_receipt_verifies",
+            "output": true
+          },
+          {
+            "step": "one_use_executor_gate",
+            "output": "LOCKED"
+          }
+        ]
+      },
+      "mandate": {
+        "schema_version": "delta.vendor_payment.mandate.v2",
+        "mandate_id": "demo-mandate-procurement-001",
+        "authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "tenant_id": "demo-company-001",
+        "authorized_user_id": "demo-procurement-owner",
+        "authorized_by": "Demo procurement owner",
+        "authorized_at": "2026-07-27T20:00:00.000Z",
+        "expires_at": "2026-07-27T21:00:00.000Z",
+        "payment_rail": "vendor_payment",
+        "currency": "USD",
+        "allowed_vendor_ids": [
+          "vendor-approved-017"
+        ],
+        "allowed_destination_account_ids": [
+          "operating-usd-001"
+        ],
+        "allowed_bank_account_fingerprints": [
+          "sha256:demo-approved-bank-017"
+        ],
+        "max_payment_cents": 1000000,
+        "human_review_above_cents": 500000,
+        "max_evidence_age_seconds": 300,
+        "required_fields": [
+          "purchase_order_id",
+          "invoice_id",
+          "cost_center"
+        ],
+        "allowed_cost_centers": [
+          "infrastructure"
+        ]
+      },
+      "proposal": {
+        "vendor_id": "vendor-unapproved-909",
+        "vendor_name": "Unapproved Infrastructure Vendor",
+        "amount_cents": 1250000,
+        "currency": "USD",
+        "destination_account_id": "operating-usd-001",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-9912",
+        "cost_center": "infrastructure",
+        "memo": "Urgent annual prepayment",
+        "schema_version": "delta.vendor_payment.proposal.v2",
+        "proposal_id": "proposal-33bf998a473146b5047d67b3",
+        "proposed_by": "mastra-procurement-agent",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "authorization_context": {
+          "tenant_id": "demo-company-001",
+          "user_id": "demo-procurement-owner",
+          "workflow_run_id": "demo-mastra-run-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808"
+        }
+      },
+      "evidence": {
+        "schema_version": "delta.vendor_payment.evidence.v1",
+        "artifact_class": "SERVER_OWNED_DEMO_FIXTURE",
+        "collected_by": "simulated-procurement-evidence-adapter",
+        "collected_at": "2026-07-27T20:00:00.000Z",
+        "vendor_id": "vendor-unapproved-909",
+        "vendor_status": "PENDING",
+        "invoice_id": "INV-9912",
+        "invoice_duplicate": true,
+        "purchase_order_id": "PO-2026-1042",
+        "purchase_order_status": "OPEN",
+        "purchase_order_remaining_cents": 900000,
+        "bank_account_fingerprint": "sha256:demo-changed-bank-909",
+        "bank_details_changed": true,
+        "destination_account_id": "operating-usd-001"
+      },
+      "execution_payload": {
+        "schema_version": "delta.vendor_payment.execution_payload.v1",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "idempotency_key": "dd422850eb7c72716ef3d4f7d465e3b38f4ea87e6e05cf378ac0f4fcae8e0584",
+        "source_account_id": "operating-usd-001",
+        "vendor_id": "vendor-unapproved-909",
+        "destination_bank_fingerprint": "sha256:demo-changed-bank-909",
+        "amount_cents": 1250000,
+        "currency": "USD",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-9912",
+        "memo": "Urgent annual prepayment"
+      },
+      "decision": {
+        "schema_version": "delta.vendor_payment.decision.v2",
+        "decision": "BLOCK",
+        "evaluated_at": "2026-07-27T20:00:00.000Z",
+        "mandate_id": "demo-mandate-procurement-001",
+        "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "proposal_id": "proposal-33bf998a473146b5047d67b3",
+        "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+        "proposal_digest": "d3f55d51bad28a901407ad001b35a969872b62d62d7d14f584dcb4fc7f4a026f",
+        "evidence_digest": "6d35e3f9975d07b307662fe444e6dc19ebb8c393459cd912bbb5697c4b35f986",
+        "execution_payload_digest": "aa492db7f4f8d3ae0e5874b872fb01bca2aaa5b1110c78d9b8401d6591926aab",
+        "constraints": [],
+        "blocking_failures": [
+          {
+            "id": "vendor_allowlist",
+            "reason": "Vendor is not active and on the authorized allowlist."
+          },
+          {
+            "id": "invoice_not_duplicate",
+            "reason": "Invoice is already recorded or evidence does not match it."
+          },
+          {
+            "id": "purchase_order_match",
+            "reason": "Purchase order is closed, mismatched, or has insufficient balance."
+          },
+          {
+            "id": "bank_details_unchanged",
+            "reason": "Vendor bank details changed or are outside the authorization."
+          },
+          {
+            "id": "payment_cap",
+            "reason": "Payment exceeds the authorized maximum."
+          }
+        ],
+        "review_reasons": []
+      },
+      "receipt": {
+        "schema_version": "delta.vendor_payment.signed_receipt.v2",
+        "signature_algorithm": "Ed25519",
+        "trust_note": "Controller pins this ephemeral key for one local demo run. It is not a production delta identity.",
+        "payload": {
+          "schema_version": "delta.vendor_payment.receipt_payload.v2",
+          "receipt_id": "39769f6d-7a57-44af-bc77-cb6e68754f95",
+          "artifact_class": "SIMULATED_PARTNER_DEMO",
+          "issuer": "local-delta-simulation",
+          "signer_key_fingerprint": "d643dfb41b1d3c886e645911b9fed54b905de3977bba1ab068f5710067dada0f",
+          "decision": "BLOCK",
+          "evaluated_at": "2026-07-27T20:00:00.000Z",
+          "not_before": "2026-07-27T20:00:00.000Z",
+          "expires_at": "2026-07-27T21:00:00.000Z",
+          "mandate_id": "demo-mandate-procurement-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+          "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+          "proposal_id": "proposal-33bf998a473146b5047d67b3",
+          "proposal_digest": "d3f55d51bad28a901407ad001b35a969872b62d62d7d14f584dcb4fc7f4a026f",
+          "evidence_digest": "6d35e3f9975d07b307662fe444e6dc19ebb8c393459cd912bbb5697c4b35f986",
+          "execution_payload_digest": "aa492db7f4f8d3ae0e5874b872fb01bca2aaa5b1110c78d9b8401d6591926aab",
+          "execution_target": "brex-style-vendor-payment-boundary",
+          "blocking_failures": [
+            {
+              "id": "vendor_allowlist",
+              "reason": "Vendor is not active and on the authorized allowlist."
+            },
+            {
+              "id": "invoice_not_duplicate",
+              "reason": "Invoice is already recorded or evidence does not match it."
+            },
+            {
+              "id": "purchase_order_match",
+              "reason": "Purchase order is closed, mismatched, or has insufficient balance."
+            },
+            {
+              "id": "bank_details_unchanged",
+              "reason": "Vendor bank details changed or are outside the authorization."
+            },
+            {
+              "id": "payment_cap",
+              "reason": "Payment exceeds the authorized maximum."
+            }
+          ],
+          "review_reasons": [],
+          "execution_grant": null
+        },
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAFkhf2G+6LBFN72EnTFHv2F2ZJlRE1zS+oIOln4e0u8I=\n-----END PUBLIC KEY-----\n",
+        "signature": "UObBa7xfn79QJQ5gvEVn+ZAFfnhh8r4TFeKLykNWvtDC3soi6RhMBKg9pIDEmplxXQndIh2c4J6lCHGsF6yZBQ==",
+        "receipt_digest": "70132084fdd96498ee94396d819717bd62724e5132f3b562ca589dc65ff65444"
+      },
+      "receipt_verification": {
+        "artifact_verified": true,
+        "execution_authorized": false,
+        "checks": {
+          "closed_schema": true,
+          "receipt_digest_match": true,
+          "cryptographic_signature_valid": true,
+          "signer_key_pinned": true,
+          "signer_fingerprint_match": true,
+          "time_window_active": true,
+          "exact_mandate_match": true,
+          "exact_proposal_match": true,
+          "exact_evidence_match": true,
+          "exact_execution_payload_match": true,
+          "exact_decision_match": true,
+          "execution_grant_consistent": true,
+          "decision_is_pass": false
+        }
+      },
+      "execution": {
+        "gate": "trusted receipt + exact mandate/proposal/evidence/payload + PASS + active window + one-use grant",
+        "eligibility": "LOCKED",
+        "receipt_verified": true,
+        "exact_payload_match": true,
+        "grant_id": null,
+        "grant_consumed": false,
+        "replay_blocked": false,
+        "submission_state": "NOT_SUBMITTED",
+        "adapter_invoked": false,
+        "money_moved": false,
+        "result": null
+      },
+      "record_digest": "60e900ced1f5a5c5af644f5a39af07e0df76e91d55d7de916a61122d7b7b9c56"
+    },
+    {
+      "schema_version": "delta.partner_demo.record.v2",
+      "artifact_class": "SIMULATED_PARTNER_DEMO",
+      "generated_at": "2026-07-27T20:00:00.000Z",
+      "commercial_frame": "Mastra agent to Brex-style vendor-payment and procurement boundary.",
+      "integration_disclaimer": "Local Mastra-shaped simulation only. No Mastra runtime, Studio, Brex API, or production delta service was contacted.",
+      "agent": {
+        "framework": "Mastra integration shape",
+        "role": "simulated-procurement-agent",
+        "action": "call_delta_gated_vendor_payment_tool",
+        "model_controls_execution": false
+      },
+      "mastra": {
+        "proposed_tool_id": "delta-gated-vendor-payment",
+        "integration_pattern": "Deploy createTool in the trusted Mastra app/server runtime; keep the only executor reference inside the gated closure.",
+        "runtime_exercised": false,
+        "trace_artifact_class": "HANDCRAFTED_LOCAL_DEMO_TRACE",
+        "trace": [
+          {
+            "step": "agent_proposes",
+            "output_digest": "1171a21b433c25361d264673c42e774cda79e64e50540f6851cc7f88fe148b88"
+          },
+          {
+            "step": "server_resolves_fixture_evidence",
+            "output": "COMPLETE"
+          },
+          {
+            "step": "delta_boundary_evaluates",
+            "output": "REVIEW"
+          },
+          {
+            "step": "controller_pinned_receipt_verifies",
+            "output": true
+          },
+          {
+            "step": "one_use_executor_gate",
+            "output": "SUSPEND_FOR_REVIEW"
+          }
+        ]
+      },
+      "mandate": {
+        "schema_version": "delta.vendor_payment.mandate.v2",
+        "mandate_id": "demo-mandate-procurement-001",
+        "authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "tenant_id": "demo-company-001",
+        "authorized_user_id": "demo-procurement-owner",
+        "authorized_by": "Demo procurement owner",
+        "authorized_at": "2026-07-27T20:00:00.000Z",
+        "expires_at": "2026-07-27T21:00:00.000Z",
+        "payment_rail": "vendor_payment",
+        "currency": "USD",
+        "allowed_vendor_ids": [
+          "vendor-approved-017"
+        ],
+        "allowed_destination_account_ids": [
+          "operating-usd-001"
+        ],
+        "allowed_bank_account_fingerprints": [
+          "sha256:demo-approved-bank-017"
+        ],
+        "max_payment_cents": 1000000,
+        "human_review_above_cents": 500000,
+        "max_evidence_age_seconds": 300,
+        "required_fields": [
+          "purchase_order_id",
+          "invoice_id",
+          "cost_center"
+        ],
+        "allowed_cost_centers": [
+          "infrastructure"
+        ]
+      },
+      "proposal": {
+        "vendor_id": "vendor-approved-017",
+        "vendor_name": "Northstar Cloud Services",
+        "amount_cents": 720000,
+        "currency": "USD",
+        "destination_account_id": "operating-usd-001",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-8862",
+        "cost_center": "infrastructure",
+        "memo": "Expanded managed infrastructure",
+        "schema_version": "delta.vendor_payment.proposal.v2",
+        "proposal_id": "proposal-3992c950030ca50543185a54",
+        "proposed_by": "mastra-procurement-agent",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "authorization_context": {
+          "tenant_id": "demo-company-001",
+          "user_id": "demo-procurement-owner",
+          "workflow_run_id": "demo-mastra-run-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808"
+        }
+      },
+      "evidence": {
+        "schema_version": "delta.vendor_payment.evidence.v1",
+        "artifact_class": "SERVER_OWNED_DEMO_FIXTURE",
+        "collected_by": "simulated-procurement-evidence-adapter",
+        "collected_at": "2026-07-27T20:00:00.000Z",
+        "vendor_id": "vendor-approved-017",
+        "vendor_status": "ACTIVE",
+        "invoice_id": "INV-8862",
+        "invoice_duplicate": false,
+        "purchase_order_id": "PO-2026-1042",
+        "purchase_order_status": "OPEN",
+        "purchase_order_remaining_cents": 800000,
+        "bank_account_fingerprint": "sha256:demo-approved-bank-017",
+        "bank_details_changed": false,
+        "destination_account_id": "operating-usd-001"
+      },
+      "execution_payload": {
+        "schema_version": "delta.vendor_payment.execution_payload.v1",
+        "execution_target": "brex-style-vendor-payment-boundary",
+        "idempotency_key": "975cc14d52f3b31bfd614f14456d4a21339e2d23d3ec15eba3200cd650c48f27",
+        "source_account_id": "operating-usd-001",
+        "vendor_id": "vendor-approved-017",
+        "destination_bank_fingerprint": "sha256:demo-approved-bank-017",
+        "amount_cents": 720000,
+        "currency": "USD",
+        "purchase_order_id": "PO-2026-1042",
+        "invoice_id": "INV-8862",
+        "memo": "Expanded managed infrastructure"
+      },
+      "decision": {
+        "schema_version": "delta.vendor_payment.decision.v2",
+        "decision": "REVIEW",
+        "evaluated_at": "2026-07-27T20:00:00.000Z",
+        "mandate_id": "demo-mandate-procurement-001",
+        "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+        "proposal_id": "proposal-3992c950030ca50543185a54",
+        "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+        "proposal_digest": "ea7c7340d9816efe1b597449284b124a3386d95cd7da784a4d588fc1c1aa84c9",
+        "evidence_digest": "3fbcc82d9f53f0956c27105ea3812ef7c780234a545bf4d0feebcf94fd50abeb",
+        "execution_payload_digest": "97402bff8be08c5ffb1b9f7841630d5e9c6a1770982244ea2731abf405e1deff",
+        "constraints": [],
+        "blocking_failures": [],
+        "review_reasons": [
+          {
+            "id": "human_review_threshold",
+            "reason": "Payment is within the hard mandate but requires human review."
+          }
+        ]
+      },
+      "receipt": {
+        "schema_version": "delta.vendor_payment.signed_receipt.v2",
+        "signature_algorithm": "Ed25519",
+        "trust_note": "Controller pins this ephemeral key for one local demo run. It is not a production delta identity.",
+        "payload": {
+          "schema_version": "delta.vendor_payment.receipt_payload.v2",
+          "receipt_id": "960cf800-424b-4579-8fe9-bf55108d1305",
+          "artifact_class": "SIMULATED_PARTNER_DEMO",
+          "issuer": "local-delta-simulation",
+          "signer_key_fingerprint": "641eb14900298660358cb656a9555a166c20b9de9c280b7454a6859af3d06431",
+          "decision": "REVIEW",
+          "evaluated_at": "2026-07-27T20:00:00.000Z",
+          "not_before": "2026-07-27T20:00:00.000Z",
+          "expires_at": "2026-07-27T21:00:00.000Z",
+          "mandate_id": "demo-mandate-procurement-001",
+          "mandate_authorization_id": "demo-authorization-5f8c1f2d180823caa76f3808",
+          "mandate_digest": "44d8119102e07281efbdad084c5d756befe8311b2cadbefbc0ba9b9a04e3e484",
+          "proposal_id": "proposal-3992c950030ca50543185a54",
+          "proposal_digest": "ea7c7340d9816efe1b597449284b124a3386d95cd7da784a4d588fc1c1aa84c9",
+          "evidence_digest": "3fbcc82d9f53f0956c27105ea3812ef7c780234a545bf4d0feebcf94fd50abeb",
+          "execution_payload_digest": "97402bff8be08c5ffb1b9f7841630d5e9c6a1770982244ea2731abf405e1deff",
+          "execution_target": "brex-style-vendor-payment-boundary",
+          "blocking_failures": [],
+          "review_reasons": [
+            {
+              "id": "human_review_threshold",
+              "reason": "Payment is within the hard mandate but requires human review."
+            }
+          ],
+          "execution_grant": null
+        },
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAD4drtFw6oa7pRi34/VO9oWxPdhWmyrBvMMuARXl6HYI=\n-----END PUBLIC KEY-----\n",
+        "signature": "rYI6LUVqkc7rJjgCmYPKfqmFQ+xvn7ncaaLWZkPiuikYOYNlDD4Wm9MIQLwVCTMJR/U+oRTw2gZDMWaJXos7DA==",
+        "receipt_digest": "55bdd12080cf1b6ff1a17db9a38395114111117166b4e17567ea4faf44c75455"
+      },
+      "receipt_verification": {
+        "artifact_verified": true,
+        "execution_authorized": false,
+        "checks": {
+          "closed_schema": true,
+          "receipt_digest_match": true,
+          "cryptographic_signature_valid": true,
+          "signer_key_pinned": true,
+          "signer_fingerprint_match": true,
+          "time_window_active": true,
+          "exact_mandate_match": true,
+          "exact_proposal_match": true,
+          "exact_evidence_match": true,
+          "exact_execution_payload_match": true,
+          "exact_decision_match": true,
+          "execution_grant_consistent": true,
+          "decision_is_pass": false
+        }
+      },
+      "execution": {
+        "gate": "trusted receipt + exact mandate/proposal/evidence/payload + PASS + active window + one-use grant",
+        "eligibility": "SUSPEND_FOR_REVIEW",
+        "receipt_verified": true,
+        "exact_payload_match": true,
+        "grant_id": null,
+        "grant_consumed": false,
+        "replay_blocked": false,
+        "submission_state": "NOT_SUBMITTED",
+        "adapter_invoked": false,
+        "money_moved": false,
+        "result": null
+      },
+      "record_digest": "47c63fa8c6109816f85aa81935b2a8678f98a97889927fb040092929bf988eab"
+    }
+  ],
+  "claims": {
+    "mastra_runtime_exercised": false,
+    "brex_contacted": false,
+    "production_delta_invoked": false,
+    "money_moved": false
+  },
+  "bundle_digest": "a1fa3e678e93779393401513a0cd2bc6ecdf8e6e716bd4ca1e88ff9bfe91dc3b"
+}
