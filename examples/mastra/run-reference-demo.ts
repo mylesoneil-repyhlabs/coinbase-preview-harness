@@ -76,8 +76,8 @@ if (resumed.status !== "success") {
   throw new Error(`Expected successful resume, got ${resumed.status}`);
 }
 
-process.stdout.write(
-  `${JSON.stringify(
+console.log(
+  JSON.stringify(
     {
       simulation_only: true,
       initial_delta_decision: evaluation.status,
@@ -94,7 +94,7 @@ process.stdout.write(
     },
     null,
     2,
-  )}\n`,
+  ),
 );
 
 await storage.close();
