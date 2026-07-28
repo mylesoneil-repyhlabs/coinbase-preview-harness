@@ -26,7 +26,7 @@ Then run the two layers:
 
 # Actual pinned Mastra createTool + persisted REVIEW workflow
 cd examples/mastra
-pnpm install --ignore-workspace --ignore-scripts
+pnpm install --ignore-scripts
 pnpm run validate
 ```
 

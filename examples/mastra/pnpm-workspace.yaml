@@ -1,3 +1,6 @@
+packages:
+  - "."
+
 minimumReleaseAgeExclude:
   - '@mastra/core@1.53.0'
   - '@mastra/libsql@1.17.1'

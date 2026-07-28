@@ -85,7 +85,7 @@ jobs:
 
       - name: Install pinned Mastra reference
         working-directory: examples/mastra
-        run: pnpm install --ignore-workspace --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Type-check and run REVIEW suspend/resume
         working-directory: examples/mastra

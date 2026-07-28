@@ -4,7 +4,7 @@ This isolated package makes the Mastra claims reproducible. It pins
 `@mastra/core@1.53.0`, `@mastra/libsql@1.17.1`, Zod and TypeScript.
 
 ```sh
-pnpm install --ignore-workspace --ignore-scripts
+pnpm install --ignore-scripts
 pnpm run validate
 ```
 

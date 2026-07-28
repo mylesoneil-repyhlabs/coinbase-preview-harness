@@ -298,7 +298,7 @@ Start with the
 
 # Pinned @mastra/core 1.53 tool + persisted REVIEW suspend/resume
 cd examples/mastra
-pnpm install --ignore-workspace --ignore-scripts
+pnpm install --ignore-scripts
 pnpm run validate
 ```
 

@@ -44,7 +44,7 @@ run:
 ./run mastra-demo
 
 cd examples/mastra
-pnpm install --ignore-workspace --ignore-scripts
+pnpm install --ignore-scripts
 pnpm run validate
 ```
 
