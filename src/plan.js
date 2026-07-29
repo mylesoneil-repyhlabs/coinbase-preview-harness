@@ -44,7 +44,7 @@ export async function createExecutionPlan(
   if (compiler === "deterministic") {
     compilation = compileDeterministicIntent(intent);
     compilerMetadata = {
-      mode: "DETERMINISTIC_V2",
+      mode: "DETERMINISTIC_V3",
       model: null,
       response_id: null,
     };
@@ -62,7 +62,7 @@ export async function createExecutionPlan(
   validateCompilation(compilation, intent);
   if (compilation.status !== "READY_FOR_CONFIRMATION") {
     return {
-      schema_version: "delta.coinbase.execution_plan.v2",
+      schema_version: "delta.coinbase.execution_plan.v3",
       plan_id: randomUUID(),
       created_at: new Date().toISOString(),
       status: compilation.status,
@@ -87,7 +87,7 @@ export async function createExecutionPlan(
   const capabilityProfileDigest = digest(capabilityProfile);
   const actionDescriptor = createCanonicalSpotAction(compilation.policy);
   return {
-    schema_version: "delta.coinbase.execution_plan.v2",
+    schema_version: "delta.coinbase.execution_plan.v3",
     plan_id: randomUUID(),
     created_at: new Date().toISOString(),
     status: "AWAITING_HUMAN_CONFIRMATION",
@@ -125,9 +125,9 @@ export async function readExecutionPlan(filePath) {
   const resolved = path.resolve(filePath);
   const raw = await readFile(resolved, "utf8");
   const plan = JSON.parse(raw);
-  if (plan.schema_version !== "delta.coinbase.execution_plan.v2") {
+  if (plan.schema_version !== "delta.coinbase.execution_plan.v3") {
     throw new Error(
-      "Unsupported execution plan schema; v1.2 plans must be recompiled under v1.3",
+      "Unsupported execution plan schema; pre-v1.4 plans must be recompiled under v1.4",
     );
   }
   return plan;

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080">
+<rect width="720" height="1080" fill="#f8fafc"/>
+<rect width="12" height="1080" fill="#067647"/>
+<text x="54" y="72" fill="#067647" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">CONDITIONAL BUY · RESULT</text>
+<text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="40" font-weight="800">
+  <tspan x="54" dy="0">The exact payload</tspan>
+  <tspan x="54" dy="50">becomes eligible</tspan>
+</text>
+<text x="54" y="224" fill="#667085" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="1">SIMULATION ONLY · FIXTURE DATA · NO LIVE ORDER</text>
+<rect x="54" y="259" width="74" height="7" rx="3.5" fill="#067647"/>
+<g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Proposal</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">ETH-USDC · BUY · quote_size</text>
+</g>
+<g transform="translate(54 424)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Funding</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">USDC balance fixture bound</text>
+</g>
+<g transform="translate(54 518)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Preview</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">Labeled fixture · not Coinbase data</text>
+</g>
+<g transform="translate(54 612)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Receipt</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">Local SHA-256 integrity · not signed</text>
+</g>
+<g transform="translate(54 706)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Proof</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">Binding check · not cryptographic</text>
+</g>
+<g transform="translate(54 800)" font-family="Inter,Arial,sans-serif">
+  <rect width="612" height="76" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="22" y="26" fill="#667085" font-size="15" font-weight="650">Gate</text>
+  <text x="22" y="55" fill="#101828" font-size="20" font-weight="760">EXECUTION_ELIGIBLE · executor not invoked</text>
+</g>
+<text x="54" y="958" fill="#475467" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="1">COINBASE CONTACTED: FALSE · PRODUCTION DELTA: FALSE</text>
+<text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">03 / 06</text>
+<circle cx="282" cy="1018" r="5" fill="#d0d5dd"/><circle cx="313" cy="1018" r="5" fill="#d0d5dd"/><circle cx="344" cy="1018" r="7" fill="#067647"/><circle cx="375" cy="1018" r="5" fill="#d0d5dd"/><circle cx="406" cy="1018" r="5" fill="#d0d5dd"/><circle cx="437" cy="1018" r="5" fill="#d0d5dd"/>
+</svg>

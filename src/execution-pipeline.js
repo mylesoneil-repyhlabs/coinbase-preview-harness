@@ -4,6 +4,7 @@ import {
   compareDecimals,
   divideDecimals,
   multiplyDecimals,
+  subtractDecimals,
 } from "./decimal.js";
 import {
   buildCoinbaseCreateRequest,
@@ -202,11 +203,14 @@ async function runExecutionPipelineCore({
   consumeGrant,
   markGrant,
 }) {
-  if (mode !== "LIVE" && mode !== "PROBE") {
-    throw new Error("Execution mode must be exactly LIVE or PROBE");
+  if (mode !== "LIVE" && mode !== "PROBE" && mode !== "SIMULATION") {
+    throw new Error("Execution mode must be exactly LIVE, PROBE, or SIMULATION");
   }
   const builtInSimulation =
     executionCapability === BUILT_IN_SIMULATION_CAPABILITY;
+  if (mode === "SIMULATION" && !builtInSimulation) {
+    throw new Error("SIMULATION mode is reserved for the built-in no-network harness");
+  }
   if (
     mode === "LIVE" &&
     !builtInSimulation
@@ -296,6 +300,7 @@ async function runExecutionPipelineCore({
       client_order_id: null,
       create_payload_digest: null,
       transmitted_body_digest: null,
+      one_time_gate_consumed: false,
       persistence_warnings: [],
     },
     failure: null,
@@ -303,7 +308,7 @@ async function runExecutionPipelineCore({
 
   let consumedGrantPlanId = null;
   try {
-    if (plan?.schema_version !== "delta.coinbase.execution_plan.v2") {
+    if (plan?.schema_version !== "delta.coinbase.execution_plan.v3") {
       throw new Error("Execution plan schema is invalid");
     }
     if (plan.status !== "AWAITING_HUMAN_CONFIRMATION") {
@@ -583,6 +588,9 @@ async function runExecutionPipelineCore({
       verifier_confirmed: mandate.verified,
       proof_present: Boolean(mandate.proof),
       proof_digest: digest(mandate.proof),
+      proof_verification: mandate.proof_verification,
+      cryptographic_proof_verified:
+        mandate.proof_verification?.cryptographically_verified === true,
       receipt: mandate.receipt,
       one_time_grant_digest: digest({
         plan_id: plan.plan_id,
@@ -643,6 +651,7 @@ async function runExecutionPipelineCore({
       policy_expires_at: policyExpiresAt.toISOString(),
       delta_expires_at: deltaDecision.expires_at,
     });
+    record.execution.one_time_gate_consumed = true;
 
     const finalSubmitNow = now();
     assertSubmissionWindow({
@@ -659,6 +668,21 @@ async function runExecutionPipelineCore({
       digestBytes(createPayloadSerialized) !== createPayloadDigest
     ) {
       throw new Error("The authorized Coinbase Create payload changed before submission");
+    }
+
+    if (mode === "SIMULATION") {
+      record.status = "EXECUTION_ELIGIBLE";
+      record.simulation = {
+        fixture_data: true,
+        network_access: false,
+        production_delta_invoked: false,
+        coinbase_create_invoked: false,
+        exact_payload_verified: true,
+        one_time_in_memory_gate_consumed: true,
+        external_executor_invoked: false,
+        exchange_outcome_observed: false,
+      };
+      return finalRecord(record);
     }
 
     record.execution.adapter_invoked = true;
@@ -898,11 +922,10 @@ export async function runExecutionPipeline(args) {
  * to reach Coinbase Create.
  */
 export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
-  const fixedNow = new Date("2026-07-23T18:00:00.000Z");
-  const now = () => new Date(fixedNow);
+  const fixtureNow = new Date();
+  const now = () => new Date(fixtureNow);
   const consumed = new Set();
   const consumedPlans = new Set();
-  let submittedOrder = null;
   const capabilityProfile = await loadPreviewCapabilityProfile();
   const attestation = {
     can_view: true,
@@ -922,7 +945,7 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     boundExecution,
     attestation,
     confirmedExecutionDigest: boundExecution.execution_digest,
-    confirmedAt: fixedNow,
+    confirmedAt: fixtureNow,
   });
   const decimalQuantum = (value, fallback = "0.00000001") => {
     const fraction = String(value).split(".")[1] ?? "";
@@ -937,16 +960,23 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     compareDecimals(settlementValue, "0") > 0
       ? divideDecimals(settlementValue, sizeValue, { scale: 8 })
       : "100.00000000";
-  const priceIncrement =
+  const conditionalReference = plan.policy.market_condition?.value ?? null;
+  const baseReference =
     plan.policy.side === "SELL"
-      ? decimalQuantum(sellReference, "0.00000001")
-      : "0.01";
+      ? conditionalReference &&
+        compareDecimals(conditionalReference, sellReference) > 0
+        ? conditionalReference
+        : sellReference
+      : conditionalReference ?? "100.00";
+  const priceIncrement = decimalQuantum(baseReference, "0.00000001");
   const bestBid =
-    plan.policy.side === "SELL" ? sellReference : "99.99";
+    plan.policy.side === "SELL"
+      ? baseReference
+      : subtractDecimals(baseReference, priceIncrement);
   const bestAsk =
     plan.policy.side === "SELL"
       ? addDecimals(bestBid, priceIncrement)
-      : "100.00";
+      : baseReference;
   const previewBaseSize =
     plan.policy.side === "BUY"
       ? divideDecimals(sizeValue, bestAsk, { scale: 18 })
@@ -954,15 +984,13 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
   const previewQuoteSize =
     plan.policy.side === "BUY"
       ? sizeValue
-      : compareDecimals(settlementValue, "0") > 0
-        ? settlementValue
-        : multiplyDecimals(sizeValue, bestBid);
+      : multiplyDecimals(sizeValue, bestBid);
   const fillPrice =
     plan.policy.side === "BUY" ? bestAsk : bestBid;
   const funding = plan.action_descriptor.funding;
 
   const liveShapedRecord = await runExecutionPipelineCore({
-    mode: "LIVE",
+    mode: "SIMULATION",
     executionCapability: BUILT_IN_SIMULATION_CAPABILITY,
     plan,
     confirmPolicyDigest,
@@ -1029,7 +1057,7 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
           product_id: productId,
           bids: [{ price: bestBid, size: "1.0" }],
           asks: [{ price: bestAsk, size: "1.0" }],
-          time: fixedNow.toISOString(),
+          time: fixtureNow.toISOString(),
         },
       ],
     }),
@@ -1048,76 +1076,6 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
       },
     }),
     mandateAdapter: createSimulatedMandateAdapter({ now }),
-    createAdapter: async (payload, serializedBody) => {
-      if (serializedBody !== JSON.stringify(payload)) {
-        throw new Error(
-          "Simulated Create body changed after delta authorization",
-        );
-      }
-      submittedOrder = {
-        order_id: `sim-order-${randomUUID()}`,
-        payload,
-      };
-      return {
-        response: {
-          success: true,
-          success_response: {
-            order_id: submittedOrder.order_id,
-            product_id: payload.product_id,
-            side: payload.side,
-            client_order_id: payload.client_order_id,
-          },
-          error_response: null,
-          order_configuration: payload.order_configuration,
-        },
-        transport: {
-          sent_body_digest: digestBytes(serializedBody),
-        },
-      };
-    },
-    getOrderAdapter: async (orderId) => ({
-      order: {
-        order_id: orderId,
-        product_id: submittedOrder.payload.product_id,
-        side: submittedOrder.payload.side,
-        client_order_id: submittedOrder.payload.client_order_id,
-        status: "FILLED",
-        product_type: "SPOT",
-        order_type: "LIMIT",
-        time_in_force: "IMMEDIATE_OR_CANCEL",
-        completion_percentage: "100",
-        average_filled_price: fillPrice,
-        number_of_fills: "1",
-        filled_size: previewBaseSize,
-        filled_value: previewQuoteSize,
-        total_fees: "0",
-        total_value_after_fees: previewQuoteSize,
-        settled: true,
-        created_time: fixedNow.toISOString(),
-        last_fill_time: fixedNow.toISOString(),
-        reject_reason: "REJECT_REASON_UNSPECIFIED",
-        reject_message: "",
-        cancel_message: "",
-        order_configuration: submittedOrder.payload.order_configuration,
-      },
-    }),
-    listFillsAdapter: async (orderId) => ({
-      fills: [
-        {
-          entry_id: `sim-entry-${randomUUID()}`,
-          trade_id: `sim-trade-${randomUUID()}`,
-          order_id: orderId,
-          trade_time: fixedNow.toISOString(),
-          price: fillPrice,
-          size: previewBaseSize,
-          commission: "0",
-          product_id: submittedOrder.payload.product_id,
-          side: submittedOrder.payload.side,
-        },
-      ],
-      cursor: "",
-      has_next: false,
-    }),
     consumeGrant: async (planId, intentId) => {
       const grant = `${planId}:${intentId}`;
       if (consumed.has(grant) || consumedPlans.has(planId)) {
@@ -1131,7 +1089,18 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     markGrant: async () => {},
   });
   const { record_digest: _previousDigest, ...record } = liveShapedRecord;
-  const simulatedRecord = { ...record, artifact_class: "SIMULATED" };
+  const simulatedRecord = {
+    ...record,
+    artifact_class: "SIMULATED",
+    target_environment: plan.policy.environment,
+    run_mode: "NO_NETWORK_SIMULATION",
+    fixture_clock: {
+      mode: "RUN_RELATIVE",
+      observed_at: fixtureNow.toISOString(),
+      max_market_age_ms: capabilityProfile.max_market_age_ms,
+      max_preview_age_ms: capabilityProfile.max_preview_age_ms,
+    },
+  };
   return {
     ...simulatedRecord,
     record_digest: digest(simulatedRecord),

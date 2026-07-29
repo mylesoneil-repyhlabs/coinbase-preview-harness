@@ -3,6 +3,7 @@ import {
   assertPolicyAndGroundingMatchSource,
   findSourceConstraintIssues,
   MATERIAL_SOURCE_PATHS,
+  requiredMaterialPolicyPaths,
 } from "./intent-source-validator.js";
 
 const TOP_LEVEL_FIELDS = Object.freeze([
@@ -28,6 +29,7 @@ const POLICY_FIELDS = Object.freeze([
   "size",
   "partial_fill_policy",
   "limits",
+  "market_condition",
   "validity",
   "usage",
 ]);
@@ -92,7 +94,7 @@ function assertGrounding(compilation, sourceIntent) {
     }
     groundedPaths.add(item.field);
   }
-  for (const path of MATERIAL_POLICY_PATHS) {
+  for (const path of requiredMaterialPolicyPaths(compilation.policy)) {
     if (!groundedPaths.has(path)) throw new Error(`material field is not grounded: ${path}`);
   }
 }
@@ -130,7 +132,7 @@ export function validatePolicy(policy) {
 
   assertExactFields(policy.size, ["denomination", "asset", "operator", "value"], "policy.size");
   assertEnum(policy.size.denomination, ["QUOTE", "BASE"], "policy.size.denomination");
-  if (policy.size.operator !== "EXACT") throw new Error("v1.3 requires an exact order size");
+  assertEnum(policy.size.operator, ["EXACT", "MAX"], "policy.size.operator");
   assertDecimal(policy.size.value, "policy.size.value");
   if (
     policy.side === "BUY" &&
@@ -209,6 +211,35 @@ export function validatePolicy(policy) {
     throw new Error("MAX_QUOTE_DEBIT cannot be below BUY principal");
   }
 
+  if (policy.market_condition !== null) {
+    assertExactFields(
+      policy.market_condition,
+      ["reference", "operator", "asset", "value"],
+      "policy.market_condition",
+    );
+    const expectedReference =
+      policy.side === "BUY" ? "BEST_ASK" : "BEST_BID";
+    const expectedOperator =
+      policy.side === "BUY" ? "AT_OR_BELOW" : "AT_OR_ABOVE";
+    if (
+      policy.market_condition.reference !== expectedReference ||
+      policy.market_condition.operator !== expectedOperator
+    ) {
+      throw new Error(
+        "policy.market_condition must use the side-correct best price and operator",
+      );
+    }
+    if (policy.market_condition.asset !== policy.quote_asset) {
+      throw new Error(
+        "policy.market_condition.asset must equal the quote asset",
+      );
+    }
+    assertDecimal(
+      policy.market_condition.value,
+      "policy.market_condition.value",
+    );
+  }
+
   assertExactFields(policy.validity, ["starts", "ttl_seconds"], "policy.validity");
   if (policy.validity.starts !== "ON_EXECUTION_CONFIRMATION") {
     throw new Error(
@@ -225,7 +256,7 @@ export function validatePolicy(policy) {
 
   assertExactFields(policy.usage, ["max_executions"], "policy.usage");
   if (policy.usage.max_executions !== 1) {
-    throw new Error("v1.3 policies must authorize exactly one execution");
+    throw new Error("policies must authorize exactly one execution");
   }
   return policy;
 }
@@ -242,10 +273,10 @@ function validateIssues(items, name, requiredFields) {
 
 export function validateCompilation(compilation, sourceIntent) {
   assertExactFields(compilation, TOP_LEVEL_FIELDS, "compilation");
-  if (compilation.schema_version !== "delta.coinbase.compilation.v2") {
+  if (compilation.schema_version !== "delta.coinbase.compilation.v3") {
     throw new Error("unsupported compilation schema_version");
   }
-  if (compilation.taxonomy_version !== "digital-asset-spot-order.v2") {
+  if (compilation.taxonomy_version !== "digital-asset-spot-order.v3") {
     throw new Error("unsupported taxonomy_version");
   }
   assertEnum(

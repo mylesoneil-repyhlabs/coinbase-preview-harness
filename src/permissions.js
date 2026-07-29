@@ -1,11 +1,15 @@
 import { createHash, createPrivateKey, createSign, randomBytes } from "node:crypto";
 import {
+  chmod,
   lstat,
   mkdir,
-  readFile,
+  open,
   realpath,
-  writeFile,
+  rename,
+  stat,
+  unlink,
 } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { HARNESS_ROOT, RUNTIME_DIR } from "./paths.js";
 
@@ -131,26 +135,55 @@ async function readExternalKeyFile(keyFilePath) {
   if (typeof keyFilePath !== "string" || !path.isAbsolute(keyFilePath)) {
     throw new Error("CDP key path must be absolute");
   }
-  const linkInfo = await lstat(keyFilePath);
-  if (linkInfo.isSymbolicLink()) throw new Error("CDP key file must not be a symlink");
-  if (!linkInfo.isFile()) throw new Error("CDP key path must be a regular file");
-  if (linkInfo.size <= 0 || linkInfo.size > 32 * 1024) {
-    throw new Error("CDP key file size is outside the safety limit");
+  const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+  let handle;
+  try {
+    handle = await open(
+      keyFilePath,
+      fsConstants.O_RDONLY | noFollow,
+    );
+  } catch (error) {
+    if (error?.code === "ELOOP") {
+      throw new Error("CDP key file must not be a symlink");
+    }
+    throw error;
   }
-  if ((linkInfo.mode & 0o077) !== 0) {
-    throw new Error("CDP key file permissions must be 0600");
+  let raw;
+  let resolvedPath;
+  try {
+    const fileInfo = await handle.stat();
+    if (!fileInfo.isFile()) {
+      throw new Error("CDP key path must be a regular file");
+    }
+    if (fileInfo.size <= 0 || fileInfo.size > 32 * 1024) {
+      throw new Error("CDP key file size is outside the safety limit");
+    }
+    if ((fileInfo.mode & 0o077) !== 0) {
+      throw new Error("CDP key file permissions must be 0600");
+    }
+    if (
+      typeof process.getuid === "function" &&
+      fileInfo.uid !== process.getuid()
+    ) {
+      throw new Error("CDP key file must be owned by the current user");
+    }
+    resolvedPath = await realpath(keyFilePath);
+    const resolvedInfo = await stat(resolvedPath);
+    if (
+      resolvedInfo.dev !== fileInfo.dev ||
+      resolvedInfo.ino !== fileInfo.ino
+    ) {
+      throw new Error("CDP key file changed while it was being verified");
+    }
+    const harnessRealPath = await realpath(HARNESS_ROOT);
+    const relative = path.relative(harnessRealPath, resolvedPath);
+    if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
+      throw new Error("Keep the downloaded CDP key file outside this repository");
+    }
+    raw = await handle.readFile("utf8");
+  } finally {
+    await handle.close();
   }
-  if (typeof process.getuid === "function" && linkInfo.uid !== process.getuid()) {
-    throw new Error("CDP key file must be owned by the current user");
-  }
-
-  const resolvedPath = await realpath(keyFilePath);
-  const harnessRealPath = await realpath(HARNESS_ROOT);
-  const relative = path.relative(harnessRealPath, resolvedPath);
-  if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
-    throw new Error("Keep the downloaded CDP key file outside this repository");
-  }
-  const raw = await readFile(resolvedPath, "utf8");
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("CDP key JSON must be an object");
@@ -179,6 +212,44 @@ async function readExternalKeyFile(keyFilePath) {
     throw new Error("This harness currently requires an ECDSA P-256 CDP key");
   }
   return { resolvedPath, keyId, privateKey };
+}
+
+async function persistPermissionAttestation(targetPath, attestation) {
+  await mkdir(ATTESTATION_DIR, { recursive: true, mode: 0o700 });
+  const directoryInfo = await lstat(ATTESTATION_DIR);
+  if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()) {
+    throw new Error("Refusing unsafe credential-attestation directory");
+  }
+  await chmod(ATTESTATION_DIR, 0o700);
+  try {
+    const targetInfo = await lstat(targetPath);
+    if (targetInfo.isSymbolicLink() || !targetInfo.isFile()) {
+      throw new Error("Refusing unsafe credential-attestation target");
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const temporaryPath = path.join(
+    ATTESTATION_DIR,
+    `.attestation-${process.pid}-${randomBytes(12).toString("hex")}.tmp`,
+  );
+  try {
+    const temporary = await open(
+      temporaryPath,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+      0o600,
+    );
+    try {
+      await temporary.writeFile(`${JSON.stringify(attestation, null, 2)}\n`);
+      await temporary.sync();
+    } finally {
+      await temporary.close();
+    }
+    await rename(temporaryPath, targetPath);
+    await chmod(targetPath, 0o600);
+  } finally {
+    await unlink(temporaryPath).catch(() => {});
+  }
 }
 
 async function fetchPermissions(keyId, privateKey, fetchImpl) {
@@ -227,11 +298,9 @@ export async function verifyTradeKeyFileAndConfigure(
     key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
   };
   if (persistAttestation) {
-    await mkdir(ATTESTATION_DIR, { recursive: true, mode: 0o700 });
-    await writeFile(
+    await persistPermissionAttestation(
       TRADE_ATTESTATION_PATH,
-      `${JSON.stringify(attestation, null, 2)}\n`,
-      { mode: 0o600 },
+      attestation,
     );
   }
   return {
@@ -266,11 +335,9 @@ export async function verifyViewKeyFileAndConfigure(
     key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
   };
   if (persistAttestation) {
-    await mkdir(ATTESTATION_DIR, { recursive: true, mode: 0o700 });
-    await writeFile(
+    await persistPermissionAttestation(
       VIEW_ATTESTATION_PATH,
-      `${JSON.stringify(attestation, null, 2)}\n`,
-      { mode: 0o600 },
+      attestation,
     );
   }
   return {

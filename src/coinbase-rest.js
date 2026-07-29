@@ -184,8 +184,13 @@ export function createCoinbaseRestAdapter(credentials, options = {}) {
         if (!Array.isArray(response?.accounts)) {
           throw new Error("Coinbase List Accounts response is malformed");
         }
+        if (typeof response.has_next !== "boolean") {
+          throw new Error(
+            "Coinbase List Accounts response omitted has_next",
+          );
+        }
         accounts.push(...response.accounts);
-        if (response.has_next !== true) {
+        if (response.has_next === false) {
           return {
             accounts,
             has_next: false,
@@ -200,10 +205,11 @@ export function createCoinbaseRestAdapter(credentials, options = {}) {
       }
       throw new Error("Coinbase List Accounts exceeded the pagination limit");
     },
-    listProducts({ productIds } = {}) {
-      const query = {
+    async listProducts({ productIds } = {}) {
+      const baseQuery = {
         product_type: "SPOT",
         get_tradability_status: "true",
+        limit: "100",
       };
       if (productIds !== undefined) {
         if (
@@ -213,11 +219,50 @@ export function createCoinbaseRestAdapter(credentials, options = {}) {
         ) {
           throw new Error("productIds must contain 1 through 100 products");
         }
-        query.product_ids = productIds.map(safeProductId);
+        baseQuery.product_ids = productIds.map(safeProductId);
       }
-      return request("GET", `${BROKERAGE_PATH}/products`, { query }).then(
-        (result) => result.response,
-      );
+      const products = [];
+      const productIdsSeen = new Set();
+      const cursors = new Set();
+      let cursor;
+      for (let page = 0; page < 100; page += 1) {
+        const query = { ...baseQuery };
+        if (cursor !== undefined) query.cursor = cursor;
+        const result = await request("GET", `${BROKERAGE_PATH}/products`, {
+          query,
+        });
+        const response = result.response;
+        if (
+          !Array.isArray(response?.products) ||
+          typeof response?.pagination?.has_next !== "boolean"
+        ) {
+          throw new Error("Coinbase List Products response is malformed");
+        }
+        for (const product of response.products) {
+          const productId = safeProductId(product?.product_id);
+          if (productIdsSeen.has(productId)) {
+            throw new Error("Coinbase List Products repeated a product ID");
+          }
+          productIdsSeen.add(productId);
+          products.push(product);
+        }
+        if (response.pagination.has_next === false) {
+          return {
+            products,
+            num_products: products.length,
+            pagination: {
+              has_next: false,
+              next_cursor: null,
+            },
+          };
+        }
+        cursor = safeCursor(response.pagination.next_cursor);
+        if (cursors.has(cursor)) {
+          throw new Error("Coinbase List Products cursor repeated");
+        }
+        cursors.add(cursor);
+      }
+      throw new Error("Coinbase List Products exceeded the pagination limit");
     },
     getProduct(productId) {
       const safeId = safeProductId(productId);

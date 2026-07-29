@@ -15,20 +15,63 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function formatMarketCondition(condition) {
+  if (!condition) return "None";
+  const reference =
+    condition.reference === "BEST_ASK"
+      ? "Fresh best ask"
+      : condition.reference === "BEST_BID"
+        ? "Fresh best bid"
+        : condition.reference ?? "Unknown reference";
+  const operator =
+    condition.operator === "AT_OR_BELOW"
+      ? "at or below"
+      : condition.operator === "AT_OR_ABOVE"
+        ? "at or above"
+        : condition.operator ?? "unknown operator";
+  return `${reference} ${operator} ${condition.value ?? "—"} ${condition.asset ?? ""}`.trim();
+}
+
+function renderRetryCard(retry) {
+  if (!retry) return "";
+  const attempts = Array.isArray(retry.attempts) ? retry.attempts : [];
+  const first = attempts[0];
+  const second = attempts[1];
+  const mandate = retry.human_mandate ?? {};
+  const mandateSummary =
+    mandate.product_id && mandate.max_allocation_usdc
+      ? `${mandate.product_id} · up to ${mandate.max_allocation_usdc} USDC · one simulated eligibility`
+      : "See the sanitized record for the authorized retry mandate";
+  return `<article class="card wide"><h2>Bounded deterministic retry</h2><dl>
+      <dt>Maximum attempts</dt><dd>${escapeHtml(retry.max_attempts ?? "—")}</dd>
+      <dt>Mandate</dt><dd>${escapeHtml(mandateSummary)}</dd>
+      <dt>Attempt 1</dt><dd>${escapeHtml(first?.receipt?.verdict ?? "BLOCK")} → ${escapeHtml(first?.disposition ?? "—")} · specific violations</dd>
+      <dt>Attempt 2</dt><dd>${escapeHtml(second?.receipt?.verdict ?? "PASS")} → ${escapeHtml(second?.disposition ?? "—")} · exact payload and evidence bound</dd>
+      <dt>Controller result</dt><dd>${escapeHtml(retry.terminal_status ?? retry.controller_terminal_status ?? "—")}</dd>
+      <dt>External executor</dt><dd>${retry.execution?.external_executor_invoked === true ? "INVOKED" : "NOT INVOKED"}</dd>
+      <dt>Coinbase Create</dt><dd>${retry.execution?.coinbase_create_invoked === true ? "INVOKED" : "NOT INVOKED"}</dd>
+    </dl><div class="notice">${escapeHtml(retry.note ?? "")}</div></article>`;
+}
+
 export function renderExecutionHtml(record) {
   const simulated = record.artifact_class === "SIMULATED";
   const submitted = record.execution?.order_submitted === true;
   const submissionUnknown = record.execution?.order_submitted == null;
   const probePassed = record.status === "PREVIEW_PROBE_PASS";
-  const completed = ["FILLED", "PARTIAL_FILL", "NO_FILL"].includes(record.status);
-  const statusClass = completed || probePassed
+  const executionEligible =
+    simulated && record.status === "EXECUTION_ELIGIBLE";
+  const completed =
+    !simulated && ["FILLED", "PARTIAL_FILL", "NO_FILL"].includes(record.status);
+  const statusClass = completed || probePassed || executionEligible
     ? "pass"
     : submitted
       ? "warn"
       : "block";
   const statusLabel =
-    simulated && record.status === "FILLED"
-      ? "SIMULATED FULL-FILL PASS"
+    simulated
+      ? executionEligible
+        ? "SIMULATED · EXACT PAYLOAD ELIGIBLE"
+        : "SIMULATED · NOT EXECUTED"
       : record.status;
   const policy = record.policy ?? {};
   const proposal = record.proposal?.action ?? {};
@@ -37,12 +80,40 @@ export function renderExecutionHtml(record) {
   const reconciliation = record.reconciliation ?? {};
   const actual = reconciliation.order ?? {};
   const retry = record.demo?.bounded_retry ?? null;
+  const sizeOperator = policy.size?.operator ?? "EXACT";
+  const sizeLabel =
+    sizeOperator === "MAX" ? "Maximum size" : "Exact size";
+  const proposalSize =
+    proposal.quote_size == null
+      ? proposal.base_size
+      : proposal.quote_size;
+  const proposalSizeAsset =
+    proposal.quote_size == null ? policy.base_asset : policy.quote_asset;
+  const proofVerification =
+    record.delta?.proof_verification ??
+    record.delta?.receipt?.proof_verification ??
+    null;
+  const proofBindingResult =
+    proofVerification?.verified === true ? "PASS" : "NOT VERIFIED";
+  const cryptographicProofResult =
+    proofVerification?.cryptographically_verified === true ? "YES" : "NO";
+  const outcomeCard =
+    record.reconciliation == null
+      ? ""
+      : `<article class="card"><h2>Observed Coinbase outcome</h2><dl>
+      <dt>Outcome</dt><dd>${escapeHtml(reconciliation.outcome ?? "—")}</dd>
+      <dt>Filled value</dt><dd>${escapeHtml(actual.filled_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
+      <dt>Fees</dt><dd>${escapeHtml(actual.total_fees ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
+      <dt>Settlement</dt><dd>${escapeHtml(reconciliation.checks?.actual_settlement_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
+      <dt>Average fill</dt><dd>${escapeHtml(actual.average_filled_price ?? "—")}</dd>
+      <dt>Post-trade check</dt><dd>${escapeHtml(reconciliation.checks?.verdict ?? "—")}</dd>
+    </dl></article>`;
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>delta × Coinbase — Gated execution record</title>
+  <title>delta × Coinbase — Mandate evaluation record</title>
   <style>
     :root{--ink:#171717;--muted:#686761;--line:#ddd9d0;--paper:#f6f3ed;--white:#fff;--blue:#0052ff;--green:#176a46;--red:#a12e28;--amber:#8c5b00}
     *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -63,31 +134,32 @@ export function renderExecutionHtml(record) {
 <body>
 ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO REAL ORDER · COINBASE AND PRODUCTION DELTA NOT CONTACTED</div>' : ""}
 <main>
-  <div class="eyebrow">delta × Coinbase · mandate-gated execution</div>
+  <div class="eyebrow">delta × Coinbase · mandate-gated action</div>
   <h1>From human intent to one authorized action.</h1>
   <p class="lede">${simulated
-    ? "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; labeled fixtures supply evidence; the simulated Delta contract checks the exact payload and same-process proof bindings before a one-use in-memory gate."
+    ? "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; labeled fixtures supply evidence; the simulated Delta contract checks the exact payload and a non-cryptographic proof attestation before a one-use in-memory gate. The run stops at eligibility."
     : probePassed
       ? "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh Preview evidence; the probe then stops with Delta and Create locked."
       : "Natural language is compiled into a reviewable policy; a human confirms its digest; an agent proposes one bounded order; Coinbase supplies fresh evidence; production Delta evaluates the exact payload and an independent verifier confirms the proof before the executor can submit those bytes."}</p>
   <section class="status">
     <span class="pill ${statusClass}">${escapeHtml(statusLabel)}</span>
-    <strong>${simulated ? "NO REAL ORDER CREATED · SIMULATED RESPONSE" : probePassed ? "COINBASE PREVIEW VERIFIED · CREATE NOT CALLED" : completed ? "COINBASE OUTCOME RECONCILED" : submitted ? "ORDER SUBMITTED · OUTCOME NEEDS ATTENTION" : submissionUnknown ? "SUBMISSION STATUS UNKNOWN · RECONCILE BEFORE ANY RETRY" : "NO ORDER SUBMITTED"}</strong>
+    <strong>${simulated ? "NO CREATE · NO SUBMISSION · NO EXCHANGE OUTCOME" : probePassed ? "COINBASE PREVIEW VERIFIED · CREATE NOT CALLED" : completed ? "COINBASE OUTCOME RECONCILED" : submitted ? "ORDER SUBMITTED · OUTCOME NEEDS ATTENTION" : submissionUnknown ? "SUBMISSION STATUS UNKNOWN · RECONCILE BEFORE ANY RETRY" : "NO ORDER SUBMITTED"}</strong>
   </section>
   <section class="flow">
     <div class="step"><b>1 · Compile</b><span>NL intent → closed policy.</span></div>
     <div class="step"><b>2 · Confirm</b><span>Human confirms policy digest.</span></div>
     <div class="step"><b>3 · Propose</b><span>Price-bounded IOC action.</span></div>
-    <div class="step"><b>4 · Preview</b><span>Fresh fees, fill and preview ID.</span></div>
-    <div class="step"><b>5 · delta verify</b><span>${simulated ? "Simulated decision + same-process binding check." : probePassed ? "NOT RUN · Preview-only stop." : "Production decision + independently verified proof."}</span></div>
-    <div class="step"><b>6 · Submit</b><span>${simulated || probePassed ? "LOCKED · Create not called." : "One-time idempotent Create Order."}</span></div>
-    <div class="step"><b>7 · Reconcile</b><span>${simulated || probePassed ? "No real Coinbase outcome." : "Read actual fill, fees and terminal status."}</span></div>
+    <div class="step"><b>4 · Preview</b><span>${simulated ? "Labeled fixture: fees, fill and preview ID." : "Fresh fees, fill and preview ID."}</span></div>
+    <div class="step"><b>5 · delta verify</b><span>${simulated ? "Local contract + non-cryptographic binding attestation." : probePassed ? "NOT RUN · Preview-only stop." : "Production decision + independently verified proof."}</span></div>
+    <div class="step"><b>6 · Gate</b><span>${simulated ? "Exact bytes eligible once in memory." : probePassed ? "LOCKED · Create not called." : "PASS unlocks exact verified bytes once."}</span></div>
+    <div class="step"><b>7 · Boundary</b><span>${simulated || probePassed ? "Stop · no Coinbase Create or outcome." : "Submit, then reconcile the Coinbase outcome."}</span></div>
   </section>
   <section class="grid">
     <article class="card"><h2>Human-confirmed policy</h2><dl>
       <dt>Product</dt><dd>${escapeHtml(policy.product_id ?? "—")}</dd>
       <dt>Side</dt><dd>${escapeHtml(policy.side ?? "—")}</dd>
-      <dt>Exact size</dt><dd>${escapeHtml(policy.size?.value ?? "—")} ${escapeHtml(policy.size?.asset ?? "")}</dd>
+      <dt>${escapeHtml(sizeLabel)}</dt><dd>${escapeHtml(policy.size?.value ?? "—")} ${escapeHtml(policy.size?.asset ?? "")}</dd>
+      <dt>Market condition</dt><dd>${escapeHtml(formatMarketCondition(policy.market_condition))}</dd>
       <dt>Order</dt><dd>${escapeHtml(policy.order_type ?? "—")}</dd>
       <dt>Slippage cap</dt><dd>${escapeHtml(policy.limits?.max_slippage_bps ?? "—")} bps</dd>
       <dt>Settlement bound</dt><dd>${escapeHtml(policy.limits?.settlement?.kind ?? "—")} · ${escapeHtml(policy.limits?.settlement?.value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
@@ -95,44 +167,40 @@ ${simulated ? '<div class="simulation-banner" role="alert">SIMULATION_ONLY · NO
     <article class="card"><h2>Agent proposal</h2><dl>
       <dt>Product</dt><dd>${escapeHtml(proposal.product_id ?? "—")}</dd>
       <dt>Side</dt><dd>${escapeHtml(proposal.side ?? "—")}</dd>
+      <dt>Proposed size</dt><dd>${escapeHtml(proposalSize ?? "—")} ${escapeHtml(proposalSizeAsset ?? "")}</dd>
       <dt>Limit price</dt><dd>${escapeHtml(proposal.limit_price ?? "—")}</dd>
       <dt>Time in force</dt><dd>${escapeHtml(proposal.time_in_force ?? "—")}</dd>
-      <dt>Proposal check</dt><dd>${escapeHtml(record.proposal_check?.verdict ?? "—")}</dd>
+      <dt>Proposal check</dt><dd>${escapeHtml(record.proposal_check?.decision ?? record.proposal_check?.verdict ?? "—")}</dd>
     </dl></article>
-    <article class="card"><h2>Coinbase preview evidence</h2><dl>
+    <article class="card"><h2>${simulated ? "Labeled Preview fixture" : "Coinbase Preview evidence"}</h2><dl>
+      <dt>Evidence source</dt><dd>${simulated ? "SIMULATED FIXTURE" : "COINBASE"}</dd>
       <dt>Price reference</dt><dd>${escapeHtml(policy.side === "SELL" ? record.market?.best_bid ?? "—" : record.market?.best_ask ?? "—")}</dd>
       <dt>Funding</dt><dd>${escapeHtml(record.funding?.decision ?? "—")} · ${escapeHtml(record.funding?.available_balance ?? "—")} ${escapeHtml(record.funding?.funding_asset ?? "")}</dd>
       <dt>Estimated fill</dt><dd>${escapeHtml(preview.est_average_filled_price ?? "—")}</dd>
       <dt>Commission</dt><dd>${escapeHtml(preview.commission_total ?? "—")}</dd>
       <dt>Order total</dt><dd>${escapeHtml(preview.order_total ?? "—")}</dd>
-      <dt>Preview check</dt><dd>${escapeHtml(record.preview_check?.verdict ?? "—")}</dd>
+      <dt>Preview check</dt><dd>${escapeHtml(record.preview_check?.decision ?? record.preview_check?.verdict ?? "—")}</dd>
     </dl></article>
-    <article class="card"><h2>Authorization and outcome</h2><dl>
-      <dt>delta status</dt><dd>${escapeHtml(record.delta?.status ?? record.delta?.decision ?? "—")}</dd>
+    <article class="card"><h2>Decision, proof, and gate</h2><dl>
+      <dt>delta decision</dt><dd>${escapeHtml(record.delta?.decision ?? record.delta?.status ?? "—")}</dd>
       <dt>Intent ID</dt><dd>${escapeHtml(record.delta?.intent_id ?? record.delta?.decision_id ?? "—")}</dd>
-      <dt>Verifier confirmed</dt><dd>${escapeHtml(record.delta?.verifier_confirmed === true ? "YES" : "NO")}</dd>
+      <dt>Binding check</dt><dd>${escapeHtml(proofBindingResult)}</dd>
+      <dt>Proof method</dt><dd>${escapeHtml(proofVerification?.method ?? "—")}</dd>
+      <dt>Verifier identity</dt><dd>${escapeHtml(proofVerification?.verifier_identity ?? "—")}</dd>
+      <dt>Cryptographic proof verified</dt><dd>${escapeHtml(cryptographicProofResult)}</dd>
       <dt>Proof digest</dt><dd>${escapeHtml(record.delta?.proof_digest ?? "—")}</dd>
+      <dt>Receipt integrity</dt><dd>${escapeHtml(record.delta?.receipt?.receipt_integrity ?? "—")}</dd>
+      <dt>Receipt digest</dt><dd>${escapeHtml(record.delta?.receipt?.receipt_digest ?? "—")}</dd>
+      <dt>One-time gate consumed</dt><dd>${execution.one_time_gate_consumed === true ? "YES" : "NO"}</dd>
       <dt>Create invoked</dt><dd>${escapeHtml(execution.adapter_invoked === true ? "YES" : "NO")}</dd>
       <dt>Order submitted</dt><dd>${escapeHtml(execution.order_submitted === true ? "YES" : execution.order_submitted == null ? "UNKNOWN" : "NO")}</dd>
       <dt>Order ID</dt><dd>${escapeHtml(execution.order_id ?? "—")}</dd>
-      <dt>Actual outcome</dt><dd>${escapeHtml(reconciliation.outcome ?? "—")}</dd>
-      <dt>Actual fill</dt><dd>${escapeHtml(actual.filled_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
-      <dt>Actual fees</dt><dd>${escapeHtml(actual.total_fees ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
-      <dt>Actual settlement</dt><dd>${escapeHtml(reconciliation.checks?.actual_settlement_value ?? "—")} ${escapeHtml(policy.quote_asset ?? "")}</dd>
-      <dt>Actual average</dt><dd>${escapeHtml(actual.average_filled_price ?? "—")}</dd>
-      <dt>Post-trade check</dt><dd>${escapeHtml(reconciliation.checks?.verdict ?? "—")}</dd>
     </dl></article>
-    ${retry ? `<article class="card wide"><h2>Bounded deterministic retry</h2><dl>
-      <dt>Maximum attempts</dt><dd>${escapeHtml(retry.max_attempts)}</dd>
-      <dt>Simulated mandate</dt><dd>Up to 3,000 USDC · price, cost, exposure and expiry bounded</dd>
-      <dt>Attempt 1</dt><dd>BLOCK → ${escapeHtml(retry.attempts?.[0]?.disposition ?? "—")} · specific violations</dd>
-      <dt>Attempt 2</dt><dd>PASS → ${escapeHtml(retry.attempts?.[1]?.disposition ?? "—")} · exact payload verified</dd>
-      <dt>Controller outcome</dt><dd>${escapeHtml(retry.terminal_status ?? "—")}</dd>
-      <dt>Real Coinbase Create</dt><dd>NOT INVOKED</dd>
-    </dl><div class="notice">${escapeHtml(retry.note ?? "")}</div></article>` : ""}
+    ${outcomeCard}
+    ${renderRetryCard(retry)}
     <article class="card wide"><details><summary>Sanitized execution record</summary><pre>${escapeHtml(JSON.stringify(record, null, 2))}</pre></details></article>
   </section>
-  ${simulated ? '<div class="notice"><strong>SIMULATION.</strong> Coinbase, OpenAI, and the production delta verifier were not contacted. The artifact proves orchestration, binding, fail-closed behavior, and the single-use execution seam—not a real transaction.</div>' : ""}
+  ${simulated ? '<div class="notice"><strong>SIMULATION.</strong> Coinbase, OpenAI, and the production delta verifier were not contacted. Local SHA-256 digests and the simulated proof-binding attestation make this harness trace internally checkable; they are not a production Delta signature, an independently authenticated Coinbase response, or evidence of a transaction.</div>' : ""}
   <footer>Record digest: ${escapeHtml(record.record_digest)} · Generated ${escapeHtml(record.generated_at)}</footer>
 </main>
 </body>

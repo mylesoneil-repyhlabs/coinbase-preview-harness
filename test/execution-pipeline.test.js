@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createBoundExecution } from "../src/execution-binding.js";
 import { createExecutionConfirmation } from "../src/execution-confirmation.js";
+import { digest } from "../src/evidence.js";
 import {
   runBuiltInSimulation,
   runExecutionPipeline,
@@ -121,7 +122,7 @@ async function probeFixture() {
           commission_total: "1",
           quote_size:
             request.order_configuration.sor_limit_ioc.quote_size,
-          base_size: "1.66",
+          base_size: "1.66223404",
           est_average_filled_price: "150.40",
           best_bid: "149.90",
           best_ask: "150.00",
@@ -230,7 +231,17 @@ test("unsupported modes fail closed without invoking adapters", async () => {
   const { args, state } = await probeFixture();
   await assert.rejects(
     () => runExecutionPipeline({ ...args, mode: "TEST" }),
-    /mode must be exactly LIVE or PROBE/i,
+    /mode must be exactly LIVE, PROBE, or SIMULATION/i,
+  );
+  assert.equal(state.productCalls, 0);
+  assert.equal(state.previewCalls, 0);
+});
+
+test("callers cannot use SIMULATION mode as an alternate execution capability", async () => {
+  const { args, state } = await probeFixture();
+  await assert.rejects(
+    () => runExecutionPipeline({ ...args, mode: "SIMULATION" }),
+    /reserved for the built-in no-network harness/i,
   );
   assert.equal(state.productCalls, 0);
   assert.equal(state.previewCalls, 0);
@@ -244,14 +255,29 @@ test("built-in generic BUY and SELL both reach exact verified PASS", async () =>
       plan.policy_digest,
     );
     assert.equal(record.artifact_class, "SIMULATED");
-    assert.equal(record.status, "FILLED");
+    assert.equal(record.status, "EXECUTION_ELIGIBLE");
     assert.equal(record.delta.decision, "PASS");
     assert.equal(record.delta.verifier_confirmed, true);
     assert.equal(record.delta.receipt.verified, true);
+    assert.notEqual(
+      record.delta.receipt.proof_verification,
+      "[CIRCULAR]",
+    );
+    const {
+      receipt_digest: receiptDigest,
+      ...receiptPayload
+    } = record.delta.receipt;
+    assert.equal(digest(receiptPayload), receiptDigest);
     assert.equal(
       record.delta.receipt.action_descriptor_digest,
       plan.action_descriptor.descriptor_digest,
     );
-    assert.equal(record.reconciliation.checks.verdict, "PASS");
+    assert.equal(record.execution.one_time_gate_consumed, true);
+    assert.equal(record.execution.adapter_invoked, false);
+    assert.equal(record.execution.order_submitted, false);
+    assert.equal(record.simulation.exact_payload_verified, true);
+    assert.equal(record.simulation.external_executor_invoked, false);
+    assert.equal(record.simulation.exchange_outcome_observed, false);
+    assert.equal(record.reconciliation, null);
   }
 });

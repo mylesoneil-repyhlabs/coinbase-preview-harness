@@ -1,4 +1,4 @@
 interface:
   display_name: "Delta Coinbase Guard"
-  short_description: "Plan, authorize, and probe Coinbase safely"
-  default_prompt: "Use $delta-coinbase-guard to turn my Coinbase trade request into a reviewable policy and run a safe simulation or Preview probe."
+  short_description: "Authorize and verify Coinbase spot actions"
+  default_prompt: "Use $delta-coinbase-guard to turn my conditional Coinbase spot request into a reviewable mandate and safely simulate its exact PASS gate."

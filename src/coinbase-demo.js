@@ -633,6 +633,13 @@ async function boundedRetryTrace({ now = () => new Date() } = {}) {
       return {
         status: "success",
         verified: true,
+        proof_verification: {
+          verified: true,
+          cryptographically_verified: false,
+          method: "SIMULATED_BINDING_CHECK_ONLY",
+          verifier_identity: "SIMULATED_LOCAL_TEST_DOUBLE",
+          program_id: null,
+        },
         proof: {
           artifact_class: "SIMULATED_NOT_PRODUCTION_DELTA",
           mandate_digest: digest(COINBASE_DEMO_MANDATE),
@@ -666,6 +673,8 @@ async function boundedRetryTrace({ now = () => new Date() } = {}) {
       if (
         !verifyCoinbaseShowcaseAttempt(candidateAttempt) ||
         evaluated.receipt?.verdict !== "PASS" ||
+        evaluated.proof_verification?.verified !== true ||
+        evaluated.proof_verification?.cryptographically_verified !== false ||
         evaluated.proof?.proposal_digest !== candidate.exact_payload_digest ||
         evaluated.proof?.evidence_digest !== candidate.evidence_digest
       ) {
@@ -713,6 +722,7 @@ async function boundedRetryTrace({ now = () => new Date() } = {}) {
           checks: evaluated.checks,
           constraint_failures: evaluated.constraint_failures,
           proof_present: Boolean(evaluated.proof),
+          proof_verification: evaluated.proof_verification ?? null,
           disposition,
           receipt: evaluated.receipt,
           economics: evaluated.economics,
@@ -763,7 +773,7 @@ export async function runCoinbaseDemo({ now } = {}) {
     technical_validation: {
       schema_version: "delta.coinbase.hidden_safety_fixture_validation.v1",
       note:
-        "A separate 5-USDC safety fixture exercises the production-shaped policy, intent, proposal, verifier, proof, adapter, and reconciliation contracts. It is not the partner narrative and did not contact Coinbase or production delta.",
+        "A separate 5-USDC safety fixture exercises the production-shaped policy, intent, proposal, verifier, proof, exact-payload binding, and one-use in-memory gate. It stops at execution eligibility and does not fabricate a Coinbase fill.",
       status: simulated.status,
       delta: {
         status: simulated.delta.status,
@@ -772,7 +782,11 @@ export async function runCoinbaseDemo({ now } = {}) {
       },
       execution_adapter_contract_exercised:
         simulated.execution.adapter_invoked === true,
-      reconciliation_check: simulated.reconciliation.checks.verdict,
+      exact_payload_gate_exercised:
+        simulated.simulation.exact_payload_verified === true,
+      one_time_gate_consumed:
+        simulated.execution.one_time_gate_consumed === true,
+      reconciliation_check: "NOT_RUN_NO_COINBASE_ORDER",
       real_system_contacted: false,
     },
     demo: {

@@ -3,6 +3,7 @@ import {
   assertMandateStatus,
   assertCompleteCoinbaseProofBindings,
   assertIntentBinding,
+  assertProofVerificationAttestation,
   assertProposalBinding,
   assertVerifiedProof,
   isTerminalMandateStatus,
@@ -20,11 +21,17 @@ function decisionReceipt({
   actionRecord,
   status,
   proof,
+  proofVerification,
   verified,
+  adapter,
 }) {
+  const simulated = adapter?.securityClass === "simulation-only";
   const payload = {
-    schema_version: "delta.coinbase.decision_receipt.v2",
-    artifact_class: "SIMULATED_DELTA_CONTRACT",
+    schema_version: "delta.coinbase.decision_receipt.v3",
+    artifact_class: simulated
+      ? "SIMULATED_DELTA_CONTRACT"
+      : "DELTA_VERIFIER_ATTESTED_CONTRACT",
+    receipt_integrity: "LOCAL_SHA256_DIGEST",
     decision,
     policy_id: policyId,
     intent_id: intentId,
@@ -32,10 +39,23 @@ function decisionReceipt({
       actionRecord?.action_descriptor?.descriptor_digest ?? null,
     exact_payload_digest:
       actionRecord?.create_payload_digest ?? null,
+    preview_request_digest:
+      actionRecord?.preview_request_digest ?? null,
+    preview_id: actionRecord?.evidence?.preview?.preview_id ?? null,
+    funding_evidence_digest:
+      actionRecord?.evidence?.funding?.evidence_digest ?? null,
     evidence_digest: actionRecord?.evidence_digest ?? null,
+    portfolio_fingerprint:
+      actionRecord?.credential_binding?.portfolio_fingerprint ?? null,
+    credential_fingerprint:
+      actionRecord?.credential_binding?.credential_fingerprint ?? null,
     constraint_failures: status?.constraint_failures ?? [],
     verified,
     proof_digest: proof == null ? null : digest(proof),
+    proof_verification:
+      proofVerification == null
+        ? null
+        : structuredClone(proofVerification),
   };
   return { ...payload, receipt_digest: digest(payload) };
 }
@@ -135,7 +155,9 @@ export async function evaluateMandateCandidate({
       actionRecord,
       status,
       proof: null,
+      proofVerification: null,
       verified: false,
+      adapter,
     });
     return {
       status: status.status,
@@ -190,6 +212,17 @@ export async function evaluateMandateCandidate({
     expectedAttrs,
     evidenceBindings: requiredProofEvidenceBindings,
   });
+  const proofVerification = assertProofVerificationAttestation(
+    await adapter.verifyProofArtifact({
+      proof,
+      intentId,
+      policyId,
+      solution,
+      expectedAttrs,
+      evidenceBindings: requiredProofEvidenceBindings,
+    }),
+    { proof, securityClass: adapter.securityClass },
+  );
 
   const receipt = decisionReceipt({
     decision: "PASS",
@@ -198,7 +231,9 @@ export async function evaluateMandateCandidate({
     actionRecord,
     status,
     proof,
+    proofVerification,
     verified: true,
+    adapter,
   });
   return {
     status: "success",
@@ -210,6 +245,7 @@ export async function evaluateMandateCandidate({
     constraint_failures: [],
     reason: null,
     proof,
+    proof_verification: proofVerification,
     verified: true,
     receipt,
   };
@@ -227,7 +263,8 @@ export function mandateDisposition(result, attempt, maxAttempts) {
     decision === "PASS" &&
     result.verified === true &&
     result.proof &&
-    typeof result.proof === "object"
+    typeof result.proof === "object" &&
+    result.proof_verification?.verified === true
   ) {
     return "EXECUTE";
   }

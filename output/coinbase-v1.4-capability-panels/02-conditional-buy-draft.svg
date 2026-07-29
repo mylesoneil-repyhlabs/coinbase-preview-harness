@@ -1,32 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080">
 <rect width="720" height="1080" fill="#f8fafc"/>
 <rect width="12" height="1080" fill="#0052ff"/>
-<text x="54" y="72" fill="#0052ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">GENERIC BUY · DRAFT</text>
+<text x="54" y="72" fill="#0052ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">CONDITIONAL BUY · DRAFT</text>
 <text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="40" font-weight="800">
-  <tspan x="54" dy="0">SOL-USDC becomes</tspan>
-  <tspan x="54" dy="50">a closed BUY action</tspan>
+  <tspan x="54" dy="0">ETH-USDC becomes</tspan>
+  <tspan x="54" dy="50">a closed mandate</tspan>
 </text>
 <text x="54" y="224" fill="#667085" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="1">SIMULATION ONLY · FIXTURE DATA · NO LIVE ORDER</text>
 <rect x="54" y="259" width="74" height="7" rx="3.5" fill="#0052ff"/>
 <g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Size</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">quote_size = 250 USDC</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">quote_size ≤ 3,000 USDC</text>
 </g>
 <g transform="translate(54 442)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Funding</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">held USDC · required 252</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Condition</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">fresh best ask ≤ 3,000 USDC</text>
 </g>
 <g transform="translate(54 554)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Price</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">fresh best ask · ≤25 bps above</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Funding</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">held USDC · worst case 3,015</text>
 </g>
 <g transform="translate(54 666)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Costs</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">≤2 fee · ≤252 total debit</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">≤35 bps · ≤15 fee · ≤3,015 debit</text>
 </g>
 <g transform="translate(54 778)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>

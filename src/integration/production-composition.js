@@ -1,5 +1,5 @@
 const INTEGRATION_ERROR =
-  "ENGINEERING_INTEGRATION_REQUIRED: real Coinbase Create is disabled in public v1.3. " +
+  "ENGINEERING_INTEGRATION_REQUIRED: real Coinbase Create is disabled in public v1.4. " +
   "Delta engineering must replace src/integration/production-composition.js with the " +
   "reviewed Delta Mandate adapter and a durable one-time grant store before enabling execution.";
 
@@ -9,7 +9,7 @@ const REQUIRED_GRANT_METHODS = Object.freeze([
   "readGrant",
 ]);
 
-// Module-private by design. Public v1.3 never returns this value. An internal
+// Module-private by design. Public v1.4 never returns this value. An internal
 // engineering build can return it only from the reviewed composition function
 // below, after wiring the real Delta and durable grant dependencies.
 const LIVE_EXECUTION_CAPABILITY = () => undefined;
@@ -35,6 +35,7 @@ export function assertProductionDependencyShape(dependencies) {
     "getStatus",
     "getVerificationOutcome",
     "getProof",
+    "verifyProofArtifact",
   ];
   for (const method of requiredAdapterMethods) {
     if (typeof dependencies.mandateAdapter?.[method] !== "function") {
@@ -56,7 +57,7 @@ export function assertProductionExecutionDependencies(dependencies) {
 }
 
 /**
- * This compile-time seam is intentionally closed in public v1.3.
+ * This compile-time seam is intentionally closed in public v1.4.
  *
  * Engineering should return reviewed, internally composed dependencies here:
  * - mandateAdapter: the real Delta policy/proposal/verifier lifecycle

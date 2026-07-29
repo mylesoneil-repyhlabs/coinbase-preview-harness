@@ -2,27 +2,27 @@
   {
     "panel": "01",
     "suggested_duration_seconds": 15,
-    "title": "One generic spot action, two sides"
+    "title": "Conditional spot mandates, two sides"
   },
   {
     "panel": "02",
     "suggested_duration_seconds": 18,
-    "title": "SOL-USDC becomes a closed BUY action"
+    "title": "ETH-USDC becomes a closed mandate"
   },
   {
     "panel": "03",
     "suggested_duration_seconds": 18,
-    "title": "The exact BUY reaches a simulated PASS"
+    "title": "The exact payload becomes eligible"
   },
   {
     "panel": "04",
     "suggested_duration_seconds": 18,
-    "title": "BTC-USD becomes a closed SELL action"
+    "title": "BTC-USD becomes a closed mandate"
   },
   {
     "panel": "05",
     "suggested_duration_seconds": 18,
-    "title": "The exact SELL reaches a simulated PASS"
+    "title": "SELL uses the same locked gate"
   },
   {
     "panel": "06",

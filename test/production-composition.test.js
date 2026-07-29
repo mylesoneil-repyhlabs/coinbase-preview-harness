@@ -18,6 +18,7 @@ function fakeDependencies() {
       getStatus: noop,
       getVerificationOutcome: noop,
       getProof: noop,
+      verifyProofArtifact: noop,
     },
     consumeGrant: noop,
     markGrant: noop,
@@ -25,7 +26,7 @@ function fakeDependencies() {
   };
 }
 
-test("public v1.3 hard-disables real Coinbase Create at the compile-time seam", async () => {
+test("public v1.4 hard-disables real Coinbase Create at the compile-time seam", async () => {
   assert.deepEqual(productionExecutionStatus(), {
     enabled: false,
     code: "ENGINEERING_INTEGRATION_REQUIRED",

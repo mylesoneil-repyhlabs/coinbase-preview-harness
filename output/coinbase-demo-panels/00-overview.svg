@@ -13,7 +13,7 @@
 <g class="sans">
   <text x="72" y="72" class="eyebrow" fill="#0052ff">DELTA GUARD FOR COINBASE · CREDENTIAL-FREE SIMULATION</text>
   <text x="72" y="142" class="title" fill="#101828">One mandate. Two proposals. One canonical action eligible.</text>
-  <text x="72" y="185" class="subtitle">The agent proposes; the simulated evaluator decides; the external controller owns retry and execution.</text>
+  <text x="72" y="185" class="subtitle">The agent proposes; the simulated evaluator decides; the external controller owns retry and release.</text>
 
   <rect x="72" y="225" width="1296" height="92" rx="18" fill="#eef4ff" stroke="#b2ccff"/>
   <text x="98" y="261" class="small" fill="#0052ff">SIMULATED HUMAN MANDATE</text>

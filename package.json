@@ -1,6 +1,6 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Generic mandate-gated Coinbase Advanced spot BUY/SELL planner, Preview guard, and locked executor reference.",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 import { parseDecimal } from "../decimal.js";
 
-export const COINBASE_POLICY_KIND = "coinbase_spot_v2";
+export const COINBASE_POLICY_KIND = "coinbase_spot_v3";
 export const COINBASE_EVIDENCE_CATEGORY =
   "COINBASE_ADVANCED_SPOT_ORDER";
 
@@ -8,7 +8,7 @@ export const COINBASE_EVIDENCE_CATEGORY =
 // intentionally kept separate from the private Delta implementation; the
 // production adapter must validate its concrete type mapping before Create can
 // be enabled.
-export const COINBASE_SPOT_POLICY_SOURCE = `name coinbase_spot_order_v2
+export const COINBASE_SPOT_POLICY_SOURCE = `name coinbase_spot_order_v3
 
 parameters {
   product_id: string
@@ -16,12 +16,16 @@ parameters {
   quote_asset: string
   side: string
   size_field: string
-  exact_size_value: string
+  size_operator: string
+  size_value: string
   funding_asset: string
   max_slippage_bps: int
   max_commission_value: string
   settlement_kind: string
   settlement_value: string
+  market_condition_reference: string
+  market_condition_operator: string
+  market_condition_value: string
   action_descriptor_digest: string
   portfolio_fingerprint: string
   credential_fingerprint: string
@@ -39,13 +43,18 @@ requires {
   evidence.order_type == "sor_limit_ioc";
   evidence.time_in_force == "ioc";
   evidence.size_field == parameters.size_field;
-  evidence.size_value == parameters.exact_size_value;
+  evidence.size_operator == parameters.size_operator;
+  evidence.size_within_limit;
   evidence.funding_asset == parameters.funding_asset;
   evidence.action_descriptor_digest == parameters.action_descriptor_digest;
   evidence.limit_price_within_bound;
   evidence.slippage_within_limit;
   evidence.commission_within_limit;
   evidence.settlement_within_limit;
+  evidence.market_condition_reference == parameters.market_condition_reference;
+  evidence.market_condition_operator == parameters.market_condition_operator;
+  evidence.market_condition_value == parameters.market_condition_value;
+  evidence.market_condition_met;
   evidence.funding_sufficient;
   evidence.portfolio_fingerprint == parameters.portfolio_fingerprint;
   evidence.credential_fingerprint == parameters.credential_fingerprint;
@@ -73,13 +82,18 @@ export const COINBASE_POLICY_CONSTRAINTS = Object.freeze([
   'evidence.order_type == "sor_limit_ioc"',
   'evidence.time_in_force == "ioc"',
   "evidence.size_field == parameters.size_field",
-  "evidence.size_value == parameters.exact_size_value",
+  "evidence.size_operator == parameters.size_operator",
+  "evidence.size_within_limit",
   "evidence.funding_asset == parameters.funding_asset",
   "evidence.action_descriptor_digest == parameters.action_descriptor_digest",
   "evidence.limit_price_within_bound",
   "evidence.slippage_within_limit",
   "evidence.commission_within_limit",
   "evidence.settlement_within_limit",
+  "evidence.market_condition_reference == parameters.market_condition_reference",
+  "evidence.market_condition_operator == parameters.market_condition_operator",
+  "evidence.market_condition_value == parameters.market_condition_value",
+  "evidence.market_condition_met",
   "evidence.funding_sufficient",
   "evidence.portfolio_fingerprint == parameters.portfolio_fingerprint",
   "evidence.credential_fingerprint == parameters.credential_fingerprint",
@@ -143,12 +157,19 @@ export function buildCoinbasePolicyBundle({
     quote_asset: plan.policy.quote_asset,
     side: plan.policy.side,
     size_field: descriptor.size.field,
-    exact_size_value: plan.policy.size.value,
+    size_operator: plan.policy.size.operator,
+    size_value: plan.policy.size.value,
     funding_asset: descriptor.funding.asset,
     max_slippage_bps: plan.policy.limits.max_slippage_bps,
     max_commission_value: plan.policy.limits.max_commission.value,
     settlement_kind: plan.policy.limits.settlement.kind,
     settlement_value: plan.policy.limits.settlement.value,
+    market_condition_reference:
+      plan.policy.market_condition?.reference ?? "NONE",
+    market_condition_operator:
+      plan.policy.market_condition?.operator ?? "NONE",
+    market_condition_value:
+      plan.policy.market_condition?.value ?? "0",
     action_descriptor_digest: descriptor.descriptor_digest,
     portfolio_fingerprint: attestation.portfolio_fingerprint,
     credential_fingerprint: attestation.key_fingerprint,

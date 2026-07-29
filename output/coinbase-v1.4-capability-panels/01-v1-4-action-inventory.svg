@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080">
 <rect width="720" height="1080" fill="#f8fafc"/>
 <rect width="12" height="1080" fill="#0052ff"/>
-<text x="54" y="72" fill="#0052ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">V1.3 ACTION INVENTORY</text>
+<text x="54" y="72" fill="#0052ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="2">V1.4 ACTION INVENTORY</text>
 <text x="54" y="137" fill="#101828" font-family="Inter,Arial,sans-serif" font-size="40" font-weight="800">
-  <tspan x="54" dy="0">One generic spot action,</tspan>
+  <tspan x="54" dy="0">Conditional spot mandates,</tspan>
   <tspan x="54" dy="50">two sides</tspan>
 </text>
 <text x="54" y="224" fill="#667085" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="1">SIMULATION ONLY · FIXTURE DATA · NO LIVE ORDER</text>
@@ -11,22 +11,22 @@
 <g transform="translate(54 330)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">BUY</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Exact quote_size · fund with held quote</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Exact / max quote_size · held quote</text>
 </g>
 <g transform="translate(54 442)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">SELL</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Exact base_size · fund with held base</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Exact / max base_size · held base</text>
 </g>
 <g transform="translate(54 554)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Pairs</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Validated from runtime SPOT metadata</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Condition</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">One-shot ask ≤ / bid ≥ threshold</text>
 </g>
 <g transform="translate(54 666)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Evidence</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Funds · market · Preview</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">Pairs</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Validated from runtime SPOT metadata</text>
 </g>
 <g transform="translate(54 778)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>

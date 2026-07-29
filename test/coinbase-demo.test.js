@@ -41,14 +41,19 @@ test("Coinbase showcase runs the complete credential-free mandate lifecycle", as
   assert.equal(record.technical_validation.delta.proof_present, true);
   assert.equal(
     record.technical_validation.execution_adapter_contract_exercised,
-    true,
+    false,
   );
+  assert.equal(record.technical_validation.exact_payload_gate_exercised, true);
+  assert.equal(record.technical_validation.one_time_gate_consumed, true);
   assert.equal(record.execution.coinbase_adapter_invoked, false);
   assert.equal(record.execution.order_submitted, false);
   assert.equal(record.execution.money_moved, false);
   assert.equal(record.demo.coinbase_contacted, false);
   assert.equal(record.demo.coinbase_create_invoked, false);
-  assert.equal(record.technical_validation.reconciliation_check, "PASS");
+  assert.equal(
+    record.technical_validation.reconciliation_check,
+    "NOT_RUN_NO_COINBASE_ORDER",
+  );
   assert.equal(record.demo.lifecycle.includes("simulated_reconciliation"), false);
 });
 

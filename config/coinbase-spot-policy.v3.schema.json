@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://delta.network/schemas/coinbase-spot-policy-compilation.v2.json",
+  "$id": "https://delta.network/schemas/coinbase-spot-policy-compilation.v3.json",
   "title": "delta Coinbase spot-policy compilation",
   "type": "object",
   "additionalProperties": false,
@@ -16,11 +16,11 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "delta.coinbase.compilation.v2"
+      "const": "delta.coinbase.compilation.v3"
     },
     "taxonomy_version": {
       "type": "string",
-      "const": "digital-asset-spot-order.v2"
+      "const": "digital-asset-spot-order.v3"
     },
     "status": {
       "type": "string",
@@ -48,6 +48,7 @@
             "size",
             "partial_fill_policy",
             "limits",
+            "market_condition",
             "validity",
             "usage"
           ],
@@ -116,7 +117,10 @@
                 },
                 "operator": {
                   "type": "string",
-                  "const": "EXACT"
+                  "enum": [
+                    "EXACT",
+                    "MAX"
+                  ]
                 },
                 "value": {
                   "type": "string",
@@ -190,6 +194,47 @@
                   }
                 }
               }
+            },
+            "market_condition": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "reference",
+                    "operator",
+                    "asset",
+                    "value"
+                  ],
+                  "properties": {
+                    "reference": {
+                      "type": "string",
+                      "enum": [
+                        "BEST_ASK",
+                        "BEST_BID"
+                      ]
+                    },
+                    "operator": {
+                      "type": "string",
+                      "enum": [
+                        "AT_OR_BELOW",
+                        "AT_OR_ABOVE"
+                      ]
+                    },
+                    "asset": {
+                      "type": "string",
+                      "pattern": "^[A-Z0-9]+$"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "validity": {
               "type": "object",

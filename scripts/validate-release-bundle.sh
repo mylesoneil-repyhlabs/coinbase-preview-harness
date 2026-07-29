@@ -92,12 +92,13 @@ fi
   "$RELEASE_ROOT"
 
 COLD_HOME="$VALIDATION_DIRECTORY/home"
-mkdir -p "$COLD_HOME"
+CODEX_RUNTIME_NODE="$COLD_HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+mkdir -p "$(dirname "$CODEX_RUNTIME_NODE")"
+ln -s "$NODE_BINARY" "$CODEX_RUNTIME_NODE"
 INSTALL_OUTPUT="$(
   env -i \
     HOME="$COLD_HOME" \
     PATH="/usr/bin:/bin" \
-    HARNESS_NODE_BINARY="$NODE_BINARY" \
     "$RELEASE_ROOT/install"
 )"
 printf '%s\n' "$INSTALL_OUTPUT" |
@@ -110,8 +111,24 @@ if [[ ! -L "$INSTALLED_SKILL" ]]; then
   echo "Cold install did not create the expected skill symlink." >&2
   exit 1
 fi
-if [[ "$(cd -P "$INSTALLED_SKILL" && pwd -P)" != "$RELEASE_ROOT/skills/delta-coinbase-guard" ]]; then
-  echo "Installed skill does not resolve inside the extracted release." >&2
+MANAGED_HARNESS="$COLD_HOME/.local/share/delta/coinbase-guard/versions/v$PACKAGE_VERSION"
+if [[ ! -d "$MANAGED_HARNESS" ]] || [[ -L "$MANAGED_HARNESS" ]]; then
+  echo "Cold install did not create the expected managed version." >&2
+  exit 1
+fi
+if [[ "$(cd -P "$INSTALLED_SKILL" && pwd -P)" != "$MANAGED_HARNESS/skills/delta-coinbase-guard" ]]; then
+  echo "Installed skill does not resolve inside the managed version." >&2
+  exit 1
+fi
+if [[ ! -f "$MANAGED_HARNESS/.delta-coinbase-guard-install.json" ]] || \
+  [[ -L "$MANAGED_HARNESS/.delta-coinbase-guard-install.json" ]]; then
+  echo "Managed install marker is missing or unsafe." >&2
+  exit 1
+fi
+
+rm -rf -- "$RELEASE_ROOT"
+if [[ -e "$RELEASE_ROOT" || -L "$RELEASE_ROOT" ]]; then
+  echo "Extracted release could not be removed for post-install validation." >&2
   exit 1
 fi
 
@@ -119,17 +136,15 @@ DOCTOR_OUTPUT="$(
   env -i \
     HOME="$COLD_HOME" \
     PATH="/usr/bin:/bin" \
-    HARNESS_NODE_BINARY="$NODE_BINARY" \
-    "$RELEASE_ROOT/run" doctor
+    "$INSTALLED_SKILL/scripts/run" doctor
 )"
-printf '%s\n' "$DOCTOR_OUTPUT" | grep -Fq "v1.3 contracts and skill"
+printf '%s\n' "$DOCTOR_OUTPUT" | grep -Fq "contracts and skill"
 printf '%s\n' "$DOCTOR_OUTPUT" | grep -Fq "LOCKED"
 
 SHOWCASE_OUTPUT="$(
   env -i \
     HOME="$COLD_HOME" \
     PATH="/usr/bin:/bin" \
-    HARNESS_NODE_BINARY="$NODE_BINARY" \
     "$INSTALLED_SKILL/scripts/run" coinbase-demo --no-artifacts
 )"
 for expected_line in \
@@ -149,14 +164,15 @@ validate_generic_simulation() {
   intent_file="$1"
   expected_side="$2"
   expected_size_field="$3"
+  expected_market_reference="$4"
+  expected_market_operator="$5"
 
   plan_output="$(
     env -i \
       HOME="$COLD_HOME" \
       PATH="/usr/bin:/bin" \
-      HARNESS_NODE_BINARY="$NODE_BINARY" \
       "$INSTALLED_SKILL/scripts/run" plan \
-      --intent-file "$RELEASE_ROOT/$intent_file" \
+      --intent-file "$MANAGED_HARNESS/$intent_file" \
       --compiler deterministic
   )"
   printf '%s\n' "$plan_output" | grep -Fq "AWAITING_HUMAN_CONFIRMATION"
@@ -177,7 +193,6 @@ validate_generic_simulation() {
     env -i \
       HOME="$COLD_HOME" \
       PATH="/usr/bin:/bin" \
-      HARNESS_NODE_BINARY="$NODE_BINARY" \
       "$INSTALLED_SKILL/scripts/run" simulate \
       --plan "$plan_path" \
       --confirm-policy "$policy_digest"
@@ -186,8 +201,13 @@ validate_generic_simulation() {
     "SIMULATION_ONLY" \
     "\"side\":\"$expected_side\"" \
     "\"field\":\"$expected_size_field\"" \
+    "\"operator\":\"MAX\"" \
+    "\"reference\":\"$expected_market_reference\"" \
+    "\"operator\":\"$expected_market_operator\"" \
     "DELTA_DECISION=PASS" \
     "EXACT_PASS_GATE=true" \
+    "SIMULATED_RESULT=EXECUTION_ELIGIBLE" \
+    "ONE_TIME_GATE_CONSUMED=true" \
     "COINBASE_CREATE_INVOKED=false" \
     "COINBASE_CONTACTED=false" \
     "PRODUCTION_DELTA_INVOKED=false"; do
@@ -199,13 +219,17 @@ validate_generic_simulation() {
 }
 
 validate_generic_simulation \
-  "examples/generic-buy-intent.txt" \
+  "examples/conditional-buy-intent.txt" \
   "BUY" \
-  "quote_size"
+  "quote_size" \
+  "BEST_ASK" \
+  "AT_OR_BELOW"
 validate_generic_simulation \
-  "examples/generic-sell-intent.txt" \
+  "examples/conditional-sell-intent.txt" \
   "SELL" \
-  "base_size"
+  "base_size" \
+  "BEST_BID" \
+  "AT_OR_ABOVE"
 
 printf 'Release bundle cold-install validation passed: %s (Node %s, restricted PATH).\n' \
   "$(basename "$ARCHIVE_PATH")" \

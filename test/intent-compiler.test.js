@@ -8,7 +8,7 @@ import {
 export const READY_INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 5 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 50 bps above Coinbase's fresh best ask, more than 0.50 USDC in commission, or more than 5.50 USDC total. This authorization expires 2 minutes after I confirm it.";
 
-test("compiles one explicit natural-language intent into the v2 taxonomy", () => {
+test("compiles one explicit natural-language intent into the v3 taxonomy", () => {
   const result = compileDeterministicIntent(READY_INTENT);
   assert.equal(result.status, "READY_FOR_CONFIRMATION");
   assert.equal(result.policy.product_id, "ETH-USDC");
@@ -69,7 +69,7 @@ test("fails closed instead of discarding an unrecognized material constraint", (
       code: "UNRECOGNIZED_CONSTRAINT",
       source_text: sourceText,
       reason:
-        "This clause is not represented in the v2 spot-order taxonomy and cannot be discarded.",
+        "This clause is not represented in the v3 spot-order taxonomy and cannot be discarded.",
     },
   ]);
 });
@@ -263,6 +263,6 @@ test("OpenAI READY output cannot change a source-grounded size", async () => {
           }),
       }),
     }),
-    /policy\.size\.value does not match the source exact order size/,
+    /policy\.size\.value does not match the source order size bound/,
   );
 });

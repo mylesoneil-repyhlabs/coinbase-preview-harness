@@ -2,10 +2,6 @@ import { addDecimals, compareDecimals, parseDecimal } from "./decimal.js";
 import { digest } from "./evidence.js";
 import { createCanonicalSpotAction } from "./spot-action.js";
 
-function accountCurrency(account) {
-  return account?.available_balance?.currency ?? account?.currency;
-}
-
 function accountValue(account) {
   return account?.available_balance?.value;
 }
@@ -13,7 +9,7 @@ function accountValue(account) {
 function safeAccountFingerprint(account) {
   return digest({
     uuid: account?.uuid ?? null,
-    currency: accountCurrency(account) ?? null,
+    currency: account?.currency ?? null,
     platform: account?.platform ?? null,
     retail_portfolio_id: account?.retail_portfolio_id ?? null,
   });
@@ -45,22 +41,73 @@ export function evaluateCoinbaseFunding(
       ],
     };
   }
-  if (accountsResponse.has_next === true) {
+  if (typeof accountsResponse.has_next !== "boolean") {
+    failures.push({
+      code: "ACCOUNTS_PAGINATION_STATUS_MISSING",
+      message: "Coinbase accounts evidence omitted the required has_next status",
+    });
+  } else if (accountsResponse.has_next === true) {
     failures.push({
       code: "ACCOUNTS_EVIDENCE_INCOMPLETE",
       message: "Coinbase accounts evidence is paginated and incomplete",
     });
   }
   const eligible = [];
+  const seenAccountIds = new Set();
+  const eligiblePortfolioIds = new Set();
   for (const account of accounts) {
+    if (typeof account?.uuid !== "string" || !account.uuid) {
+      failures.push({
+        code: "ACCOUNT_ID_MISSING",
+        message: "Coinbase returned an account without a stable ID",
+      });
+      continue;
+    }
+    if (seenAccountIds.has(account.uuid)) {
+      failures.push({
+        code: "DUPLICATE_ACCOUNT_ID",
+        message: "Coinbase accounts evidence repeated an account ID",
+      });
+      continue;
+    }
+    seenAccountIds.add(account.uuid);
     if (
-      accountCurrency(account) !== requiredAsset ||
+      typeof account.currency !== "string" ||
+      typeof account.available_balance?.currency !== "string" ||
+      account.currency !== account.available_balance.currency
+    ) {
+      failures.push({
+        code: "ACCOUNT_CURRENCY_MISMATCH",
+        message: "Coinbase returned a missing or contradictory account currency",
+      });
+      continue;
+    }
+    if (
+      account.currency !== requiredAsset ||
       account?.active !== true ||
       account?.ready !== true ||
       account?.deleted_at != null
     ) {
       continue;
     }
+    if (account.platform !== "ACCOUNT_PLATFORM_CONSUMER") {
+      failures.push({
+        code: "ACCOUNT_PLATFORM_UNSUPPORTED",
+        message: "Funding must come from a normal Coinbase consumer account",
+      });
+      continue;
+    }
+    if (
+      typeof account.retail_portfolio_id !== "string" ||
+      !account.retail_portfolio_id
+    ) {
+      failures.push({
+        code: "ACCOUNT_PORTFOLIO_MISSING",
+        message: "Coinbase funding evidence omitted the retail portfolio ID",
+      });
+      continue;
+    }
+    eligiblePortfolioIds.add(account.retail_portfolio_id);
     try {
       const parsed = parseDecimal(accountValue(account), "available balance");
       if (parsed.coefficient < 0n) throw new Error("negative");
@@ -71,6 +118,13 @@ export function evaluateCoinbaseFunding(
         message: `Coinbase returned an invalid ${requiredAsset} available balance`,
       });
     }
+  }
+  if (eligiblePortfolioIds.size > 1) {
+    failures.push({
+      code: "MULTIPLE_FUNDING_PORTFOLIOS",
+      message:
+        "Coinbase funding evidence spans more than one retail portfolio",
+    });
   }
   let available = "0";
   for (const account of eligible) {
@@ -98,7 +152,7 @@ export function evaluateCoinbaseFunding(
     account_fingerprints: eligible
       .map(safeAccountFingerprint)
       .sort(),
-    complete: accountsResponse.has_next !== true,
+    complete: accountsResponse.has_next === false,
   };
   return {
     decision: failures.length ? "BLOCK" : "PASS",

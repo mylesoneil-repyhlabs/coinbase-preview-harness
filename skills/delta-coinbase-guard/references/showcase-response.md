@@ -1,108 +1,101 @@
-# Conditional showcase response contract
+# Fixed conditional showcase response contract
 
-Use this response contract only for `coinbase-demo --no-artifacts`. Return the
-complete result in the Codex conversation. Do not open, render, or ask the user
-to inspect a browser artifact.
+Use this contract only for `coinbase-demo --no-artifacts`. Keep the complete
+result in Codex; do not open a browser or ask the user to inspect another UI.
 
-Start with this exact truth label:
+Start with:
 
-> **SIMULATION ONLY.** Coinbase and production delta were not contacted.
-> Coinbase Create was unreachable. No credentials were used, no order was
-> placed, and no money moved.
+> **SIMULATION ONLY.** Coinbase and production Delta were not contacted.
+> Coinbase Create was unreachable. No credentials were used, no external
+> executor ran, no order was placed, and no money moved.
 
-Then use exactly these six headings, in order. They align with the six
-right-side recording panels.
+Use these six headings in order. They align with the six companion panels.
 
 ## 1. Authorized simulated mandate
 
-State that the user's prompt requested this simulation but did not authorize a
-live trade. Show a compact table containing:
+State that the prompt requested a simulation and did not authorize a live
+trade. Show:
 
 - maximum allocation;
-- market-price threshold;
-- order-limit threshold;
-- slippage cap;
-- fee cap;
+- market and order-limit thresholds;
+- slippage and fee caps;
 - post-trade exposure cap;
-- validity;
-- maximum executions; and
-- the complete mandate digest;
-- the authorization-instance digest; and
-- authorization and expiry timestamps.
+- validity and maximum executions;
+- complete mandate and authorization-instance digests; and
+- authorization and expiry times.
 
-Use only values emitted by `HUMAN_MANDATE`, `AUTHORIZED_POLICY`,
-`AUTHORIZATION_STATUS`, `MANDATE_DIGEST`, `AUTHORIZATION_DIGEST`,
-`AUTHORIZED_AT`, and `MANDATE_EXPIRES_AT`.
+Use only emitted values. State that portfolio exposure is a fixed showcase
+fixture, not a generic v1.4 compiler constraint.
 
 ## 2. Control separation
 
 Use four short lines:
 
-- **Agent:** proposes a closed, canonical Coinbase-shaped Create object.
-- **Simulated delta evaluator:** compares the proposal and labeled fixture
-  evidence with the mandate.
+- **Agent:** proposes a closed Coinbase-shaped prospective Create object.
+- **Simulated evaluator:** compares it and labeled evidence with the fixed
+  mandate.
 - **External controller:** maps `BLOCK` to at most one retry and `PASS` to
-  eligibility; the model does not choose either transition.
-- **Executor:** can receive only the exact passed payload and remains unable to
-  call Coinbase Create in this public build.
+  eligibility.
+- **Executor:** would accept only the exact passed payload, but no external
+  executor runs in this public build.
 
-Explicitly state that the agent cannot author market, Preview, or portfolio
-evidence.
+State that the agent cannot author market, Preview, portfolio evidence, the
+decision, or retry budget.
 
 ## 3. Attempt 1 — BLOCK, then controller RETRY
 
-Show `AGENT_PROPOSAL_1` as a JSON code block. Show the fixture economics in a
-compact table. List every emitted failure ID and reason; do not collapse the
-market-price and order-limit failures into one check. Show the complete
-proposal and evidence digests and the emitted evidence source.
+Show `AGENT_PROPOSAL_1` as JSON and fixture economics as a compact table. List
+every emitted failure ID and reason. Show complete proposal and evidence
+digests and the evidence source.
 
-Point out that the prospective Create body includes its `client_order_id`,
-`preview_id`, and fixed SOR limit IOC configuration, but is never submitted.
+Explain that the prospective Create body includes its `client_order_id`,
+`preview_id`, and fixed SOR limit IOC configuration but is never submitted.
 
-State: the simulated evaluator returned `BLOCK`; the external controller
-selected `RETRY` within a fixed two-attempt budget.
+State that the simulated evaluator returned `BLOCK` and the controller selected
+one retry within the two-attempt budget.
 
-## 4. Bound evidence and receipt
+## 4. Bound evidence and local receipt
 
-For the first receipt, show:
+Show, for attempt one:
 
 - artifact class and evaluator identity;
 - verdict;
-- mandate digest;
-- authorization-instance digest and expiry;
-- exact payload digest;
-- evidence digest;
-- complete failure IDs and reasons;
+- mandate and authorization-instance digests;
+- authorization expiry;
+- exact payload and evidence digests;
+- complete failures;
 - receipt digest; and
-- full-attempt verification result.
+- receipt verification result.
 
-Explain in one sentence that verification recomputes the mandate, canonical
-proposal, evidence, decision, complete failure reasons, authorization window,
-and receipt digest. Show the controller disposition separately because the
-controller acts after evaluation. Do not call the receipt a production delta
-signature or trusted signer identity.
+Explain that local verification recomputes the mandate, canonical proposal,
+evidence, complete reasons, authorization window, and receipt digest. This is a
+local SHA-256 integrity receipt, not a production Delta signature, trusted
+signer, or cryptographic proof.
+
+Show controller disposition separately because it occurs after evaluation.
 
 ## 5. Attempt 2 — PASS
 
-State that the controller supplied a new labeled evidence fixture and the
-agent revised only its proposal. Show `AGENT_PROPOSAL_2` as a JSON code block
-and its fixture economics as a compact table. Show the proposal, evidence, and
-receipt digests, evidence source, and the full-attempt verification result.
+State that the controller supplied a new labeled evidence fixture and the agent
+revised only its proposal. Show `AGENT_PROPOSAL_2` as JSON, fixture economics,
+proposal/evidence/receipt digests, evidence source, and local receipt
+verification.
 
-State: every mandate check passed; the simulated evaluator returned `PASS`.
+State that every fixed-showcase check passed and the simulated evaluator
+returned `PASS`.
 
 ## 6. Deterministic execution boundary
 
-Show this checklist using the emitted values:
+Show:
 
-- PASS receipt verified;
+- PASS receipt verified locally;
 - passed proposal digest equals execution payload digest;
 - passed evidence digest equals execution evidence digest;
 - fixed retry budget respected;
-- one eligibility in this simulated trace;
+- one eligibility in the simulated trace;
 - durable one-time grant issued: false;
 - external executor invoked: false;
-- production delta invoked: false;
+- production Delta invoked: false;
 - Coinbase contacted: false;
 - Coinbase Create invoked: false; and
 - artifacts written: false.
@@ -113,15 +106,16 @@ End with:
 > choose its retry budget, manufacture the evidence, or unlock execution.
 
 If explaining `PASS → EXECUTE`, call `EXECUTE` the controller's internal gate
-branch. The emitted `EXTERNAL_EXECUTOR_INVOKED=false` confirms that no Coinbase
-or other external executor ran.
+branch. The externally truthful terminal meaning is simulated eligibility,
+not execution.
 
 Never:
 
-- describe fixture prices, fees, exposure, or Preview data as live;
-- describe `BLOCK → RETRY` as current production-delta multi-proposal
-  semantics;
-- imply that an eligible simulated payload was submitted;
-- mention the separate 5-USDC future live-test safety cap in this narrative;
-- omit a digest by shortening it with an ellipsis; or
+- describe fixture prices, fees, exposure, or Preview values as live;
+- describe the exposure check as generic v1.4 functionality;
+- describe `BLOCK → RETRY` as established production Delta lifecycle;
+- call the receipt signed or cryptographically verified;
+- imply that an eligible payload was submitted or filled;
+- mention the 5-USDC future live-test cap in this narrative;
+- shorten required digests with ellipses; or
 - expose local paths.

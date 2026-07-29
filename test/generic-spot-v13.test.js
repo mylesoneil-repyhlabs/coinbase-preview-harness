@@ -92,12 +92,12 @@ const compilationCases = [
 ];
 
 for (const [name, intent, sizeField, fundingAsset] of compilationCases) {
-  test(`v1.3 compiles and plans ${name}`, async () => {
+  test(`v1.4 compiles and plans ${name}`, async () => {
     const compilation = compileDeterministicIntent(intent);
     assert.equal(compilation.status, "READY_FOR_CONFIRMATION");
     assert.equal(
       compilation.schema_version,
-      "delta.coinbase.compilation.v2",
+      "delta.coinbase.compilation.v3",
     );
     const plan = await createExecutionPlan(intent);
     assert.equal(plan.status, "AWAITING_HUMAN_CONFIRMATION");
@@ -237,6 +237,71 @@ for (const [name, accountResponse, code] of [
     assert.ok(result.failures.some((failure) => failure.code === code));
   });
 }
+
+test("funding rejects missing pagination status and duplicate account IDs", () => {
+  const policy = compileDeterministicIntent(
+    buyIntent({
+      base: "SOL",
+      quote: "USDC",
+      amount: "250",
+    }),
+  ).policy;
+  const missingStatus = accounts({ currency: "USDC", value: "252" });
+  delete missingStatus.has_next;
+  assert.ok(
+    evaluateCoinbaseFunding(policy, missingStatus).failures.some(
+      ({ code }) => code === "ACCOUNTS_PAGINATION_STATUS_MISSING",
+    ),
+  );
+
+  const duplicate = accounts({ currency: "USDC", value: "126" });
+  duplicate.accounts.push(structuredClone(duplicate.accounts[0]));
+  const duplicatedResult = evaluateCoinbaseFunding(policy, duplicate);
+  assert.equal(duplicatedResult.decision, "BLOCK");
+  assert.ok(
+    duplicatedResult.failures.some(
+      ({ code }) => code === "DUPLICATE_ACCOUNT_ID",
+    ),
+  );
+});
+
+test("funding rejects contradictory currencies, non-consumer accounts, and mixed portfolios", () => {
+  const policy = compileDeterministicIntent(
+    buyIntent({
+      base: "SOL",
+      quote: "USDC",
+      amount: "250",
+    }),
+  ).policy;
+
+  const contradictory = accounts({ currency: "USDC", value: "252" });
+  contradictory.accounts[0].currency = "USD";
+  assert.ok(
+    evaluateCoinbaseFunding(policy, contradictory).failures.some(
+      ({ code }) => code === "ACCOUNT_CURRENCY_MISMATCH",
+    ),
+  );
+
+  const institutional = accounts({ currency: "USDC", value: "252" });
+  institutional.accounts[0].platform = "ACCOUNT_PLATFORM_INTX";
+  assert.ok(
+    evaluateCoinbaseFunding(policy, institutional).failures.some(
+      ({ code }) => code === "ACCOUNT_PLATFORM_UNSUPPORTED",
+    ),
+  );
+
+  const mixed = accounts({ currency: "USDC", value: "126" });
+  mixed.accounts.push({
+    ...structuredClone(mixed.accounts[0]),
+    uuid: "account-2",
+    retail_portfolio_id: "portfolio-2",
+  });
+  assert.ok(
+    evaluateCoinbaseFunding(policy, mixed).failures.some(
+      ({ code }) => code === "MULTIPLE_FUNDING_PORTFOLIOS",
+    ),
+  );
+});
 
 function product(overrides = {}) {
   return {

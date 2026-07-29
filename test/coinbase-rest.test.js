@@ -222,12 +222,25 @@ test("List Accounts rejects repeated pagination cursors", async () => {
   );
 });
 
+test("List Accounts requires Coinbase's explicit pagination status", async () => {
+  const adapter = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async () => response({ accounts: [] }),
+  });
+  await assert.rejects(
+    () => adapter.listAccounts(),
+    /omitted has_next/,
+  );
+});
+
 test("List Products pins SPOT and exact requested product IDs", async () => {
   const calls = [];
   const adapter = createCoinbaseRestAdapter(credentials(), {
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), options });
-      return response({ products: [] });
+      return response({
+        products: [],
+        pagination: { has_next: false, next_cursor: null },
+      });
     },
   });
   await adapter.listProducts({
@@ -244,8 +257,77 @@ test("List Products pins SPOT and exact requested product IDs", async () => {
     "SOL-USDC",
     "BTC-USD",
   ]);
-  assert.throws(
+  await assert.rejects(
     () => adapter.listProducts({ productIds: ["../orders"] }),
     /Invalid Coinbase product_id/,
+  );
+});
+
+test("List Products follows bounded cursors and combines unique products", async () => {
+  const calls = [];
+  const adapter = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      const cursor = new URL(url).searchParams.get("cursor");
+      return cursor == null
+        ? response({
+            products: [{ product_id: "BTC-USD" }],
+            pagination: { has_next: true, next_cursor: "page-2" },
+          })
+        : response({
+            products: [{ product_id: "ETH-USD" }],
+            pagination: { has_next: false, next_cursor: null },
+          });
+    },
+  });
+  const result = await adapter.listProducts();
+  assert.deepEqual(
+    result.products.map(({ product_id }) => product_id),
+    ["BTC-USD", "ETH-USD"],
+  );
+  assert.equal(
+    new URL(calls[1]).searchParams.get("cursor"),
+    "page-2",
+  );
+  assert.equal(result.pagination.has_next, false);
+});
+
+test("List Products rejects missing status, repeated cursors, and duplicate products", async () => {
+  const missingStatus = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async () => response({ products: [], pagination: {} }),
+  });
+  await assert.rejects(
+    () => missingStatus.listProducts(),
+    /response is malformed/,
+  );
+
+  const repeatedCursor = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async () =>
+      response({
+        products: [],
+        pagination: { has_next: true, next_cursor: "repeat" },
+      }),
+  });
+  await assert.rejects(
+    () => repeatedCursor.listProducts(),
+    /cursor repeated/,
+  );
+
+  let page = 0;
+  const duplicateProduct = createCoinbaseRestAdapter(credentials(), {
+    fetchImpl: async () => {
+      page += 1;
+      return response({
+        products: [{ product_id: "BTC-USD" }],
+        pagination: {
+          has_next: page === 1,
+          next_cursor: page === 1 ? "page-2" : null,
+        },
+      });
+    },
+  });
+  await assert.rejects(
+    () => duplicateProduct.listProducts(),
+    /repeated a product ID/,
   );
 });

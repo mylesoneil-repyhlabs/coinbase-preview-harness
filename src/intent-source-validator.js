@@ -1,5 +1,5 @@
 function canonicalDecimal(value) {
-  const [integerPart, fractionalPart = ""] = value.split(".");
+  const [integerPart, fractionalPart = ""] = value.replaceAll(",", "").split(".");
   const integer = integerPart.replace(/^0+(?=\d)/, "");
   const fraction = fractionalPart.replace(/0+$/, "");
   return fraction ? `${integer}.${fraction}` : integer;
@@ -49,18 +49,18 @@ function normalizeUseCount(match) {
 const MATERIAL_CONSTRAINTS = Object.freeze([
   {
     field: "policy.size.value",
-    label: "exact order size",
+    label: "order size bound",
     expression:
-      /\b(?:use\s+)?exactly\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/gi,
+      /\b((?:use\s+)?exactly|(?:use\s+)?up to|at most)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/gi,
     normalize: (match) =>
-      `${canonicalDecimal(match[1])} ${match[2].toUpperCase()}`,
+      `${/exactly/i.test(match[1]) ? "EXACT" : "MAX"}:${canonicalDecimal(match[2])} ${match[3].toUpperCase()}`,
     policyValue: (policy) =>
-      `${canonicalDecimal(policy.size.value)} ${policy.size.asset.toUpperCase()}`,
+      `${policy.size.operator}:${canonicalDecimal(policy.size.value)} ${policy.size.asset.toUpperCase()}`,
   },
   {
     field: "policy.product_id",
     label: "Coinbase product",
-    expression: /\b([A-Z0-9]{2,12})-([A-Z0-9]{2,12})\b/gi,
+    expression: /\b([A-Z0-9]{2,12})[-/]([A-Z0-9]{2,12})\b/gi,
     include: (_intent, match) =>
       match[0].toLocaleLowerCase("en-US") !== "price-bounded",
     normalize: (match) =>
@@ -79,7 +79,7 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.order_type",
     label: "order type",
     expression:
-      /\b(?:(?:price-bounded\s+)?IOC\s+limit\s+order|GTC\s+limit\s+order|market\s+order)\b/gi,
+      /\b(?:(?:price[- ]bounded\s+)?IOC\s+limit\s+order|GTC\s+limit\s+order|market\s+order)\b/gi,
     normalize: normalizeOrderType,
     policyValue: (policy) => policy.order_type,
   },
@@ -87,7 +87,7 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.partial_fill_policy",
     label: "partial-fill policy",
     expression:
-      /\b(?:partial fill(?:s)? (?:is|are) (?:not )?acceptable|full fill (?:is )?required)\b/gi,
+      /\b(?:partial fill(?:s)? (?:(?:is|are) )?(?:not )?(?:acceptable|allowed)|full fill (?:is )?required)\b/gi,
     normalize: normalizePartialFill,
     policyValue: (policy) => policy.partial_fill_policy,
   },
@@ -107,7 +107,7 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.limits.max_commission.value",
     label: "commission cap",
     expression:
-      /(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+in commission\b/gi,
+      /(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:in\s+)?(?:commission|fees?)\b/gi,
     normalize: (match) =>
       `${canonicalDecimal(match[1])} ${match[2].toUpperCase()}`,
     policyValue: (policy) =>
@@ -117,17 +117,35 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.limits.settlement.value",
     label: "settlement bound",
     expression:
-      /(?:(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+total|(?:receive|accept)\s+(?:at least|no less than)\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net))\b/gi,
+      /(?:(?:(?:(?:do not|never)\s+)?(?:pay|spend)\s+|not\s+)?more than\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+total|(?:receive|accept)\s+(?:at least|no less than)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net))\b/gi,
     normalize: (match) =>
       `${canonicalDecimal(match[1] ?? match[3])} ${(match[2] ?? match[4]).toUpperCase()}`,
     policyValue: (policy) =>
       `${canonicalDecimal(policy.limits.settlement.value)} ${policy.limits.settlement.asset.toUpperCase()}`,
   },
   {
+    field: "policy.market_condition.value",
+    label: "absolute market-price condition",
+    optional: true,
+    expression:
+      /\b(?:only\s+)?(?:if|when)\s+(?:Coinbase(?:['’]s)?\s+)?(?:fresh\s+)?best\s+(ask|bid)\s+is\s+(at\s+or\s+below|no\s+more\s+than|at\s+or\s+above|no\s+less\s+than)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/gi,
+    normalize: (match) => {
+      const reference = match[1].toUpperCase() === "ASK" ? "BEST_ASK" : "BEST_BID";
+      const operator = /below|more/i.test(match[2])
+        ? "AT_OR_BELOW"
+        : "AT_OR_ABOVE";
+      return `${reference}:${operator}:${canonicalDecimal(match[3])} ${match[4].toUpperCase()}`;
+    },
+    policyValue: (policy) =>
+      policy.market_condition == null
+        ? null
+        : `${policy.market_condition.reference}:${policy.market_condition.operator}:${canonicalDecimal(policy.market_condition.value)} ${policy.market_condition.asset.toUpperCase()}`,
+  },
+  {
     field: "policy.validity.ttl_seconds",
     label: "authorization expiry",
     expression:
-      /\b(?:authorization\s+)?expires?\s+(\d+)\s+(seconds?|minutes?)\b/gi,
+      /\b(?:authorization\s+)?expires?\s+(?:in\s+)?(\d+)\s+(seconds?|minutes?)\b/gi,
     normalize: (match) => {
       const value = Number(match[1]);
       return String(
@@ -149,6 +167,13 @@ export const MATERIAL_SOURCE_PATHS = Object.freeze(
   MATERIAL_CONSTRAINTS.map((definition) => definition.field),
 );
 
+export function requiredMaterialPolicyPaths(policy) {
+  return MATERIAL_CONSTRAINTS.filter(
+    (definition) =>
+      !definition.optional || definition.policyValue(policy) != null,
+  ).map((definition) => definition.field);
+}
+
 export function findRepeatedMaterialConstraints(intent) {
   if (typeof intent !== "string") return [];
   const issues = [];
@@ -163,8 +188,8 @@ export function findRepeatedMaterialConstraints(intent) {
         : "DUPLICATE_MATERIAL_CONSTRAINT",
       source_text: matches.map((match) => match.quote).join(" | "),
       reason: conflicting
-        ? `The ${definition.label} has conflicting source statements; v1 requires exactly one authorized value.`
-        : `The ${definition.label} is stated more than once; v1 requires exactly one source statement even when the values match.`,
+        ? `The ${definition.label} has conflicting source statements; v1.4 requires exactly one authorized value.`
+        : `The ${definition.label} is stated more than once; v1.4 requires exactly one source statement even when the values match.`,
     });
   }
   return issues;
@@ -208,10 +233,8 @@ const NON_MATERIAL_LANGUAGE = new Set([
 const RECOGNIZED_LANGUAGE_PATTERNS = Object.freeze([
   /\busing my isolated Coinbase Advanced portfolio\b/gi,
   /\b(?:buy|sell)\s+(?:some\s+)?[A-Z0-9]{2,12}\b/gi,
-  /\bCoinbase['’]s fresh best (?:ask|bid)\b/gi,
+  /\bCoinbase(?:['’]s)? fresh best (?:ask|bid)\b/gi,
   /\bafter I confirm it\b/gi,
-  /\b(?:some|up to|at most)\b/gi,
-  /\$\d+(?:\.\d+)?\b/g,
 ]);
 
 function markSpan(covered, start, length) {
@@ -270,7 +293,7 @@ export function findUnrecognizedConstraints(intent) {
         code: "UNRECOGNIZED_CONSTRAINT",
         source_text: sourceText,
         reason:
-          "This clause is not represented in the v2 spot-order taxonomy and cannot be discarded.",
+          "This clause is not represented in the v3 spot-order taxonomy and cannot be discarded.",
       });
     }
   }
@@ -291,13 +314,20 @@ export function assertPolicyAndGroundingMatchSource(
 ) {
   for (const definition of MATERIAL_CONSTRAINTS) {
     const sourceMatches = occurrences(sourceIntent, definition);
+    const policyValue = definition.policyValue(policy);
+    if (
+      definition.optional &&
+      sourceMatches.length === 0 &&
+      policyValue == null
+    ) {
+      continue;
+    }
     if (sourceMatches.length !== 1) {
       throw new Error(
         `source intent must contain exactly one ${definition.label} statement`,
       );
     }
     const sourceMatch = sourceMatches[0];
-    const policyValue = definition.policyValue(policy);
     if (policyValue !== sourceMatch.value) {
       throw new Error(
         `${definition.field} does not match the source ${definition.label}`,

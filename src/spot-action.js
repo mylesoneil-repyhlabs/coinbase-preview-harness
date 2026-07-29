@@ -39,7 +39,7 @@ export function createCanonicalSpotAction(policy) {
       ? policy.limits.settlement.value
       : policy.size.value;
   const descriptor = {
-    schema_version: "delta.coinbase.spot_action.v1",
+    schema_version: "delta.coinbase.spot_action.v2",
     action_type: "COINBASE_SPOT_TRADE",
     venue: "COINBASE_ADVANCED",
     execution_domain: "COINBASE_CUSTODIAL_LEDGER",
@@ -59,7 +59,7 @@ export function createCanonicalSpotAction(policy) {
       field: sizeField,
       denomination: policy.size.denomination,
       asset: policy.size.asset,
-      operator: "EXACT",
+      operator: policy.size.operator,
       value: policy.size.value,
     },
     funding: {
@@ -76,6 +76,10 @@ export function createCanonicalSpotAction(policy) {
       max_slippage_bps: policy.limits.max_slippage_bps,
       max_commission: { ...policy.limits.max_commission },
       settlement: { ...policy.limits.settlement },
+      market_condition:
+        policy.market_condition == null
+          ? null
+          : { ...policy.market_condition },
     },
     usage: {
       max_executions: 1,

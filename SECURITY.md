@@ -23,7 +23,7 @@ allow a reasonable remediation window before public disclosure.
 
 ## Supported version
 
-Only the latest commit on the default branch is supported. This is a v1.3
+Only the latest commit on the default branch is supported. This is a v1.4
 integration preview, not a production custody or trading service.
 
 ## Operator safety
@@ -35,11 +35,18 @@ integration preview, not a production custody or trading service.
   execution reports can contain sensitive trading metadata and are written
   under ignored `runtime/artifacts/` with user-only permissions.
 - A simulation artifact is not evidence of a real Delta decision or Coinbase
-  order. Simulation HTML is labeled `SIMULATION_ONLY`.
+  order. Simulation HTML is labeled `SIMULATION_ONLY`; its local receipt is a
+  SHA-256 integrity artifact and its placeholder proof is explicitly not
+  cryptographically verified.
+- Install from a pinned release and verify its SHA-256 file. The installer
+  creates an integrity-manifested managed copy and rejects credential-shaped
+  paths, private-key material, provider tokens, binaries, and unexpected
+  source drift.
 - Keep real order creation disabled until Delta engineering replaces the
-  integration seam with the production verifier, signer, registry, and durable
-  one-time authorization store and completes the acceptance checks documented
-  in this repository.
+  integration seam with the production verifier pinned to an approved identity
+  and proof program, authenticated external user authorization, signer,
+  registry, and durable one-time authorization store, and completes the
+  acceptance checks documented in this repository.
 - If submission status is uncertain, reconcile by the existing client order ID.
   Do not retry Create Order blindly.
 

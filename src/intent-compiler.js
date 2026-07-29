@@ -12,7 +12,7 @@ import { validateCompilation } from "./policy-validator.js";
 const SCHEMA_PATH = path.join(
   HARNESS_ROOT,
   "config",
-  "coinbase-spot-policy.v2.schema.json",
+  "coinbase-spot-policy.v3.schema.json",
 );
 
 const COMPILER_INSTRUCTIONS = `You compile a human's natural-language trading intent into a draft policy.
@@ -24,10 +24,11 @@ Rules:
 - Never infer a product, base asset, quote asset, dollar currency, portfolio, side, exact size, order type, fill policy, fee cap, all-in cap, slippage cap, or expiry.
 - "dollars" and "$" are ambiguous unless the intent explicitly says USD or USDC.
 - Normalize "buy BASE with QUOTE" to BASE-QUOTE BUY and "sell BASE for QUOTE" to BASE-QUOTE SELL.
-- V2 supports only one exact-size SOR_LIMIT_IOC order. BUY must be quote-sized. SELL must be base-sized.
+- V3 supports one exact-size or maximum-size SOR_LIMIT_IOC order. BUY must be quote-sized. SELL must be base-sized.
 - BUY requires a maximum quote-asset total debit. SELL requires a minimum quote-asset net proceeds floor.
+- An optional one-shot market condition must be side-correct: BUY uses fresh best ask at-or-below an absolute quote-asset price; SELL uses fresh best bid at-or-above it. It is not a resting order or background monitor.
 - The TTL starts only when the human supplies the final credential-scoped execution digest.
-- Transfers, conversions, leverage, margin, derivatives, recurring orders, balance percentages, GTC orders, conditional strategies, unrestricted market orders, and on-chain network instructions are unsupported.
+- Transfers, conversions, leverage, margin, derivatives, recurring orders, balance percentages, GTC orders, multi-step strategies, unrestricted market orders, and on-chain network instructions are unsupported.
 - Every material constraint must appear exactly once in the source, including when repeated statements have the same value.
 - Every material policy field must have one grounding item whose source_quote is copied exactly from the input.
 - If any material value is absent or ambiguous, return NEEDS_CLARIFICATION with policy null.
@@ -49,7 +50,7 @@ function unsupported(code, sourceText, reason) {
 
 function parseExplicitProduct(intent) {
   for (const match of intent.matchAll(
-    /\b([A-Z0-9]{2,12})-([A-Z0-9]{2,12})\b/gi,
+    /\b([A-Z0-9]{2,12})[-/]([A-Z0-9]{2,12})\b/gi,
   )) {
     if (match[0].toLowerCase() === "price-bounded") continue;
     return {
@@ -62,27 +63,52 @@ function parseExplicitProduct(intent) {
   return null;
 }
 
-function parseExactSize(intent) {
+function parseSizeBound(intent) {
   const match = intent.match(
-    /\b(?:use\s+)?exactly\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/i,
+    /\b((?:use\s+)?exactly|(?:use\s+)?up to|at most)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/i,
   );
   if (!match) return null;
-  return { value: match[1], asset: match[2].toUpperCase(), quote: match[0] };
+  return {
+    operator: /exactly/i.test(match[1]) ? "EXACT" : "MAX",
+    value: match[2].replaceAll(",", ""),
+    asset: match[3].toUpperCase(),
+    quote: match[0],
+  };
+}
+
+function parseMarketCondition(intent) {
+  const match = intent.match(
+    /\b(?:only\s+)?(?:if|when)\s+(?:Coinbase(?:['’]s)?\s+)?(?:fresh\s+)?best\s+(ask|bid)\s+is\s+(at\s+or\s+below|no\s+more\s+than|at\s+or\s+above|no\s+less\s+than)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\b/i,
+  );
+  if (!match) return null;
+  return {
+    reference: match[1].toUpperCase() === "ASK" ? "BEST_ASK" : "BEST_BID",
+    operator: /below|more/i.test(match[2])
+      ? "AT_OR_BELOW"
+      : "AT_OR_ABOVE",
+    value: match[3].replaceAll(",", ""),
+    asset: match[4].toUpperCase(),
+    quote: match[0],
+  };
 }
 
 function parseNamedLimit(intent, suffix) {
   const expression = new RegExp(
-    `(?:(?:(?:do not|never)\\s+)?(?:pay|spend)\\s+|not\\s+)?more than\\s+(\\d+(?:\\.\\d+)?)\\s+([A-Z0-9]{2,12})\\s+${suffix}`,
+    `(?:(?:(?:do not|never)\\s+)?(?:pay|spend)\\s+|not\\s+)?more than\\s+\\$?\\s*(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s+([A-Z0-9]{2,12})\\s+${suffix}`,
     "i",
   );
   const match = intent.match(expression);
   if (!match) return null;
-  return { value: match[1], asset: match[2].toUpperCase(), quote: match[0] };
+  return {
+    value: match[1].replaceAll(",", ""),
+    asset: match[2].toUpperCase(),
+    quote: match[0],
+  };
 }
 
 function parseTtl(intent) {
   const match = intent.match(
-    /\b(?:authorization\s+)?expires?\s+(\d+)\s+(seconds?|minutes?)\b/i,
+    /\b(?:authorization\s+)?expires?\s+(?:in\s+)?(\d+)\s+(seconds?|minutes?)\b/i,
   );
   if (!match) return null;
   const value = Number(match[1]);
@@ -92,18 +118,18 @@ function parseTtl(intent) {
 
 function parseMinimumProceeds(intent) {
   const match = intent.match(
-    /\b(?:receive|accept)\s+(?:at least|no less than)\s+(\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net)\b/i,
+    /\b(?:receive|accept)\s+(?:at least|no less than)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z0-9]{2,12})\s+(?:after commission|in net proceeds|net)\b/i,
   );
   if (!match) return null;
   return {
-    value: match[1],
+    value: match[1].replaceAll(",", ""),
     asset: match[2].toUpperCase(),
     quote: match[0],
   };
 }
 
 function readyGrounding(values) {
-  return [
+  const grounding = [
     { field: "policy.product_id", source_quote: values.product.quote },
     { field: "policy.side", source_quote: values.sideQuote },
     { field: "policy.order_type", source_quote: values.orderTypeQuote },
@@ -127,6 +153,13 @@ function readyGrounding(values) {
     { field: "policy.validity.ttl_seconds", source_quote: values.ttl.quote },
     { field: "policy.usage.max_executions", source_quote: values.onceQuote },
   ];
+  if (values.marketCondition) {
+    grounding.push({
+      field: "policy.market_condition.value",
+      source_quote: values.marketCondition.quote,
+    });
+  }
+  return grounding;
 }
 
 export function compileDeterministicIntent(intent) {
@@ -136,7 +169,8 @@ export function compileDeterministicIntent(intent) {
   const ambiguities = [];
   const unsupportedConstraints = findRepeatedMaterialConstraints(intent);
   const product = parseExplicitProduct(intent);
-  const exactSize = parseExactSize(intent);
+  const sizeBound = parseSizeBound(intent);
+  const marketCondition = parseMarketCondition(intent);
   const lower = intent.toLowerCase();
   const actionText = lower.replaceAll(/do not sell|never sell/g, "");
   const hasBuy = /\bbuy\b/.test(actionText);
@@ -145,16 +179,16 @@ export function compileDeterministicIntent(intent) {
   const sideQuote = side ? matchQuote(intent, new RegExp(`\\b${side}\\b`, "i")) : null;
   const orderTypeQuote = matchQuote(
     intent,
-    /\b(?:price-bounded\s+)?IOC\s+limit\s+order\b/i,
+    /\b(?:price[- ]bounded\s+)?IOC\s+limit\s+order\b/i,
   );
   const partialFillQuote = matchQuote(
     intent,
-    /\bpartial fill(?:s)? (?:is|are) acceptable\b/i,
+    /\bpartial fill(?:s)? (?:(?:is|are) )?(?:acceptable|allowed)\b/i,
   );
   const slippageMatch = intent.match(
     /\b(?:do not (?:pay|accept)|never (?:pay|accept)|not) more than\s+(\d+)\s+bps\s+(?:above|below)\b/i,
   );
-  const commission = parseNamedLimit(intent, "in commission");
+  const commission = parseNamedLimit(intent, "(?:in\\s+)?(?:commission|fees?)");
   const total = parseNamedLimit(intent, "total");
   const minimumProceeds = parseMinimumProceeds(intent);
   const settlement =
@@ -165,7 +199,6 @@ export function compileDeterministicIntent(intent) {
   const unsupportedPatterns = [
     ["RECURRING_ORDER", /\b(?:every|daily|weekly|monthly|recurring)\b/i, "Recurring orders are outside v1."],
     ["RELATIVE_BALANCE", /\b(?:all|half|percent|percentage)\b|%/i, "Balance-relative sizing is outside v1."],
-    ["CONDITIONAL_STRATEGY", /\b(?:when|whenever|if)\b/i, "Conditional strategies are outside v1."],
     ["LEVERAGE_OR_DERIVATIVE", /\b(?:leverage|margin|future|futures|perpetual|perp)\b/i, "Leveraged and derivative products are outside v1."],
     ["NON_ORDER_ACTION", /\b(?:transfer|convert|withdraw|send)\b/i, "Transfers and conversions are outside v1."],
     ["PROMPT_INJECTION_OR_CONFLICT", /\b(?:ignore|disregard|override)\b/i, "Instruction override language prevents safe compilation."],
@@ -180,7 +213,7 @@ export function compileDeterministicIntent(intent) {
       unsupported(
         "SLIPPAGE_OUTSIDE_CAPABILITY",
         slippageMatch[0],
-        "A price bound must remain strictly positive; v1.3 supports at most 9999 bps.",
+        "A price bound must remain strictly positive; v1.4 supports at most 9999 bps.",
       ),
     );
   }
@@ -189,7 +222,7 @@ export function compileDeterministicIntent(intent) {
       unsupported(
         "EXPIRY_OUTSIDE_CAPABILITY",
         ttl.quote,
-        "v1.3 authorization validity must be between 30 and 600 seconds.",
+        "v1.4 authorization validity must be between 30 and 600 seconds.",
       ),
     );
   }
@@ -211,12 +244,12 @@ export function compileDeterministicIntent(intent) {
       issue("PRODUCT_REQUIRED", "", "State the exact Coinbase pair, for example ETH-USDC."),
     );
   }
-  if (!exactSize) {
+  if (!sizeBound) {
     ambiguities.push(
       issue(
         "EXACT_SIZE_REQUIRED",
         matchQuote(intent, /\b(?:up to|at most|some|\$\d+(?:\.\d+)?)\b/i) ?? "",
-        "State one exact amount and its asset, for example exactly 5 USDC.",
+        "State one exact or maximum amount and its asset, for example exactly 5 USDC or up to 3000 USDC.",
       ),
     );
   }
@@ -272,20 +305,20 @@ export function compileDeterministicIntent(intent) {
     );
   }
 
-  if (product && exactSize && side === "BUY" && exactSize.asset !== product.quote_asset) {
+  if (product && sizeBound && side === "BUY" && sizeBound.asset !== product.quote_asset) {
     ambiguities.push(
       issue(
         "BUY_SIZE_ASSET_MISMATCH",
-        exactSize.quote,
+        sizeBound.quote,
         `A BUY of ${product.product_id} must be sized in ${product.quote_asset}.`,
       ),
     );
   }
-  if (product && exactSize && side === "SELL" && exactSize.asset !== product.base_asset) {
+  if (product && sizeBound && side === "SELL" && sizeBound.asset !== product.base_asset) {
     ambiguities.push(
       issue(
         "SELL_SIZE_ASSET_MISMATCH",
-        exactSize.quote,
+        sizeBound.quote,
         `A SELL of ${product.product_id} must be sized in ${product.base_asset}.`,
       ),
     );
@@ -301,12 +334,40 @@ export function compileDeterministicIntent(intent) {
       );
     }
   }
+  if (marketCondition && product) {
+    const expectedReference = side === "BUY" ? "BEST_ASK" : "BEST_BID";
+    const expectedOperator =
+      side === "BUY" ? "AT_OR_BELOW" : "AT_OR_ABOVE";
+    if (
+      marketCondition.reference !== expectedReference ||
+      marketCondition.operator !== expectedOperator
+    ) {
+      ambiguities.push(
+        issue(
+          "MARKET_CONDITION_SIDE_MISMATCH",
+          marketCondition.quote,
+          `A ${side ?? "BUY or SELL"} condition must use ${
+            side === "SELL" ? "fresh best bid at or above" : "fresh best ask at or below"
+          }.`,
+        ),
+      );
+    }
+    if (marketCondition.asset !== product.quote_asset) {
+      ambiguities.push(
+        issue(
+          "MARKET_CONDITION_ASSET_MISMATCH",
+          marketCondition.quote,
+          `The market-price condition must be denominated in ${product.quote_asset}.`,
+        ),
+      );
+    }
+  }
 
   if (unsupportedConstraints.length) {
     return validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v2",
-        taxonomy_version: "digital-asset-spot-order.v2",
+        schema_version: "delta.coinbase.compilation.v3",
+        taxonomy_version: "digital-asset-spot-order.v3",
         status: "UNSUPPORTED",
         policy: null,
         ambiguities: [],
@@ -319,8 +380,8 @@ export function compileDeterministicIntent(intent) {
   if (ambiguities.length) {
     return validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v2",
-        taxonomy_version: "digital-asset-spot-order.v2",
+        schema_version: "delta.coinbase.compilation.v3",
+        taxonomy_version: "digital-asset-spot-order.v3",
         status: "NEEDS_CLARIFICATION",
         policy: null,
         ambiguities,
@@ -333,19 +394,20 @@ export function compileDeterministicIntent(intent) {
 
   const values = {
     product,
-    size: exactSize,
+    size: sizeBound,
     sideQuote,
     orderTypeQuote,
     partialFillQuote,
     slippageQuote: slippageMatch[0],
     commission,
     settlement,
+    marketCondition,
     ttl,
     onceQuote,
   };
   const compilation = {
-    schema_version: "delta.coinbase.compilation.v2",
-    taxonomy_version: "digital-asset-spot-order.v2",
+    schema_version: "delta.coinbase.compilation.v3",
+    taxonomy_version: "digital-asset-spot-order.v3",
     status: "READY_FOR_CONFIRMATION",
     policy: {
       venue: "COINBASE_ADVANCED",
@@ -359,10 +421,18 @@ export function compileDeterministicIntent(intent) {
       order_type: "SOR_LIMIT_IOC",
       size: {
         denomination: side === "BUY" ? "QUOTE" : "BASE",
-        asset: exactSize.asset,
-        operator: "EXACT",
-        value: exactSize.value,
+        asset: sizeBound.asset,
+        operator: sizeBound.operator,
+        value: sizeBound.value,
       },
+      market_condition: marketCondition
+        ? {
+            reference: marketCondition.reference,
+            operator: marketCondition.operator,
+            asset: marketCondition.asset,
+            value: marketCondition.value,
+          }
+        : null,
       partial_fill_policy: "ALLOW",
       limits: {
         max_slippage_bps: Number(slippageMatch[1]),
@@ -432,8 +502,8 @@ export async function compileIntentWithOpenAI(
   if (sourceConstraintIssues.length) {
     const compilation = validateCompilation(
       {
-        schema_version: "delta.coinbase.compilation.v2",
-        taxonomy_version: "digital-asset-spot-order.v2",
+        schema_version: "delta.coinbase.compilation.v3",
+        taxonomy_version: "digital-asset-spot-order.v3",
         status: "UNSUPPORTED",
         policy: null,
         ambiguities: [],
@@ -465,7 +535,7 @@ export async function compileIntentWithOpenAI(
         source_intent: intent,
         source_intent_digest: digest(intent),
         locale: "en-US",
-        taxonomy_version: "digital-asset-spot-order.v2",
+        taxonomy_version: "digital-asset-spot-order.v3",
       }),
       text: {
         verbosity: "low",

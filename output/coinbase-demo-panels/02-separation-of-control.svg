@@ -25,8 +25,8 @@
 </g>
 <g transform="translate(54 666)" font-family="Inter,Arial,sans-serif">
   <rect width="612" height="88" rx="16" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">4 · Executor</text>
-  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Can receive only the passed canonical action</text>
+  <text x="22" y="30" fill="#667085" font-size="17" font-weight="650">4 · Public boundary</text>
+  <text x="22" y="62" fill="#101828" font-size="22" font-weight="760">Stops at exact-payload eligibility</text>
 </g>
 <text x="54" y="958" fill="#475467" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="1">THE MODEL NEVER OWNS THE EXECUTION DECISION</text>
 <text x="666" y="72" text-anchor="end" fill="#98a2b3" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">02 / 06</text>

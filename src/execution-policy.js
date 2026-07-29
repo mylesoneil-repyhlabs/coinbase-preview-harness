@@ -4,8 +4,11 @@ import {
   isIncrementAligned,
   isPositiveDecimal,
   isSlippageWithinBps,
+  isWithinDecimalTolerance,
+  isWithinRelativeBps,
   parseDecimal,
   priceBoundFromBps,
+  divideDecimals,
   subtractDecimals,
 } from "./decimal.js";
 import { validatePolicy } from "./policy-validator.js";
@@ -17,6 +20,8 @@ const COMMON_ACTION_FIELDS = Object.freeze([
   "time_in_force",
   "limit_price",
 ]);
+const MAX_PREVIEW_BBO_DRIFT_BPS = 50;
+const MAX_PREVIEW_IMPLIED_PRICE_DRIFT_BPS = 5;
 
 function issue(code, message, expected, actual) {
   return { code, message, expected, actual };
@@ -95,6 +100,29 @@ export function evaluateExecutionProposal(policy, proposal, market) {
       ),
     );
   }
+  if (policy.market_condition && priceBound.price_reference_value) {
+    const comparison = compareDecimals(
+      priceBound.price_reference_value,
+      policy.market_condition.value,
+    );
+    const conditionMet =
+      policy.market_condition.operator === "AT_OR_BELOW"
+        ? comparison <= 0
+        : comparison >= 0;
+    if (!conditionMet) {
+      failures.push(
+        issue(
+          "MARKET_PRICE_CONDITION_NOT_MET",
+          "Fresh Coinbase market evidence does not satisfy the human-authorized absolute price condition",
+          policy.market_condition,
+          {
+            reference: policy.market_condition.reference,
+            value: priceBound.price_reference_value,
+          },
+        ),
+      );
+    }
+  }
   const size = sideSize(policy, proposal);
   const actionFields = [...COMMON_ACTION_FIELDS, size.field];
   const unknown = Object.keys(proposal).filter(
@@ -143,15 +171,20 @@ export function evaluateExecutionProposal(policy, proposal, market) {
       ),
     );
   }
-  if (
-    size.value !== policy.size.value ||
-    !isPositiveDecimal(size.value)
-  ) {
+  const sizeWithinPolicy =
+    isPositiveDecimal(size.value) &&
+    (policy.size.operator === "EXACT"
+      ? compareDecimals(size.value, policy.size.value) === 0
+      : compareDecimals(size.value, policy.size.value) <= 0);
+  if (!sizeWithinPolicy) {
     failures.push(
       issue(
         "SIZE_MISMATCH",
-        `${size.field} differs from the exact human-authorized amount`,
-        policy.size.value,
+        `${size.field} is outside the human-authorized ${policy.size.operator === "EXACT" ? "exact amount" : "maximum"}`,
+        {
+          operator: policy.size.operator,
+          value: policy.size.value,
+        },
         size.value,
       ),
     );
@@ -336,6 +369,8 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
     "quote_size",
     "base_size",
     "est_average_filled_price",
+    "best_bid",
+    "best_ask",
   ]) {
     try {
       const parsed = parseDecimal(preview[field], field);
@@ -370,6 +405,139 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
         preview[size.field],
       ),
     );
+  }
+
+  const previewBookValid =
+    isPositiveDecimal(preview.best_bid) &&
+    isPositiveDecimal(preview.best_ask) &&
+    compareDecimals(preview.best_bid, preview.best_ask) < 0;
+  if (!previewBookValid) {
+    failures.push(
+      issue(
+        "PREVIEW_BBO_INVALID",
+        "Coinbase Preview best bid/ask must be positive and uncrossed",
+        "best_bid < best_ask",
+        { best_bid: preview.best_bid, best_ask: preview.best_ask },
+      ),
+    );
+  } else {
+    const bboMatchesTrustedSnapshot =
+      isWithinRelativeBps(
+        preview.best_bid,
+        market.best_bid,
+        MAX_PREVIEW_BBO_DRIFT_BPS,
+      ) &&
+      isWithinRelativeBps(
+        preview.best_ask,
+        market.best_ask,
+        MAX_PREVIEW_BBO_DRIFT_BPS,
+      );
+    if (!bboMatchesTrustedSnapshot) {
+      failures.push(
+        issue(
+          "PREVIEW_BBO_DRIFT",
+          "Coinbase Preview best bid/ask drifted too far from the trusted market snapshot",
+          {
+            best_bid: market.best_bid,
+            best_ask: market.best_ask,
+            max_drift_bps: MAX_PREVIEW_BBO_DRIFT_BPS,
+          },
+          { best_bid: preview.best_bid, best_ask: preview.best_ask },
+        ),
+      );
+    }
+    if (policy.market_condition) {
+      const previewReference =
+        policy.side === "BUY" ? preview.best_ask : preview.best_bid;
+      const conditionComparison = compareDecimals(
+        previewReference,
+        policy.market_condition.value,
+      );
+      const conditionMet =
+        policy.market_condition.operator === "AT_OR_BELOW"
+          ? conditionComparison <= 0
+          : conditionComparison >= 0;
+      if (!conditionMet) {
+        failures.push(
+          issue(
+            "PREVIEW_MARKET_CONDITION_NOT_MET",
+            "Coinbase Preview no longer satisfies the absolute market-price condition",
+            policy.market_condition,
+            previewReference,
+          ),
+        );
+      }
+    }
+  }
+
+  if (
+    isPositiveDecimal(preview.quote_size) &&
+    isPositiveDecimal(preview.base_size) &&
+    isPositiveDecimal(preview.est_average_filled_price)
+  ) {
+    const impliedPrice = divideDecimals(
+      preview.quote_size,
+      preview.base_size,
+      { scale: 18 },
+    );
+    if (
+      !isWithinRelativeBps(
+        impliedPrice,
+        preview.est_average_filled_price,
+        MAX_PREVIEW_IMPLIED_PRICE_DRIFT_BPS,
+      )
+    ) {
+      failures.push(
+        issue(
+          "PREVIEW_SIZE_PRICE_INCONSISTENT",
+          "Coinbase Preview quote size, base size, and estimated average price are contradictory",
+          {
+            max_drift_bps: MAX_PREVIEW_IMPLIED_PRICE_DRIFT_BPS,
+            implied_price: impliedPrice,
+          },
+          preview.est_average_filled_price,
+        ),
+      );
+    }
+  }
+  if (
+    typeof preview.order_total === "string" &&
+    typeof preview.quote_size === "string" &&
+    typeof preview.commission_total === "string"
+  ) {
+    try {
+      const quoteWithCommission = addDecimals(
+        preview.quote_size,
+        preview.commission_total,
+      );
+      const totalMatches =
+        isWithinDecimalTolerance(
+          preview.order_total,
+          preview.quote_size,
+          market.quote_increment,
+        ) ||
+        isWithinDecimalTolerance(
+          preview.order_total,
+          quoteWithCommission,
+          market.quote_increment,
+        );
+      if (!totalMatches) {
+        failures.push(
+          issue(
+            "PREVIEW_ORDER_TOTAL_INCONSISTENT",
+            "Coinbase Preview order total is inconsistent with quote size and commission",
+            {
+              quote_size: preview.quote_size,
+              quote_plus_commission: quoteWithCommission,
+              tolerance: market.quote_increment,
+            },
+            preview.order_total,
+          ),
+        );
+      }
+    } catch {
+      // The existing decimal validation emits the primary malformed-value failure.
+    }
   }
 
   let settlement = null;

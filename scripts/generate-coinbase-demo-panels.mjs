@@ -7,7 +7,7 @@ const output = path.join(root, "output", "coinbase-demo-panels");
 const capabilityOutput = path.join(
   root,
   "output",
-  "coinbase-v1.3-capability-panels",
+  "coinbase-v1.4-capability-panels",
 );
 
 const panels = [
@@ -38,7 +38,7 @@ const panels = [
       ["1 · Agent", "Creates a candidate action"],
       ["2 · Simulated evaluator", "Checks canonical action vs mandate"],
       ["3 · Controller", "Maps BLOCK / PASS to retry or eligibility"],
-      ["4 · Executor", "Can receive only the passed canonical action"],
+      ["4 · Public boundary", "Stops at exact-payload eligibility"],
     ],
     footer: "THE MODEL NEVER OWNS THE EXECUTION DECISION",
   },
@@ -99,10 +99,10 @@ const panels = [
     titleLines: ["Only a verified PASS", "reaches eligibility"],
     accent: "#067647",
     items: [
-      ["Gate", "PASS + verified receipt"],
+      ["Gate", "PASS + receipt binding verified"],
       ["Payload check", "Passed digest == execution digest"],
       ["Evidence check", "Passed digest == gate evidence digest"],
-      ["Use", "One eligibility in this simulated trace"],
+      ["Proof", "Placeholder · not cryptographically verified"],
       ["External systems", "Coinbase + production delta not contacted"],
     ],
     footer: "COINBASE CREATE UNREACHABLE · NO MONEY MOVED",
@@ -113,15 +113,15 @@ const capabilityPanels = [
   {
     id: "01",
     duration: 15,
-    eyebrow: "V1.3 ACTION INVENTORY",
-    title: "One generic spot action, two sides",
-    titleLines: ["One generic spot action,", "two sides"],
+    eyebrow: "V1.4 ACTION INVENTORY",
+    title: "Conditional spot mandates, two sides",
+    titleLines: ["Conditional spot mandates,", "two sides"],
     accent: "#0052ff",
     items: [
-      ["BUY", "Exact quote_size · fund with held quote"],
-      ["SELL", "Exact base_size · fund with held base"],
+      ["BUY", "Exact / max quote_size · held quote"],
+      ["SELL", "Exact / max base_size · held base"],
+      ["Condition", "One-shot ask ≤ / bid ≥ threshold"],
       ["Pairs", "Validated from runtime SPOT metadata"],
-      ["Evidence", "Funds · market · Preview"],
       ["Boundary", "Coinbase Create disabled"],
     ],
     footer: "THIS RECORDING USES FIXTURES · PRODUCT AVAILABILITY IS NOT CLAIMED",
@@ -129,15 +129,15 @@ const capabilityPanels = [
   {
     id: "02",
     duration: 18,
-    eyebrow: "GENERIC BUY · DRAFT",
-    title: "SOL-USDC becomes a closed BUY action",
-    titleLines: ["SOL-USDC becomes", "a closed BUY action"],
+    eyebrow: "CONDITIONAL BUY · DRAFT",
+    title: "ETH-USDC becomes a closed mandate",
+    titleLines: ["ETH-USDC becomes", "a closed mandate"],
     accent: "#0052ff",
     items: [
-      ["Size", "quote_size = 250 USDC"],
-      ["Funding", "held USDC · required 252"],
-      ["Price", "fresh best ask · ≤25 bps above"],
-      ["Costs", "≤2 fee · ≤252 total debit"],
+      ["Size", "quote_size ≤ 3,000 USDC"],
+      ["Condition", "fresh best ask ≤ 3,000 USDC"],
+      ["Funding", "held USDC · worst case 3,015"],
+      ["Costs", "≤35 bps · ≤15 fee · ≤3,015 debit"],
       ["Authorization", "Pause on exact policy digest"],
     ],
     footer: "THE HARNESS DOES NOT AUTHORIZE ITS OWN DRAFT",
@@ -145,31 +145,32 @@ const capabilityPanels = [
   {
     id: "03",
     duration: 18,
-    eyebrow: "GENERIC BUY · RESULT",
-    title: "The exact BUY reaches a simulated PASS",
-    titleLines: ["The exact BUY reaches", "a simulated PASS"],
+    eyebrow: "CONDITIONAL BUY · RESULT",
+    title: "The exact payload becomes eligible",
+    titleLines: ["The exact payload", "becomes eligible"],
     accent: "#067647",
     items: [
-      ["Proposal", "SOL-USDC · BUY · quote_size"],
+      ["Proposal", "ETH-USDC · BUY · quote_size"],
       ["Funding", "USDC balance fixture bound"],
       ["Preview", "Labeled fixture · not Coinbase data"],
-      ["Receipt", "Action + payload + evidence digests"],
-      ["Gate", "Verified PASS for this payload only"],
+      ["Receipt", "Local SHA-256 integrity · not signed"],
+      ["Proof", "Binding check · not cryptographic"],
+      ["Gate", "EXECUTION_ELIGIBLE · executor not invoked"],
     ],
     footer: "COINBASE CONTACTED: FALSE · PRODUCTION DELTA: FALSE",
   },
   {
     id: "04",
     duration: 18,
-    eyebrow: "GENERIC SELL · DRAFT",
-    title: "BTC-USD becomes a closed SELL action",
-    titleLines: ["BTC-USD becomes", "a closed SELL action"],
+    eyebrow: "CONDITIONAL SELL · DRAFT",
+    title: "BTC-USD becomes a closed mandate",
+    titleLines: ["BTC-USD becomes", "a closed mandate"],
     accent: "#7a5af8",
     items: [
-      ["Size", "base_size = 0.05 BTC"],
-      ["Funding", "held BTC · required 0.05"],
-      ["Price", "fresh best bid · ≤30 bps below"],
-      ["Settlement", "≤12 fee · ≥4,990 USD net"],
+      ["Size", "base_size ≤ 0.50000000 BTC"],
+      ["Condition", "fresh best bid ≥ 60,000 USD"],
+      ["Funding", "held BTC · maximum 0.50000000"],
+      ["Settlement", "≤40 bps · ≤25 fee · ≥29,000 net"],
       ["Authorization", "Pause on a new policy digest"],
     ],
     footer: "SELL USES BASE FUNDS; NO SILENT ASSET CONVERSION",
@@ -177,16 +178,17 @@ const capabilityPanels = [
   {
     id: "05",
     duration: 18,
-    eyebrow: "GENERIC SELL · RESULT",
-    title: "The exact SELL reaches a simulated PASS",
-    titleLines: ["The exact SELL reaches", "a simulated PASS"],
+    eyebrow: "CONDITIONAL SELL · RESULT",
+    title: "SELL uses the same locked gate",
+    titleLines: ["SELL uses the same", "locked gate"],
     accent: "#067647",
     items: [
       ["Proposal", "BTC-USD · SELL · base_size"],
       ["Funding", "BTC balance fixture bound"],
       ["Preview", "Labeled fixture · not Coinbase data"],
       ["Receipt", "Action + payload + evidence digests"],
-      ["Gate", "Verified PASS for this payload only"],
+      ["Proof", "Explicit non-cryptographic test double"],
+      ["Gate", "Exact payload eligible · no fill claimed"],
     ],
     footer: "COINBASE CREATE INVOKED: FALSE · NO MONEY MOVED",
   },
@@ -271,7 +273,7 @@ function overviewSvg() {
 <g class="sans">
   <text x="72" y="72" class="eyebrow" fill="#0052ff">DELTA GUARD FOR COINBASE · CREDENTIAL-FREE SIMULATION</text>
   <text x="72" y="142" class="title" fill="#101828">One mandate. Two proposals. One canonical action eligible.</text>
-  <text x="72" y="185" class="subtitle">The agent proposes; the simulated evaluator decides; the external controller owns retry and execution.</text>
+  <text x="72" y="185" class="subtitle">The agent proposes; the simulated evaluator decides; the external controller owns retry and release.</text>
 
   <rect x="72" y="225" width="1296" height="92" rx="18" fill="#eef4ff" stroke="#b2ccff"/>
   <text x="98" y="261" class="small" fill="#0052ff">SIMULATED HUMAN MANDATE</text>
@@ -373,5 +375,5 @@ await writeFile(
 );
 
 process.stdout.write(
-  `Generated one overview and ${panels.length} conditional-showcase panels in ${output}\nGenerated ${capabilityPanels.length} v1.3 capability panels in ${capabilityOutput}\n`,
+  `Generated one overview and ${panels.length} conditional-showcase panels in ${output}\nGenerated ${capabilityPanels.length} v1.4 capability panels in ${capabilityOutput}\n`,
 );

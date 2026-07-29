@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { parseCliArguments } from "./cli-args.js";
 import {
   createCoinbaseExecutionAdapter,
   createCoinbaseRestAdapter,
@@ -54,14 +55,96 @@ import { sanitize } from "./sanitize.js";
 import { simulateExecution } from "./simulator.js";
 
 function optionValue(args, name) {
-  const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+  return args[name];
 }
 
 function printPaths(paths) {
   process.stdout.write(
     `JSON: ${path.resolve(paths.jsonPath)}\n` +
       `HTML: ${path.resolve(paths.htmlPath)}\n`,
+  );
+}
+
+function policyCondition(policy) {
+  if (!policy?.market_condition) return "none";
+  const condition = policy.market_condition;
+  const operator =
+    condition.operator === "AT_OR_BELOW" ? "≤" : "≥";
+  return `${condition.reference} ${operator} ${condition.value} ${condition.asset}`;
+}
+
+function printPlanSummary(plan) {
+  const policy = plan.policy;
+  process.stdout.write("\nDELTA COINBASE GUARD — DRAFT, NOT AUTHORIZED\n");
+  process.stdout.write(
+    `Action: ${policy.side} ${policy.product_id} · ${policy.order_type}\n`,
+  );
+  process.stdout.write(
+    `Size: ${policy.size.operator === "MAX" ? "up to" : "exactly"} ${policy.size.value} ${policy.size.asset}\n`,
+  );
+  process.stdout.write(`Market condition: ${policyCondition(policy)}\n`);
+  process.stdout.write(
+    `Funding: held ${plan.action_descriptor.funding.asset} · required ${plan.action_descriptor.funding.required_available}\n`,
+  );
+  process.stdout.write(
+    `Limits: ${policy.limits.max_slippage_bps} bps slippage · ${policy.limits.max_commission.value} ${policy.quote_asset} commission · ${policy.limits.settlement.kind} ${policy.limits.settlement.value} ${policy.quote_asset}\n`,
+  );
+  process.stdout.write(
+    `Validity: ${policy.validity.ttl_seconds} seconds after explicit confirmation · one execution\n`,
+  );
+  process.stdout.write("Coinbase Create: LOCKED\n\n");
+}
+
+function printCompilationGuidance(compilation) {
+  const problems = [
+    ...(compilation.ambiguities ?? []).map((item) => ({
+      code: item.code,
+      detail: item.question,
+    })),
+    ...(compilation.unsupported_constraints ?? []).map((item) => ({
+      code: item.code,
+      detail: item.reason,
+    })),
+  ];
+  process.stdout.write("\nREQUEST NOT READY — NO POLICY WAS CREATED\n");
+  for (const problem of problems) {
+    process.stdout.write(`- ${problem.code}: ${problem.detail}\n`);
+  }
+  process.stdout.write(
+    "\nHow to fix it: restate one complete action with an exact pair; BUY or SELL; " +
+      "exactly or up to plus its funding asset; price-bounded IOC; partial-fill choice; " +
+      "side-correct slippage, commission, and debit/proceeds limits; one use; and expiry.\n",
+  );
+  process.stdout.write(
+    "Optional condition: BUY only if fresh best ask is at or below a quote-asset price, " +
+      "or SELL only if fresh best bid is at or above one.\n",
+  );
+  process.stdout.write(
+    "Run `help` for a copyable supported request. The guard discarded nothing and contacted no service.\n\n",
+  );
+}
+
+function printSimulationSummary(record) {
+  process.stdout.write(
+    "\nSIMULATION ONLY — NO NETWORK, NO COINBASE ORDER, NO MONEY MOVED\n",
+  );
+  process.stdout.write(
+    `Action: ${record.policy.side} ${record.policy.product_id} · ${record.policy.size.operator === "MAX" ? "up to" : "exactly"} ${record.policy.size.value} ${record.policy.size.asset}\n`,
+  );
+  process.stdout.write(
+    `Market condition: ${policyCondition(record.policy)}\n`,
+  );
+  process.stdout.write(
+    `Deterministic checks: proposal ${record.proposal_check?.decision ?? "NOT_REACHED"} · Preview ${record.preview_check?.decision ?? "NOT_REACHED"}\n`,
+  );
+  process.stdout.write(
+    `Delta contract decision: ${record.delta?.decision ?? "NOT_REACHED"} · simulated placeholder proof, not cryptographically verified\n`,
+  );
+  process.stdout.write(
+    `Controller result: ${record.status === "EXECUTION_ELIGIBLE" ? "exact evaluated payload eligible in this test only" : record.status}\n`,
+  );
+  process.stdout.write(
+    `Execution boundary: one-time in-memory gate ${record.execution?.one_time_gate_consumed ? "consumed" : "not consumed"} · external executor NOT INVOKED\n\n`,
   );
 }
 
@@ -108,7 +191,7 @@ function printPreviewProbeSummary(record) {
   process.stdout.write("MONEY_MOVED=false\n");
 }
 
-async function doctor() {
+async function doctor(args = {}) {
   const checks = [
     {
       name: "Node.js",
@@ -117,7 +200,7 @@ async function doctor() {
     },
   ];
   const requiredFiles = [
-    "config/coinbase-spot-policy.v2.schema.json",
+    "config/coinbase-spot-policy.v3.schema.json",
     "config/preview-capability-profile.json",
     "config/execution-safety-profile.json",
     "skills/delta-coinbase-guard/SKILL.md",
@@ -127,16 +210,16 @@ async function doctor() {
       requiredFiles.map((file) => access(path.join(HARNESS_ROOT, file))),
     );
     checks.push({
-      name: "v1.3 contracts and skill",
+      name: "v1.4 contracts and skill",
       status: "PASS",
       detail:
         "Generic spot policy, Preview capability, live safety profile, and installable skill are present.",
     });
   } catch {
     checks.push({
-      name: "v1.3 contracts and skill",
+      name: "v1.4 contracts and skill",
       status: "FAIL",
-      detail: "One or more required v1.3 files are missing.",
+      detail: "One or more required v1.4 files are missing.",
     });
   }
   checks.push({
@@ -151,7 +234,11 @@ async function doctor() {
     detail: production.detail,
   });
 
-  console.table(checks);
+  if (optionValue(args, "--json")) {
+    process.stdout.write(`${JSON.stringify({ version: "1.4.0", checks })}\n`);
+  } else {
+    console.table(checks);
+  }
   if (checks.some((check) => check.status === "FAIL")) process.exitCode = 1;
 }
 
@@ -173,9 +260,17 @@ async function createPlanCommand(args) {
   const compiler = optionValue(args, "--compiler") ?? "deterministic";
   const plan = await createExecutionPlan(intent, { compiler });
   const filePath = await writeExecutionPlan(plan);
+  if (optionValue(args, "--json")) {
+    process.stdout.write(
+      `${JSON.stringify({ plan_path: path.resolve(filePath), plan })}\n`,
+    );
+    if (!plan.policy_digest) process.exitCode = 2;
+    return;
+  }
   process.stdout.write(`${plan.status}\n`);
   process.stdout.write(`Plan: ${path.resolve(filePath)}\n`);
   if (plan.policy_digest) {
+    printPlanSummary(plan);
     process.stdout.write(
       `\nCompiled policy:\n${JSON.stringify(plan.policy, null, 2)}\n\n`,
     );
@@ -191,6 +286,7 @@ async function createPlanCommand(args) {
       "PAUSE: nothing may be proposed or previewed until a trusted host receives a new user-authored message authorizing the displayed policy digest.\n",
     );
   } else {
+    printCompilationGuidance(plan.compilation);
     process.stdout.write(`${JSON.stringify(plan.compilation, null, 2)}\n`);
     process.exitCode = 2;
   }
@@ -361,7 +457,26 @@ async function simulate(args) {
   }
   const plan = await readExecutionPlan(planPath);
   const record = await simulateExecution(plan, confirmation);
-  const paths = await writeExecutionReport(record, "execution-readiness");
+  const paths = optionValue(args, "--no-artifacts")
+    ? null
+    : await writeExecutionReport(record, "execution-readiness");
+  if (optionValue(args, "--json")) {
+    process.stdout.write(
+      `${JSON.stringify({
+        record,
+        artifacts:
+          paths == null
+            ? null
+            : {
+                json: path.resolve(paths.jsonPath),
+                html: path.resolve(paths.htmlPath),
+              },
+      })}\n`,
+    );
+    if (record.status !== "EXECUTION_ELIGIBLE") process.exitCode = 1;
+    return;
+  }
+  printSimulationSummary(record);
   process.stdout.write("SIMULATION_ONLY\n");
   process.stdout.write(
     `AUTHORIZED_POLICY=${JSON.stringify(record.policy)}\n`,
@@ -412,27 +527,35 @@ async function simulate(args) {
     }\n`,
   );
   process.stdout.write(`SIMULATED_RESULT=${record.status}\n`);
+  process.stdout.write(`TARGET_ENVIRONMENT=${record.target_environment}\n`);
+  process.stdout.write(`RUN_MODE=${record.run_mode}\n`);
+  process.stdout.write(
+    `FIXTURE_CLOCK=${JSON.stringify(record.fixture_clock)}\n`,
+  );
   process.stdout.write(
     `SIMULATED_EXECUTOR_INVOKED=${record.execution.adapter_invoked}\n`,
   );
   process.stdout.write(
-    "SIMULATED_EXECUTOR_TYPE=IN_MEMORY_COINBASE_SHAPED_ADAPTER; NO_NETWORK\n",
+    "SIMULATED_EXECUTOR_TYPE=NONE; IN_MEMORY_GATE_ONLY\n",
   );
+  process.stdout.write(
+    `ONE_TIME_GATE_CONSUMED=${record.execution.one_time_gate_consumed}\n`,
+  );
+  process.stdout.write(
+    `CRYPTOGRAPHIC_PROOF_VERIFIED=${record.delta?.cryptographic_proof_verified === true}\n`,
+  );
+  process.stdout.write("EXCHANGE_OUTCOME_OBSERVED=false\n");
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
   process.stdout.write("COINBASE_CONTACTED=false\n");
   process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
   process.stdout.write("MONEY_MOVED=false\n");
-  printPaths(paths);
-  if (!["FILLED", "PARTIAL_FILL", "NO_FILL"].includes(record.status)) {
+  if (paths) printPaths(paths);
+  if (record.status !== "EXECUTION_ELIGIBLE") {
     process.exitCode = 1;
   }
 }
 
-async function coinbaseDemo(args) {
-  const unsupported = args.filter((argument) => argument !== "--no-artifacts");
-  if (unsupported.length > 0) {
-    throw new Error("Usage: coinbase-demo [--no-artifacts]");
-  }
+async function coinbaseDemo() {
   const record = await runCoinbaseDemo();
   const retry = record.demo.bounded_retry;
   const first = retry.attempts[0];
@@ -544,15 +667,6 @@ async function coinbaseDemo(args) {
 
 async function mastraDemo(args) {
   const scenario = optionValue(args, "--scenario");
-  const expectedArgs = scenario ? ["--scenario", scenario] : [];
-  if (
-    args.length !== expectedArgs.length ||
-    args.some((argument, index) => argument !== expectedArgs[index])
-  ) {
-    throw new Error(
-      "Usage: mastra-demo [--scenario pass|block|review]",
-    );
-  }
   process.stdout.write("SIMULATION_ONLY\n");
   process.stdout.write("MASTRA_PARTNER_PROOF=COMPLETE\n");
   if (scenario) {
@@ -653,7 +767,7 @@ async function probeExecution(args) {
     process.exitCode = 1;
   } else {
     process.stdout.write(
-      "Coinbase Preview passed and Create was not called. Public v1.3 cannot submit an order; reviewed Delta and executor integration is required.\n",
+      "Coinbase Preview passed and Create was not called. Public v1.4 cannot submit an order; reviewed Delta and executor integration is required.\n",
     );
   }
 }
@@ -663,8 +777,8 @@ async function execute(args) {
     await loadProductionExecutionDependencies(),
   );
   if (
-    !args.includes("--live-execution") ||
-    !args.includes("--accept-real-money-risk")
+    args["--live-execution"] !== true ||
+    args["--accept-real-money-risk"] !== true
   ) {
     throw new Error(
       "Live execution is gated. Both --live-execution and --accept-real-money-risk are required.",
@@ -783,71 +897,104 @@ async function reconcileExecution(args) {
   }
 }
 
-function usage() {
-  return `Delta Coinbase Guard v1.3
+async function version() {
+  const packageJson = JSON.parse(
+    await readFile(path.join(HARNESS_ROOT, "package.json"), "utf8"),
+  );
+  process.stdout.write(`${packageJson.version}\n`);
+}
 
-Commands:
-  doctor
+function usage({ all = false } = {}) {
+  const safeUsage = `Delta Coinbase Guard v1.4
+
+Safe start:
+  doctor [--json]
+  plan --intent "..." [--compiler deterministic|openai] [--json]
+  plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai] [--json]
+  simulate --plan /path/to/plan.json --confirm-policy <digest> [--no-artifacts] [--json]
+  coinbase-demo --no-artifacts
   credential-readiness
-  configure-preview-credentials --key-file /outside/repo/view_key.json
-  configure-executor-credentials --key-file /outside/repo/trade_key.json
-  coinbase-demo [--no-artifacts]
-  mastra-demo [--scenario pass|block|review]
-  plan --intent "..." [--compiler deterministic|openai]
-  plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai]
-  simulate --plan /path/to/plan.json --confirm-policy <digest>
-  configure-execution --key-file /outside/repo/cdp_key.json
-  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/cdp_key.json [--credential-role preview|executor]
-  confirm-execution --bound-execution /path/to/bound.json --confirm-execution <digest> --key-file /outside/repo/cdp_key.json
-  probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /absolute/path/to/receipt.json --key-file /outside/repo/cdp_key.json
-  execute --bound-execution /path/to/bound.json --confirmation-receipt /absolute/path/to/receipt.json --key-file /outside/repo/cdp_key.json --live-execution --accept-real-money-risk
-  reconcile-execution --bound-execution /path/to/bound.json --key-file /outside/repo/cdp_key.json
 
-The public v1.3 supports generic SPOT BUY/SELL planning, deterministic simulation,
-credential-scoped confirmation, and a real Coinbase Preview probe. Coinbase Create and recovery are
-compile-time locked until Delta engineering installs the reviewed mandate adapter
-and durable one-time grant store in src/integration/production-composition.js.
+Copyable conditional BUY request:
+  Using my isolated Coinbase Advanced portfolio, use up to 3000 USDC to buy ETH
+  on ETH-USDC once now with a price-bounded IOC limit order. Only if Coinbase's
+  fresh best ask is at or below 3000 USDC. Partial fill is acceptable. Do not
+  pay more than 35 bps above Coinbase's fresh best ask, more than 15 USDC in
+  commission, or more than 3015 USDC total. This authorization expires 10
+  minutes after I confirm it.
+
+Optional View-only Coinbase reads and Preview:
+  configure-preview-credentials --key-file /outside/repo/view_key.json
+  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/view_key.json --credential-role preview
+  confirm-execution --bound-execution /path/to/bound.json --confirm-execution <digest> --key-file /outside/repo/view_key.json
+  probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/view_key.json
+
+Public v1.4 supports generic immediate SPOT BUY/SELL planning, optional one-shot
+absolute price conditions, exact or maximum sizing, credential-free simulation,
+and a real View-only Coinbase Preview probe. Simulation can reach exact-payload
+eligibility but never an exchange outcome. Coinbase Create remains compile-time
+locked.
+
+Run "help --all" only for internal integration seams.`;
+  if (!all) return `${safeUsage}\n`;
+  return `${safeUsage}
+
+Locked integration/developer seams:
+  configure-executor-credentials --key-file /outside/repo/trade_key.json
+  configure-execution --key-file /outside/repo/trade_key.json
+  execute --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/trade_key.json --live-execution --accept-real-money-risk
+  reconcile-execution --bound-execution /path/to/bound.json --key-file /outside/repo/trade_key.json
+  mastra-demo [--scenario pass|block|review]
+
+These commands do not unlock public Create. The internal build must supply an
+authenticated user signer, pinned cryptographic Delta proof verifier, reviewed
+mandate adapter, and durable one-time grant store at the compile-time seam.
 `;
 }
 
-const [command, ...args] = process.argv.slice(2);
+const [rawCommand, ...rawArgs] = process.argv.slice(2);
 
 try {
-  if (!command || command === "help" || command === "--help") {
+  if (!rawCommand) {
     process.stdout.write(usage());
-  } else if (command === "doctor") {
-    await doctor();
-  } else if (command === "credential-readiness") {
-    await credentialReadiness();
-  } else if (
-    command === "configure-credentials" ||
-    command === "configure-preview-credentials"
-  ) {
-    await configurePreview(args);
-  } else if (command === "configure-executor-credentials") {
-    await configureExecution(args);
-  } else if (command === "coinbase-demo") {
-    await coinbaseDemo(args);
-  } else if (command === "mastra-demo") {
-    await mastraDemo(args);
-  } else if (command === "plan") {
-    await createPlanCommand(args);
-  } else if (command === "simulate") {
-    await simulate(args);
-  } else if (command === "configure-execution") {
-    await configureExecution(args);
-  } else if (command === "bind-execution") {
-    await bindExecution(args);
-  } else if (command === "confirm-execution") {
-    await confirmExecution(args);
-  } else if (command === "probe-execution") {
-    await probeExecution(args);
-  } else if (command === "execute") {
-    await execute(args);
-  } else if (command === "reconcile-execution") {
-    await reconcileExecution(args);
   } else {
-    throw new Error(`Unknown command: ${command}\n\n${usage()}`);
+    const { command, options: args } = parseCliArguments(
+      rawCommand,
+      rawArgs,
+    );
+    if (command === "help") {
+      process.stdout.write(usage({ all: args["--all"] === true }));
+    } else if (command === "version") {
+      await version();
+    } else if (command === "doctor") {
+      await doctor(args);
+    } else if (command === "credential-readiness") {
+      await credentialReadiness();
+    } else if (command === "configure-preview-credentials") {
+      await configurePreview(args);
+    } else if (command === "configure-executor-credentials") {
+      await configureExecution(args);
+    } else if (command === "coinbase-demo") {
+      await coinbaseDemo();
+    } else if (command === "mastra-demo") {
+      await mastraDemo(args);
+    } else if (command === "plan") {
+      await createPlanCommand(args);
+    } else if (command === "simulate") {
+      await simulate(args);
+    } else if (command === "configure-execution") {
+      await configureExecution(args);
+    } else if (command === "bind-execution") {
+      await bindExecution(args);
+    } else if (command === "confirm-execution") {
+      await confirmExecution(args);
+    } else if (command === "probe-execution") {
+      await probeExecution(args);
+    } else if (command === "execute") {
+      await execute(args);
+    } else if (command === "reconcile-execution") {
+      await reconcileExecution(args);
+    }
   }
 } catch (error) {
   const message = sanitize(

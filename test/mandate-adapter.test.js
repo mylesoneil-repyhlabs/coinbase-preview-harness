@@ -19,6 +19,24 @@ import { createCanonicalSpotAction } from "../src/spot-action.js";
 const INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 5 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 50 bps above Coinbase's fresh best ask, more than 0.50 USDC in commission, or more than 5.50 USDC total. This authorization expires 2 minutes after I confirm it.";
 const FIXED_NOW = new Date("2026-07-23T18:00:00.000Z");
+const TEST_VERIFIER_OPTIONS = {
+  verifierIdentity: "test-verifier-key-1",
+  proofProgramId: "test-sp1-program-1",
+  proofVerifier: {
+    verifyProofArtifact: async ({
+      proof,
+      verifierIdentity,
+      proofProgramId,
+    }) => ({
+      verified: true,
+      cryptographically_verified: true,
+      method: "TEST_PINNED_SP1_VERIFIER",
+      verifier_identity: verifierIdentity,
+      program_id: proofProgramId,
+      proof_digest: digest(proof),
+    }),
+  },
+};
 
 function mandateFixture() {
   const policy = compileDeterministicIntent(INTENT).policy;
@@ -122,12 +140,16 @@ function mandateFixture() {
     quote_asset: "USDC",
     side: "BUY",
     size_field: "quote_size",
-    exact_size_value: "5.00",
+    size_operator: "EXACT",
+    size_value: "5.00",
     funding_asset: "USDC",
     max_slippage_bps: 50,
     max_commission_value: "0.50",
     settlement_kind: "MAX_QUOTE_DEBIT",
     settlement_value: "5.50",
+    market_condition_reference: "NONE",
+    market_condition_operator: "NONE",
+    market_condition_value: "0",
     action_descriptor_digest: actionDescriptor.descriptor_digest,
     portfolio_fingerprint: "portfolio-1",
     credential_fingerprint: "credential-1",
@@ -187,6 +209,8 @@ test("simulated adapter follows the policy-intent-proposal-verifier lifecycle", 
     result.proof.signed_intent.intent.attrs,
     toDeltaWireAttributes(parameters),
   );
+  assert.equal(result.proof_verification.cryptographically_verified, false);
+  assert.equal(result.receipt.receipt_integrity, "LOCAL_SHA256_DIGEST");
 });
 
 test("simulated adapter returns indexed terminal constraint failures", async () => {
@@ -423,6 +447,7 @@ test("deterministic controller retries only constraint failures and executes onc
             verified: true,
             constraint_failures: [],
             proof: { verified: true },
+            proof_verification: { verified: true },
           },
     execute: async (candidate) => {
       executions += 1;
@@ -456,6 +481,7 @@ test("deterministic controller collects evidence outside the proposal callback",
       verified: true,
       constraint_failures: [],
       proof: { evidence_source: candidate.evidence.source },
+      proof_verification: { verified: true },
     }),
     execute: async (candidate) => ({ evidence: candidate.evidence }),
   });
@@ -623,6 +649,7 @@ test("Orchestrator adapter maps the exact policy, intent, proposal, status, veri
         };
       },
     },
+    ...TEST_VERIFIER_OPTIONS,
     fetchImpl,
   });
 
@@ -637,6 +664,11 @@ test("Orchestrator adapter maps the exact policy, intent, proposal, status, veri
   });
 
   assert.equal(result.verified, true);
+  assert.equal(result.proof_verification.cryptographically_verified, true);
+  assert.equal(
+    result.receipt.artifact_class,
+    "DELTA_VERIFIER_ATTESTED_CONTRACT",
+  );
   assert.deepEqual(signerInput, {
     policyId,
     parameters,
@@ -700,6 +732,7 @@ test("Orchestrator adapter requires independent origins and credentials", () => 
         verifierUrl: "https://delta.example/verifier",
         signer,
         actionRegistry,
+        ...TEST_VERIFIER_OPTIONS,
       }),
     /distinct origins/,
   );
@@ -710,6 +743,7 @@ test("Orchestrator adapter requires independent origins and credentials", () => 
         verifierUrl: "https://verifier.example",
         signer,
         actionRegistry,
+        ...TEST_VERIFIER_OPTIONS,
         bearerToken: "shared-token",
       }),
     /shared bearerToken/,
@@ -721,6 +755,7 @@ test("Orchestrator adapter requires independent origins and credentials", () => 
         verifierUrl: "https://verifier.example",
         signer,
         actionRegistry,
+        ...TEST_VERIFIER_OPTIONS,
         orchestratorBearerToken: "same-token",
         verifierBearerToken: "same-token",
       }),
@@ -736,6 +771,7 @@ test("Orchestrator adapter rejects an action registry without an opaque solution
     actionRegistry: {
       registerAction: async () => ({ solution: "" }),
     },
+    ...TEST_VERIFIER_OPTIONS,
   });
 
   await assert.rejects(
@@ -744,12 +780,69 @@ test("Orchestrator adapter rejects an action registry without an opaque solution
   );
 });
 
+test("Orchestrator adapter requires a pinned cryptographic proof verifier", () => {
+  assert.throws(
+    () =>
+      createOrchestratorMandateAdapter({
+        orchestratorUrl: "https://orchestrator.example",
+        verifierUrl: "https://verifier.example",
+        signer: { signIntent: async () => null },
+        actionRegistry: {
+          registerAction: async () => ({
+            solution: "coinbase-order://proposal/v1/test",
+          }),
+        },
+      }),
+    /cryptographic proof verifier/,
+  );
+});
+
+test("simulation proof verifier rejects arbitrary nonempty proof material", async () => {
+  const adapter = createSimulatedMandateAdapter();
+  await assert.rejects(
+    adapter.verifyProofArtifact({
+      proof: {
+        sp1_proof: "arbitrary-nonempty-text",
+        signed_intent: {
+          signature: { Simulated: "NOT_A_REAL_DELTA_SIGNATURE" },
+        },
+      },
+    }),
+    /explicit placeholder proof/,
+  );
+});
+
+test("production proof verification is pinned to verifier identity and program", async () => {
+  const adapter = createOrchestratorMandateAdapter({
+    orchestratorUrl: "https://orchestrator.example",
+    verifierUrl: "https://verifier.example",
+    signer: { signIntent: async () => null },
+    actionRegistry: { registerAction: async () => null },
+    verifierIdentity: "pinned-verifier",
+    proofProgramId: "pinned-program",
+    proofVerifier: {
+      verifyProofArtifact: async ({ proof }) => ({
+        verified: true,
+        cryptographically_verified: true,
+        method: "TEST_VERIFIER",
+        verifier_identity: "attacker-verifier",
+        program_id: "attacker-program",
+        proof_digest: digest(proof),
+      }),
+    },
+  });
+  await assert.rejects(
+    adapter.verifyProofArtifact({ proof: { sp1_proof: "proof" } }),
+    /misbound the proof artifact/,
+  );
+});
+
 test("full simulator uses the replaceable Orchestrator-and-Verifier mandate surface", async () => {
   const plan = await createExecutionPlan(INTENT);
   const record = await simulateExecution(plan, plan.policy_digest);
 
   assert.equal(record.artifact_class, "SIMULATED");
-  assert.equal(record.status, "FILLED");
+  assert.equal(record.status, "EXECUTION_ELIGIBLE");
   assert.equal(record.delta.surface, "delta_orchestrator_and_verifier");
   assert.equal(record.delta.adapter, "simulated-delta-mandate");
   assert.equal(record.delta.status, "success");

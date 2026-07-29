@@ -91,6 +91,31 @@ export function isWithinDecimalTolerance(left, right, tolerance) {
   }
 }
 
+export function isWithinRelativeBps(left, right, maxBps) {
+  try {
+    const a = parseDecimal(left, "left");
+    const b = parseDecimal(right, "right");
+    if (
+      a.coefficient <= 0n ||
+      b.coefficient <= 0n ||
+      !Number.isInteger(maxBps) ||
+      maxBps < 0 ||
+      maxBps > 10_000
+    ) {
+      return false;
+    }
+    const scale = Math.max(a.scale, b.scale);
+    const scaledA = toScale(a, scale);
+    const scaledB = toScale(b, scale);
+    const difference =
+      scaledA >= scaledB ? scaledA - scaledB : scaledB - scaledA;
+    const reference = scaledA >= scaledB ? scaledA : scaledB;
+    return difference * 10_000n <= reference * BigInt(maxBps);
+  } catch {
+    return false;
+  }
+}
+
 export function isPositiveDecimal(value) {
   try {
     return parseDecimal(value).coefficient > 0n;

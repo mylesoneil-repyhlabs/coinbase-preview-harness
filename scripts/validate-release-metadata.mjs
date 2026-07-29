@@ -23,6 +23,10 @@ assert(
 );
 const [major, minor] = packageJson.version.split(".");
 assert(
+  major === "1" && minor === "4",
+  "this release line must be delta-coinbase-guard v1.4.x",
+);
+assert(
   packageJson.name === "delta-coinbase-guard",
   "package name must be delta-coinbase-guard",
 );
@@ -48,6 +52,12 @@ assert(
 const nvmrc = (await readFile(path.join(ROOT, ".nvmrc"), "utf8")).trim();
 assert(nvmrc === "22", ".nvmrc must match the Node 22 release floor");
 
+const readme = await readFile(path.join(ROOT, "README.md"), "utf8");
+assert(
+  readme.startsWith(`# Delta Coinbase Guard v${major}.${minor}\n`),
+  "README heading must match package major/minor version",
+);
+
 const skill = await readFile(
   path.join(ROOT, "skills/delta-coinbase-guard/SKILL.md"),
   "utf8",
@@ -57,16 +67,27 @@ assert(
   "skill heading must match package major/minor version",
 );
 
-const schema = await json("config/coinbase-spot-policy.v2.schema.json");
+const schema = await json("config/coinbase-spot-policy.v3.schema.json");
 assert(
   schema.properties?.schema_version?.const ===
-    "delta.coinbase.compilation.v2",
-  "release must contain the v2 policy compilation schema",
+    "delta.coinbase.compilation.v3",
+  "release must contain the v3 policy compilation schema",
 );
 assert(
   schema.properties?.taxonomy_version?.const ===
-    "digital-asset-spot-order.v2",
-  "release must contain the v2 spot-order taxonomy",
+    "digital-asset-spot-order.v3",
+  "release must contain the v3 spot-order taxonomy",
+);
+const policySchema = schema.properties?.policy?.anyOf?.[0];
+assert(
+  policySchema?.required?.includes("market_condition"),
+  "v3 policy schema must close over the optional market condition",
+);
+assert(
+  JSON.stringify(
+    policySchema?.properties?.size?.properties?.operator?.enum,
+  ) === JSON.stringify(["EXACT", "MAX"]),
+  "v3 policy schema must support exact and maximum sizes",
 );
 
 const preview = await json("config/preview-capability-profile.json");
@@ -77,6 +98,10 @@ assert(
 assert(
   preview.create_enabled === false,
   "public Preview capability must keep Coinbase Create disabled",
+);
+assert(
+  preview.max_executions === 1,
+  "public Preview capability must remain one-shot",
 );
 
 const liveSafety = await json("config/execution-safety-profile.json");

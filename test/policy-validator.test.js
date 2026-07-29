@@ -169,7 +169,7 @@ test("a fake READY size cannot be grounded by the source's different size", () =
   compilation.policy.size.value = "4";
   assert.throws(
     () => validateCompilation(compilation, READY_INTENT),
-    /policy\.size\.value does not match the source exact order size/,
+    /policy\.size\.value does not match the source order size bound/,
   );
 });
 

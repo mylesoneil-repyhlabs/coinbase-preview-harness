@@ -64,8 +64,22 @@ export function evaluateSimulatedCoinbasePolicy(parameters, evidence) {
       "the Coinbase size field differs from the authorized side",
     ],
     [
-      evidence.size_value === parameters.exact_size_value,
-      "the size differs from the exact authorized amount",
+      evidence.size_operator === parameters.size_operator,
+      "the size operator differs from the authorized bound",
+    ],
+    [
+      evidence.size_within_limit === true &&
+        (parameters.size_operator === "EXACT"
+          ? compareDecimals(
+              evidence.size_value,
+              parameters.size_value,
+            ) === 0
+          : parameters.size_operator === "MAX" &&
+            compareDecimals(
+              evidence.size_value,
+              parameters.size_value,
+            ) <= 0),
+      "the size is outside the authorized bound",
     ],
     [
       evidence.funding_asset === parameters.funding_asset,
@@ -106,6 +120,25 @@ export function evaluateSimulatedCoinbasePolicy(parameters, evidence) {
               parameters.settlement_value,
             ) >= 0),
       "estimated settlement value violates the authorized bound",
+    ],
+    [
+      evidence.market_condition_reference ===
+        parameters.market_condition_reference,
+      "the market-price reference differs from the authorized condition",
+    ],
+    [
+      evidence.market_condition_operator ===
+        parameters.market_condition_operator,
+      "the market-price operator differs from the authorized condition",
+    ],
+    [
+      evidence.market_condition_value ===
+        parameters.market_condition_value,
+      "the absolute market-price threshold differs from authorization",
+    ],
+    [
+      evidence.market_condition_met === true,
+      "fresh Coinbase market and Preview evidence do not satisfy the authorized market-price condition",
     ],
     [
       evidence.funding_sufficient === true &&
@@ -189,7 +222,7 @@ export class SimulatedMandateAdapter {
 
   async submitPolicy(source) {
     if (source !== COINBASE_SPOT_POLICY_SOURCE) {
-      throw new Error("The simulator accepts only the pinned Coinbase V2 policy");
+      throw new Error("The simulator accepts only the pinned Coinbase V3 policy");
     }
     const policyId = `sim-policy-${digest(source)}`;
     this.policies.set(policyId, source);
@@ -297,6 +330,26 @@ export class SimulatedMandateAdapter {
     const stored = this.intents.get(intentId);
     if (!stored) throw new Error("Intent not found");
     return clone(stored.proof);
+  }
+
+  async verifyProofArtifact({ proof }) {
+    if (
+      proof?.sp1_proof !== "SIMULATED_NO_SP1_PROOF" ||
+      proof?.signed_intent?.signature?.Simulated !==
+        "NOT_A_REAL_DELTA_SIGNATURE"
+    ) {
+      throw new Error(
+        "The simulation adapter accepts only its explicit placeholder proof",
+      );
+    }
+    return {
+      verified: true,
+      cryptographically_verified: false,
+      method: "SIMULATED_BINDING_CHECK_ONLY",
+      verifier_identity: "SIMULATED_LOCAL_TEST_DOUBLE",
+      program_id: null,
+      proof_digest: digest(proof),
+    };
   }
 }
 

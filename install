@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-SKILL_SOURCE="$REPOSITORY_ROOT/skills/delta-coinbase-guard"
 UPGRADE=false
 
 if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != "--upgrade" ]]; }; then
@@ -13,30 +12,57 @@ if (( $# == 1 )); then
   UPGRADE=true
 fi
 
-if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+compatible_node() {
+  local candidate="$1"
+  local candidate_major
+  [[ -x "$candidate" ]] || return 1
+  candidate_major="$(
+    "$candidate" -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null
+  )" || return 1
+  [[ "$candidate_major" =~ ^[0-9]+$ ]] || return 1
+  (( candidate_major >= 22 ))
+}
+
+NODE_BINARY=""
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]]; then
+  if ! compatible_node "$HARNESS_NODE_BINARY"; then
+    echo "HARNESS_NODE_BINARY must point to executable Node.js 22 or newer." >&2
+    exit 1
+  fi
   NODE_BINARY="$HARNESS_NODE_BINARY"
-elif command -v node >/dev/null 2>&1; then
+elif command -v node >/dev/null 2>&1 && \
+  compatible_node "$(command -v node)"; then
   NODE_BINARY="$(command -v node)"
-else
-  echo "Delta Coinbase Guard requires Node.js 22 or newer." >&2
-  echo "Install Node.js, then rerun: $REPOSITORY_ROOT/install" >&2
-  exit 1
+elif [[ -n "${HOME:-}" ]]; then
+  # Codex Desktop may provide Node without adding it to the user's login PATH.
+  # Inspect only the documented per-user Codex runtime cache and accept a
+  # candidate after executing it and enforcing the same major-version floor.
+  for codex_node_candidate in \
+    "$HOME"/.cache/codex-runtimes/*/dependencies/node/bin/node; do
+    if compatible_node "$codex_node_candidate"; then
+      NODE_BINARY="$codex_node_candidate"
+      break
+    fi
+  done
 fi
 
-NODE_MAJOR="$("$NODE_BINARY" -p 'Number(process.versions.node.split(".")[0])')"
-if (( NODE_MAJOR < 22 )); then
-  echo "Delta Coinbase Guard requires Node.js 22 or newer; found $("$NODE_BINARY" --version)." >&2
+if [[ -z "$NODE_BINARY" ]]; then
+  echo "Delta Coinbase Guard requires Node.js 22 or newer." >&2
+  echo "No compatible Node.js was found on PATH or in the Codex runtime cache." >&2
+  echo "Install Node.js 22+, then rerun: $REPOSITORY_ROOT/install" >&2
   exit 1
 fi
 
 NODE_BINARY="$("$NODE_BINARY" -p 'require("node:fs").realpathSync(process.execPath)')"
-NODE_PATH_FILE="$REPOSITORY_ROOT/.delta-coinbase-guard-node"
-if [[ -L "$NODE_PATH_FILE" ]]; then
-  echo "Refusing to write the Node path through a symlink: $NODE_PATH_FILE" >&2
+PACKAGE_VERSION="$(
+  "$NODE_BINARY" -e \
+    'const p = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(String(p.version ?? ""));' \
+    "$REPOSITORY_ROOT/package.json"
+)"
+if [[ ! "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Delta Coinbase Guard package version is invalid." >&2
   exit 1
 fi
-umask 077
-printf '%s\n' "$NODE_BINARY" > "$NODE_PATH_FILE"
 
 if [[ -n "${CODEX_HOME:-}" ]]; then
   SKILLS_ROOT="$CODEX_HOME/skills"
@@ -58,11 +84,84 @@ else
   exit 1
 fi
 
+if [[ -n "${XDG_DATA_HOME:-}" ]]; then
+  USER_DATA_ROOT="$XDG_DATA_HOME"
+elif [[ -n "${HOME:-}" ]]; then
+  USER_DATA_ROOT="$HOME/.local/share"
+else
+  echo "Set XDG_DATA_HOME or HOME so the installer can create its managed harness copy." >&2
+  exit 1
+fi
+if [[ "$USER_DATA_ROOT" != /* ]]; then
+  echo "The user data directory must be an absolute path." >&2
+  exit 1
+fi
+
+MANAGED_PRODUCT_ROOT="$USER_DATA_ROOT/delta/coinbase-guard"
+MANAGED_VERSIONS_ROOT="$MANAGED_PRODUCT_ROOT/versions"
+MANAGED_HARNESS="$MANAGED_VERSIONS_ROOT/v$PACKAGE_VERSION"
+MANAGED_SKILL_SOURCE="$MANAGED_HARNESS/skills/delta-coinbase-guard"
+MANAGED_COPY_SCRIPT="$REPOSITORY_ROOT/scripts/install-managed-copy.mjs"
+
+for managed_directory in "$MANAGED_PRODUCT_ROOT" "$MANAGED_VERSIONS_ROOT"; do
+  if [[ -L "$managed_directory" ]]; then
+    echo "Refusing to use a symlinked managed-install directory: $managed_directory" >&2
+    exit 1
+  fi
+done
+umask 077
+mkdir -p "$MANAGED_VERSIONS_ROOT"
+
+if [[ -e "$MANAGED_HARNESS" || -L "$MANAGED_HARNESS" ]]; then
+  if [[ -L "$MANAGED_HARNESS" || ! -d "$MANAGED_HARNESS" ]]; then
+    echo "Refusing to replace the existing managed-version path: $MANAGED_HARNESS" >&2
+    exit 1
+  fi
+  "$NODE_BINARY" "$MANAGED_COPY_SCRIPT" verify \
+    "$MANAGED_HARNESS" "$PACKAGE_VERSION"
+  "$NODE_BINARY" "$MANAGED_COPY_SCRIPT" verify-source \
+    "$MANAGED_HARNESS" "$REPOSITORY_ROOT" "$PACKAGE_VERSION"
+  "$NODE_BINARY" "$MANAGED_COPY_SCRIPT" set-node \
+    "$MANAGED_HARNESS" "$PACKAGE_VERSION" "$NODE_BINARY"
+  "$NODE_BINARY" \
+    "$MANAGED_HARNESS/scripts/scan-release-content.mjs" \
+    "$MANAGED_HARNESS" \
+    --managed-install
+else
+  MANAGED_STAGING="$MANAGED_VERSIONS_ROOT/.v$PACKAGE_VERSION.install.$$"
+  if [[ -e "$MANAGED_STAGING" || -L "$MANAGED_STAGING" ]]; then
+    echo "Refusing to reuse the existing managed-install staging path." >&2
+    exit 1
+  fi
+  cleanup_managed_staging() {
+    rm -rf -- "$MANAGED_STAGING"
+  }
+  trap cleanup_managed_staging EXIT HUP INT TERM
+  "$NODE_BINARY" "$MANAGED_COPY_SCRIPT" create \
+    "$REPOSITORY_ROOT" \
+    "$MANAGED_STAGING" \
+    "$PACKAGE_VERSION" \
+    "$NODE_BINARY"
+  "$NODE_BINARY" \
+    "$MANAGED_STAGING/scripts/scan-release-content.mjs" \
+    "$MANAGED_STAGING" \
+    --managed-install
+  if ! env HARNESS_NODE_BINARY="$NODE_BINARY" \
+    "$MANAGED_STAGING/run" doctor >/dev/null; then
+    echo "Managed harness validation failed before installation." >&2
+    exit 1
+  fi
+  "$NODE_BINARY" -e \
+    'require("node:fs").renameSync(process.argv[1], process.argv[2])' \
+    "$MANAGED_STAGING" "$MANAGED_HARNESS"
+  trap - EXIT HUP INT TERM
+fi
+
 SKILL_TARGET="$SKILLS_ROOT/delta-coinbase-guard"
 mkdir -p "$SKILLS_ROOT"
 
 if [[ -e "$SKILL_TARGET" || -L "$SKILL_TARGET" ]]; then
-  if [[ -e "$SKILL_TARGET/SKILL.md" ]] && [[ "$SKILL_TARGET/SKILL.md" -ef "$SKILL_SOURCE/SKILL.md" ]]; then
+  if [[ -e "$SKILL_TARGET/SKILL.md" ]] && [[ "$SKILL_TARGET/SKILL.md" -ef "$MANAGED_SKILL_SOURCE/SKILL.md" ]]; then
     echo "Delta Coinbase Guard is already installed at $SKILL_TARGET"
   elif [[
     "$UPGRADE" == "true" &&
@@ -71,7 +170,7 @@ if [[ -e "$SKILL_TARGET" || -L "$SKILL_TARGET" ]]; then
   ]] && grep -Eq '^name:[[:space:]]*delta-coinbase-guard[[:space:]]*$' "$SKILL_TARGET/SKILL.md"; then
     UPGRADE_LINK="$SKILL_TARGET.upgrade.$$"
     trap 'rm -f "$UPGRADE_LINK"' EXIT
-    ln -s "$SKILL_SOURCE" "$UPGRADE_LINK"
+    ln -s "$MANAGED_SKILL_SOURCE" "$UPGRADE_LINK"
     "$NODE_BINARY" -e \
       'require("node:fs").renameSync(process.argv[1], process.argv[2])' \
       "$UPGRADE_LINK" "$SKILL_TARGET"
@@ -87,31 +186,41 @@ if [[ -e "$SKILL_TARGET" || -L "$SKILL_TARGET" ]]; then
     exit 1
   fi
 else
-  ln -s "$SKILL_SOURCE" "$SKILL_TARGET"
+  INSTALL_LINK="$SKILL_TARGET.install.$$"
+  trap 'rm -f "$INSTALL_LINK"' EXIT
+  ln -s "$MANAGED_SKILL_SOURCE" "$INSTALL_LINK"
+  "$NODE_BINARY" -e \
+    'require("node:fs").renameSync(process.argv[1], process.argv[2])' \
+    "$INSTALL_LINK" "$SKILL_TARGET"
+  trap - EXIT
   echo "Installed Delta Coinbase Guard at $SKILL_TARGET"
 fi
 
-env HARNESS_NODE_BINARY="$NODE_BINARY" "$REPOSITORY_ROOT/run" doctor
+env HARNESS_NODE_BINARY="$NODE_BINARY" "$MANAGED_HARNESS/run" doctor
+printf 'Managed harness: %s\n' "$MANAGED_HARNESS"
 
 cat <<'NEXT_STEPS'
 
 Installation complete.
 
-1. Keep this repository in its current location; the installed skill links to it.
+1. The installer created a managed, versioned local copy. You may delete the
+   downloaded archive and extracted release directory.
 2. Codex should detect the skill automatically. If it is absent, fully quit and
    reopen Codex, then start a new chat.
-3. For the partner showcase, paste the complete prompt from:
+3. For the primary conditional BUY/SELL journey, paste the complete prompt
+   from:
 
    docs/COINBASE-CODEX-RECORDING-KIT.md
 
    Or ask:
 
-   Use $delta-coinbase-guard to run the conditional-allocation partner
-   showcase and return every result directly in this chat.
+   Use $delta-coinbase-guard to turn my conditional Coinbase spot request into
+   a closed mandate, pause for my digest authorization, and safely simulate the
+   exact PASS gate with every result in this chat.
 
-4. For generic v1.3 BUY and SELL planning, use Track B of the same recording
-   kit or the copy-paste examples in README.md. The skill will show the closed
-   action and pause for your explicit policy-digest authorization.
+4. To show the separate fixed BLOCK -> RETRY -> PASS control story, ask for
+   the conditional-allocation partner showcase. The skill will label every
+   fixture and stop at execution eligibility.
 
 No Coinbase, Delta, or OpenAI credentials are required for either simulation.
 NEXT_STEPS

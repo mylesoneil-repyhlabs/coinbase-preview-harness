@@ -1,228 +1,234 @@
-# Delta Coinbase Guard v1.3
+# Delta Coinbase Guard v1.4
 
-> Natural-language Coinbase intent becomes a closed, explicitly authorized
-> spot action. The exact proposal and trusted evidence are evaluated before a
-> deterministic controller can release anything.
+> Turn a natural-language Coinbase spot request into a closed mandate, require
+> explicit authorization, evaluate the exact prepared order and evidence, and
+> keep money movement locked unless the result is `PASS`.
 
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
-[**Download the installable skill**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip)
-· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip.sha256)
+[**Download v1.4.0**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.4.0/delta-coinbase-guard-v1.4.0.zip)
+· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.4.0/delta-coinbase-guard-v1.4.0.zip.sha256)
 · [Recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md)
 · [Claim ledger](docs/COINBASE-DEMO-ASSURANCE.md)
 · [Engineering handoff](docs/ENGINEERING-HANDOFF.md)
 
-This is an independent Delta prototype, not a Coinbase product, integration,
-or endorsement.
+This is an independent Delta prototype. It is not a Coinbase product,
+integration, or endorsement. The default flow is a labeled local simulation:
+it uses no credential, contacts no service, creates no order, and moves no
+money.
 
-## The precise capability change
+## Why v1.4 is materially better
 
-Yes: v1.2 was functionally limited to one `ETH-USDC` BUY path. Its compiler
-could parse other pairs and SELL language, but the fixed safety profile,
-proposer, Coinbase payload builder, evidence adapter, and reconciliation path
-could not carry those actions end to end.
+v1.3 established generic spot BUY/SELL support. v1.4 turns that foundation into
+a credible user journey and closes the most important correctness gaps found
+in external-user, partner-engineering, and adversarial review:
 
-v1.3 implements the missing generic action model rather than broadening the
-claim:
+- **Conditional mandates:** authorize an exact amount or a maximum allocation,
+  optionally only when Coinbase's fresh best ask is at or below a BUY threshold
+  or its fresh best bid is at or above a SELL threshold.
+- **Any supported spot pair:** pair and assets are discovered and verified from
+  the account-specific Coinbase product response. There is no static asset
+  allowlist or claimed pair count.
+- **Truthful completion:** a successful simulation ends at
+  `EXECUTION_ELIGIBLE`. It never fabricates `FILLED`, reconciliation, or an
+  exchange outcome.
+- **Stronger Preview verification:** the guard rejects incoherent quote/base
+  arithmetic, crossed or materially divergent Preview books, mismatched
+  totals, stale evidence, warnings, errors, and any constraint drift.
+- **Complete funding evidence:** account pagination must be explicit and
+  complete; duplicate accounts, mixed portfolios, contradictory currencies,
+  unsupported platforms, and insufficient held funds fail closed.
+- **Explicit proof boundary:** production-shaped adapters must supply a
+  cryptographic verifier pinned to a verifier identity and proof program. The
+  built-in simulation is plainly labeled as a non-cryptographic binding check.
+- **Safer onboarding:** the installer creates a private, versioned, integrity-
+  manifested managed copy. The downloaded archive may be deleted afterward.
+  On Codex Desktop it can discover the bundled Node 22 runtime even when
+  `node` is absent from the user's login `PATH`. The managed Coinbase copy and
+  release-facing docs, examples, and panels omit separate Mastra partner
+  collateral.
+- **Strict CLI:** unknown, duplicate, conflicting, or missing arguments fail
+  before a handler runs. Default help shows the safe journey; locked internal
+  execution seams require `help --all`.
 
-- BUY or SELL an exact amount on a dynamically verified Coinbase Advanced
-  `SPOT` pair.
-- BUY is quote-funded and emits only `quote_size`; SELL is base-funded and
-  emits only `base_size`.
-- The required funding asset must already be held as an available Coinbase
-  balance. The guard never silently substitutes USD for USDC, converts another
-  asset, or adds a funding action.
-- Product status, assets, increments, size bounds, best bid/ask, account
-  balance, and Preview evidence are normalized and bound at runtime.
-- A canonical action descriptor carries the pair, side, sizing, funding
-  source, price reference, fee/settlement constraints, expiry, and one-use
-  limit.
-- The application contract surfaces `PASS`, `BLOCK`, or `REVIEW` and emits a
-  digest-bound, tamper-evident receipt for simulated Delta decisions. Only
-  verified `PASS` for the exact evaluated payload can reach the one-use
-  in-memory execution branch.
+## Supported action surface
 
-No static pair count is claimed. The account-specific Coinbase product
-response is authoritative.
+| Dimension | Public v1.4 |
+| --- | --- |
+| Venue | Coinbase Advanced Trade custodial account |
+| Product | Runtime-verified, online, enabled `SPOT` pair |
+| Side | `BUY` or `SELL` |
+| Size | `EXACT` or `MAX` |
+| BUY funds | Held quote asset; Coinbase `quote_size` only |
+| SELL funds | Held base asset; Coinbase `base_size` only |
+| Order | Price-bounded SOR limit IOC; partial fill allowed |
+| Optional condition | BUY best ask `AT_OR_BELOW`; SELL best bid `AT_OR_ABOVE` |
+| Economics | Side-correct slippage, commission, and debit/proceeds bound |
+| Use and validity | One execution; 30–600 seconds after confirmation |
+| Decisions | `PASS`, `BLOCK`, `REVIEW` |
+| Default execution | Labeled fixture simulation, ending at eligibility |
+| Optional Coinbase path | Real View-only reads and Preview, then mandatory stop |
+
+The guard uses only funds already held in the required source asset. It never
+silently substitutes USD for USDC, converts another asset, or adds a funding
+action.
+
+### Deliberately unsupported
+
+The classifier recognizes and rejects, rather than coerces:
+
+- transfers, sends, withdrawals, deposits, and portfolio fund movement;
+- conversions, staking, and onchain swaps;
+- derivatives, futures, perpetuals, leverage, and margin;
+- stop, bracket, GTC, TWAP, scaled, recurring, and balance-relative orders;
+- edits, cancels, unrestricted market orders, and multi-action strategies.
+
+The optional price condition is checked once against fresh evidence before the
+IOC proposal is eligible. This is not a resting order, background market
+monitor, or recurring strategy.
 
 ## What is real, simulated, and locked
 
-| Surface | v1.3 status |
+| Surface | Status |
 | --- | --- |
-| Natural-language classification and closed policy | Implemented locally |
-| Explicit policy-digest authorization pause | Implemented; host must attribute the user message |
-| Generic SPOT BUY/SELL planning | Implemented |
-| Held-funds, product, market, and Preview normalization | Implemented |
+| Natural-language classification and closed action-specific policy | Implemented locally |
+| Explicit policy-digest authorization pause | Implemented; the host must authenticate the user's message |
+| Generic conditional SPOT BUY/SELL planning | Implemented |
+| Product, held-funds, BBO, and Preview normalization | Implemented |
 | Credential-free end-to-end flow | Implemented with labeled fixtures |
-| Real Coinbase Accounts/Product/BBO/Preview | Implemented but not run in this release; requires the user's separate View-only key |
-| Delta policy/evidence adapter | Production-shaped local simulation; not the private Delta implementation |
-| `PASS / BLOCK / REVIEW` receipt | Implemented as a simulated contract artifact |
+| Real Coinbase Accounts/Product/BBO/Preview | Implemented direct REST path; requires the user's separate View-only key |
+| Coinbase MCP | Documented topology only; not the implemented adapter |
+| Delta adapter | Narrow production contract plus local simulation; private Delta not integrated |
+| Simulation receipt | Hash-bound local evidence, not a signature or real SP1 proof |
+| Production proof verification port | Implemented contract; requires the private verifier and pinned identity/program |
 | Coinbase Create Order | Compile-time locked and unreachable |
 | Live order or money movement | Not performed |
 
-The built-in simulation deliberately runs a Coinbase-shaped in-memory executor
-after a verified simulated `PASS` so the gate can be tested end to end. It
-makes no network call, creates no Coinbase order, and moves no money.
-
-## Supported action
-
-| Dimension | Public v1.3 |
-| --- | --- |
-| Venue | Coinbase Advanced Trade custodial account |
-| Product | Runtime-verified online, enabled `SPOT` pair |
-| Side | `BUY` or `SELL` |
-| BUY size/funds | Exact `quote_size`; held quote asset |
-| SELL size/funds | Exact `base_size`; held base asset |
-| Order | Price-bounded SOR limit IOC; partial fill allowed |
-| BUY price/economics | Fresh best ask, maximum upside slippage, commission cap, maximum quote debit |
-| SELL price/economics | Fresh best bid, maximum downside slippage, commission cap, minimum net quote proceeds |
-| Use and validity | One execution; 30–600 seconds after confirmation |
-| Outcomes | `PASS`, `BLOCK`, `REVIEW` |
-| Default | Credential-free, clearly labeled simulation |
-| Optional | View-only Coinbase reads + real Preview, then mandatory stop |
-
-Runtime product checks fail closed on the wrong pair/assets, non-SPOT product,
-offline or restricted trading state, malformed/crossed market, missing
-increments or size bounds, unsupported size, incomplete account pagination,
-wrong funding currency, or insufficient available funds.
-
-### Explicitly unsupported
-
-v1.3 recognizes and rejects, rather than coerces:
-
-- transfers, sends, withdrawals, deposits, and portfolio fund movement;
-- conversions, including USD/USDC conversion;
-- staking and onchain swaps;
-- derivatives, futures, perpetuals, leverage, and margin;
-- stop, bracket, GTC, TWAP, scaled, recurring, and balance-relative orders;
-- unrestricted market orders, edit/cancel, and multi-action strategies.
-
-These are a capability inventory, not implemented actions.
-
 ## Install in Codex
 
-Requirements: macOS or Linux, Node.js 22+, and Codex. No Coinbase, Delta, or
-OpenAI credential is needed for the default simulation.
+Requirements: macOS or Linux and Codex. The installer needs Node.js 22+, but
+first checks the shell `PATH` and then Codex Desktop's per-user runtime cache,
+so most Codex users do not need to install Node separately. No Coinbase, Delta,
+or OpenAI credential is needed for the simulation.
 
-### Download
-
-1. Download
-   [the release bundle](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip)
-   and its
-   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest/download/delta-coinbase-guard-v1.zip.sha256).
-2. Verify and unzip:
+1. Download the pinned
+   [v1.4.0 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.4.0/delta-coinbase-guard-v1.4.0.zip)
+   and
+   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.4.0/delta-coinbase-guard-v1.4.0.zip.sha256).
+2. Verify, unzip, and install:
 
 ```sh
-shasum -a 256 -c delta-coinbase-guard-v1.zip.sha256
-unzip delta-coinbase-guard-v1.zip
-cd delta-coinbase-guard-v1.3.0
+shasum -a 256 -c delta-coinbase-guard-v1.4.0.zip.sha256
+unzip delta-coinbase-guard-v1.4.0.zip
+cd delta-coinbase-guard-v1.4.0
 ./install
 ```
 
-If the executable bit was removed during download, use `bash install`.
+If the executable bit was removed, run `bash install`. The installer:
 
-The installer verifies Node.js, runs the local doctor, and links the skill into
-`${CODEX_HOME}/skills` when set or the normal user-local `~/.agents/skills`.
-It never reads credentials or contacts Coinbase. Keep the extracted folder in
-place because the installed skill links to its matching harness.
+- verifies Node.js and the matching harness version;
+- copies an allowlisted payload to
+  `${XDG_DATA_HOME:-$HOME/.local/share}/delta/coinbase-guard/versions/v1.4.0`;
+- writes and verifies a content manifest with private permissions;
+- atomically links the Codex skill from the managed copy; and
+- never reads credentials or contacts Coinbase.
 
-To upgrade an older extracted release:
+The downloaded archive and extracted folder can be deleted after installation.
+If neither the shell nor Codex runtime cache contains Node.js 22+, the installer
+stops with installation guidance before changing anything.
+To move an existing verified Guard symlink to v1.4:
 
 ```sh
 ./install --upgrade
 ```
 
-The installer retargets only a verified `delta-coinbase-guard` symlink. Restart
-Codex and open a fresh chat if the new skill is not detected immediately.
+Restart Codex and open a fresh chat if the skill is not visible immediately.
 
-### Clone instead
-
-```sh
-git clone https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness.git \
-  "$HOME/.local/share/delta-coinbase-guard"
-"$HOME/.local/share/delta-coinbase-guard/install"
-```
-
-## Use it in Codex
-
-Invoke `$delta-coinbase-guard` and give one complete action. The skill keeps
-the policy, authorization instructions, canonical action, proposed payload,
-funding evidence, Preview, `PASS / BLOCK / REVIEW`, receipt, proof status,
-controller decision, and no-live-order status in chat.
-
-Example BUY:
-
-```text
-Use $delta-coinbase-guard to plan and safely simulate:
-
-Using my isolated Coinbase Advanced portfolio, use exactly 250 USDC to buy SOL
-on SOL-USDC once now with a price-bounded IOC limit order. Partial fill is
-acceptable. Do not pay more than 40 bps above Coinbase's fresh best ask, more
-than 1.25 USDC in commission, or more than 251.25 USDC total. This
-authorization expires 3 minutes after I confirm it.
-```
-
-Example SELL:
-
-```text
-Use $delta-coinbase-guard to plan and safely simulate:
-
-Using my isolated Coinbase Advanced portfolio, sell exactly 0.05000000 BTC on
-BTC-USD once now with a price-bounded IOC limit order. Partial fill is
-acceptable. Do not accept more than 35 bps below Coinbase's fresh best bid, do
-not pay more than 4 USD in commission, and receive at least 3400 USD after
-commission. This authorization expires 3 minutes after I confirm it.
-```
-
-The first response is a draft. Review the displayed policy and canonical
-action. Only a new user-authored message naming the complete displayed policy
-digest authorizes the next step. The harness compares digests; the calling
-host, not this CLI, must authenticate who sent that message.
-
-Terminal equivalents use the checked-in examples:
+To install from a clone instead:
 
 ```sh
+git clone https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness.git
+cd coinbase-preview-harness
+./install
+```
+
+## Try the complete user journey
+
+In a fresh Codex chat, paste:
+
+```text
+Use $delta-coinbase-guard to plan and safely simulate this request:
+
+Using my isolated Coinbase Advanced portfolio, use up to 3000 USDC to buy ETH
+on ETH-USDC once now with a price-bounded IOC limit order. Only if Coinbase's
+fresh best ask is at or below 3000 USDC. Partial fill is acceptable. Do not pay
+more than 35 bps above Coinbase's fresh best ask, more than 15 USDC in
+commission, or more than 3015 USDC total. This authorization expires 10
+minutes after I confirm it.
+
+Keep the draft policy, authorization instruction, canonical action, proposal,
+evidence, BLOCK/REVIEW/PASS decision, proof status, receipt, controller result,
+and no-live-order status directly in this chat. Stop for my explicit policy
+digest authorization before simulating.
+```
+
+The first response is a draft. Review every displayed field. Only a new,
+user-authored message naming the entire displayed policy digest authorizes the
+next step. The harness compares digests; the calling host—not this CLI—must
+authenticate who sent the message.
+
+The skill must return these facts in chat:
+
+- policy, canonical action, funding source, validity, and authorization digest;
+- exact prepared payload and trusted-evidence digests;
+- proposal and Preview `PASS`, `BLOCK`, or `REVIEW`;
+- Delta-contract result, receipt integrity, and proof-verification class;
+- controller disposition and one-time gate state; and
+- `SIMULATION_ONLY`, `COINBASE_CONTACTED=false`,
+  `COINBASE_CREATE_INVOKED=false`, `EXTERNAL_EXECUTOR_INVOKED=false`, and
+  `MONEY_MOVED=false`.
+
+### Terminal equivalent
+
+```sh
+./run version
 ./run doctor
-./run plan --intent-file examples/generic-buy-intent.txt
-./run plan --intent-file examples/generic-sell-intent.txt
+./run plan --intent-file examples/conditional-buy-intent.txt
 ```
 
-After the user separately authorizes the emitted policy digest:
+After the user separately authorizes the printed policy digest:
 
 ```sh
 ./run simulate \
   --plan /absolute/path/from-plan.json \
-  --confirm-policy <exact-user-authorized-policy-digest>
+  --confirm-policy <exact-user-authorized-policy-digest> \
+  --no-artifacts
 ```
 
-The simulation prints every important transition directly and also writes a
-sanitized JSON/HTML report under the ignored local `runtime/` directory. The
-chat result must state `SIMULATION_ONLY`, `COINBASE_CONTACTED=false`,
-`COINBASE_CREATE_INVOKED=false`, `PRODUCTION_DELTA_INVOKED=false`, and
-`MONEY_MOVED=false`.
+Omit `--no-artifacts` to write a private, sanitized JSON/HTML report under the
+ignored `runtime/` directory. Add `--json` for a machine-readable CLI result.
+
+Another supported example is a conditional SELL:
+
+```sh
+./run plan --intent-file examples/conditional-sell-intent.txt
+```
 
 ## Optional real Coinbase Preview
 
-Coinbase documents Advanced Trade Accounts, Products, best bid/ask, and
-Preview as `View` operations; Create Order requires `Trade`. A standard
-normal-user CDP API key is the public credential path—no private Coinbase
-developer access or Coinbase account password is required.
+Coinbase documents Accounts, Products, best bid/ask, and Preview as View
+operations; Create Order requires Trade. A normal user-created CDP API key is
+the public credential path. Do not use a Coinbase account password.
 
-Create a separate Advanced portfolio and a separate ECDSA/ES256 key for this
-probe:
+Create a separate Advanced portfolio and ECDSA/ES256 key for the probe:
 
 - View enabled;
 - Trade and Transfer disabled;
-- narrowest available portfolio and IP restrictions;
-- downloaded JSON stored outside this repository with file mode `0600`.
+- narrowest available portfolio and IP restrictions; and
+- downloaded key JSON outside this repository with file mode `0600`.
 
-Coinbase's documented key-permissions response exposes `can_view`,
-`can_trade`, `can_transfer`, and `portfolio_uuid`. It does not currently
-document a separate `can_receive`; the guard rejects that field if an extended
-response explicitly grants it.
-
-Never paste the key or key path into a public artifact. Supply only its
-absolute local path at command time:
+Never paste the key, secret, or local path into a public artifact. Supply its
+absolute path only at command time:
 
 ```sh
 ./run configure-preview-credentials \
@@ -230,18 +236,18 @@ absolute local path at command time:
 
 ./run bind-execution \
   --plan /absolute/path/from-plan.json \
-  --confirm-policy <exact-user-authorized-policy-digest> \
+  --confirm-policy <authorized-policy-digest> \
   --credential-role preview \
   --key-file /absolute/path/outside/repository/view_key.json
 ```
 
-The bind command emits a credential/portfolio-scoped execution digest. Pause
-again for a new user-authored confirmation, then:
+The bind step emits a credential/portfolio-scoped execution digest. Require a
+new user-authored confirmation before:
 
 ```sh
 ./run confirm-execution \
   --bound-execution /absolute/path/from-bind.json \
-  --confirm-execution <exact-user-authorized-execution-digest> \
+  --confirm-execution <authorized-execution-digest> \
   --key-file /absolute/path/outside/repository/view_key.json
 
 ./run probe-execution \
@@ -250,138 +256,122 @@ again for a new user-authored confirmation, then:
   --key-file /absolute/path/outside/repository/view_key.json
 ```
 
-The probe re-verifies the key, reads complete account evidence, validates the
-exact runtime product and BBO, prepares a side-correct candidate, calls
-Preview, prints the result in chat, and stops. Preview warnings are `REVIEW`;
-errors or constraint failures are `BLOCK`.
+The probe re-verifies the key, consumes complete account and product
+pagination, checks the exact pair and fresh BBO, prepares a side-correct
+candidate, calls Preview, validates its economics, prints the result, and
+stops.
 
-`PREVIEW_PROBE_PASS` means the Coinbase Preview and local checks passed. It is
-not a Delta PASS and cannot release an order.
+`PREVIEW_PROBE_PASS` means Coinbase Preview and local checks passed. It is not
+a Delta `PASS`, cannot release an order, and does not move money.
 
 ### Coinbase MCP boundary
 
-Coinbase also documents a local CLI/MCP for Codex. Its standard namespace
-contains useful reads and `orders_preview`, but also advertises mutating tools
-such as `orders_create`, transfers, and conversions. Do not give a planning
-agent that unrestricted namespace with a Trade key.
+Coinbase also documents local CLI/MCP tooling. Its standard namespace includes
+reads and `orders_preview`, but also mutation tools such as `orders_create`,
+transfers, and conversions. The checked-in implementation uses direct
+View-only REST—not a Coinbase MCP adapter.
 
-Use a host allowlist exposing only product, balance, market, and Preview tools,
-or use this harness's direct View-only REST adapter. The future View+Trade
-executor key belongs behind the external deterministic controller, outside the
-model and MCP context.
+Do not give a planning agent the unrestricted MCP namespace with a Trade key.
+A future topology should expose only allowlisted reads/Preview to the agent;
+the future View+Trade executor key must remain behind the external
+deterministic controller.
 
 ## Decision and evidence model
 
 ```mermaid
 flowchart LR
-  U["Natural-language request"] --> C["Classify action"]
-  C -->|"unsupported"| X["STOP"]
-  C --> P["Closed v2 policy + canonical action"]
-  P --> H["New user-authored digest confirmation"]
-  H --> R["Trusted product + held funds + BBO"]
-  R --> A["Agent proposes exact side-correct action"]
-  A --> V["Coinbase Preview or labeled fixture"]
-  V -->|"Credentialed probe"| Q["PREVIEW_PROBE_PASS / BLOCK / REVIEW<br/>Delta not run; Create locked"]
-  V -->|"Simulation and Preview PASS"| D["Simulated Delta adapter evaluates exact prepared proposal"]
-  D -->|"PASS + same-process proof binding"| G["One-use simulated gate"]
-  D -->|"BLOCK"| B["STOP or one bounded retry"]
-  D -->|"REVIEW"| W["Suspend; gate locked"]
-  G --> E["Simulated executor only"]
+  U["Natural-language request"] --> C["Closed v3 policy and canonical action"]
+  C --> H["User authorizes exact policy digest"]
+  H --> R["Trusted product, funds, BBO, and Preview"]
+  R --> A["Agent proposes exact Coinbase payload"]
+  A --> D["Delta adapter evaluates payload plus evidence"]
+  D -->|"BLOCK"| B["Stop or one bounded retry"]
+  D -->|"REVIEW"| W["Suspend; execution locked"]
+  D -->|"PASS + verified binding"| G["One-use deterministic gate"]
+  G -->|"Public v1.4"| E["Execution eligible only; no executor or order"]
 ```
 
-The evidence and receipt bind:
+The v1.4 evidence contract binds:
 
-- source intent, policy, and authorization instance;
-- canonical action descriptor;
-- exact product, side, size field/value, and funding asset;
-- account/portfolio and credential fingerprints;
-- runtime product, market, and Preview evidence;
-- `preview_id` and Preview request digest; the full simulation additionally
-  binds the prospective Create payload digest;
-- decision, complete failures, proof digest, and receipt digest.
+- source request, closed policy, canonical action, and authorization instance;
+- product, side, size field/operator/value, funding asset, and condition;
+- account, portfolio, and credential fingerprints;
+- runtime product, BBO, funding, and Preview evidence;
+- Preview request, `preview_id`, and prospective Create payload digests;
+- decision, complete failures, proof-verification attestation, and receipt.
 
-Changing the pair, side, amount, size field, source asset, portfolio, Preview,
-or Create bytes changes a bound digest and fails closed.
+Changing a bound field changes a digest and fails closed. `BLOCK` is retryable
+only for structured constraint failures while attempts remain. `REVIEW`,
+expiry, missing proof, verifier mismatch, stale evidence, or any byte mismatch
+stops.
 
-For production, only `PASS` plus independent proof verification may reach a
-real execution gate. The public simulation uses same-process placeholder proof
-material and checks its presence and exact artifact bindings before the
-in-memory gate. `BLOCK` may be classified for a bounded retry only when the
-controller recognizes a structured constraint failure and attempts remain.
-`REVIEW`, expiry, missing proof, or any binding mismatch stops. The generic
-simulator currently evaluates one candidate; the fixed conditional showcase
-separately exercises one bounded retry with labeled fixtures.
+The local simulation receipt is tamper-evident within this test contract; it is
+not independently signed. A production release must use the private Delta
+verifier to produce a cryptographically verified attestation from a pinned
+identity/program and must add an external authenticated user-authorization
+event.
 
-## Conditional-mandate partner showcase
-
-`coinbase-demo` remains a separate presentation fixture:
+## Conditional partner showcase
 
 ```sh
 ./run coinbase-demo --no-artifacts
 ```
 
-It shows a meaningful simulated mandate: allocate up to 3,000 USDC to ETH only
-within price, fee, slippage, exposure, expiry, and one-use constraints. The
-first proposal violates six constraints and receives a bound `BLOCK` receipt.
-The external controller permits one retry; a revised exact proposal receives
-`PASS`; only that digest becomes eligible once in the simulated trace.
+This separate fixture shows an authorized maximum 3,000-USDC ETH allocation.
+The first proposal violates six price, allocation, fee, slippage, and exposure
+constraints and receives a bound `BLOCK`; the external controller permits one
+retry; a corrected exact proposal receives `PASS`; only its digest becomes
+eligible once.
 
-This fixed scenario is not the generic compiler, live market data, a Coinbase
-conditional order, or production Delta. It uses no credential, contacts no
-service, writes no artifact in `--no-artifacts` mode, invokes no external
-executor, and moves no money. Follow the
-[authentic Codex recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md); do not
-fabricate a standalone product UI.
+It is a presentation fixture with simulated market/Preview/portfolio data. It
+is not a live conditional order, production Delta, or a claim about Coinbase
+market prices. No external executor is invoked.
 
-The separate 5-USDC `ETH-USDC BUY` profile is only a future first-live-test
-safety ceiling. It does not constrain generic planning, simulation, or
-View-only Preview and is not the product story.
+The separate 5-USDC/one-order profile is only a future first-live-test blast-
+radius control. It does not constrain the product story, generic planning,
+simulation, or View-only Preview.
 
 ## Security and production boundary
 
-Public v1.3 deliberately cannot place an order. Coinbase Create is protected
-by independent compile-time and capability checks:
+Public v1.4 cannot place an order:
 
 1. the public REST adapter exposes no Create method;
 2. the separate Create transport requires a module-private capability;
-3. LIVE requires a reviewed Delta adapter and verified proof;
-4. a durable grant store must atomically consume one authorization before
-   submission;
-5. the exact serialized body is re-hashed immediately before transport;
-6. ambiguous submission is reconciled by `client_order_id`; it is never
-   blindly retried.
+3. production composition requires a real Delta adapter and pinned proof
+   verifier;
+4. a durable store must atomically consume one external authorization;
+5. the exact serialized body is re-hashed immediately before transport; and
+6. ambiguous submission must reconcile by `client_order_id`, never blind retry.
 
-The checked-in adapter and receipt prove that the public contract is internally
-bound and tamper-evident. They do not prove production Delta identity or
-independently authenticate Coinbase as the source of simulated fixtures. The
-private Delta implementation was not available for this release and must be
-validated against the narrow adapter contract before Create can be enabled.
+Still required before Create can be considered:
 
-The user pre-approval for a future isolated 5-USDC, one-order test authorizes
-credential setup and validation once the key is separately supplied. It does
-not authorize creating a key on the user's behalf or placing the first live
-order.
+- access to and validation against the private Delta implementation;
+- an independent user-authentication/signature event with nonce, audience,
+  expiry, and durable one-time consumption;
+- production receipt signing/verification and key lifecycle;
+- isolated View+Trade credentials and a separately authorized first order.
 
-See:
+The existing pre-approval permits future credential setup inside the isolated
+5-USDC/one-order boundary after the user supplies a key. It does not authorize
+creating a key or placing the first live order.
 
-- [Credential setup](docs/COINBASE-CREDENTIAL-SETUP.md)
-- [Evidence contract](docs/COINBASE-EVIDENCE-CONTRACT.md)
-- [Delta adapter contract](docs/MANDATE-ADAPTER-CONTRACT.md)
-- [Engineering handoff](docs/ENGINEERING-HANDOFF.md)
-- [Security policy](SECURITY.md)
+See [credential setup](docs/COINBASE-CREDENTIAL-SETUP.md),
+[evidence contract](docs/COINBASE-EVIDENCE-CONTRACT.md),
+[Delta adapter contract](docs/MANDATE-ADAPTER-CONTRACT.md),
+[engineering handoff](docs/ENGINEERING-HANDOFF.md), and
+[security policy](SECURITY.md).
 
-## v1.2 migration
+## Upgrade from v1.3
 
-v1.2 plans and confirmations are intentionally not accepted by v1.3. The
-schema, action descriptor, funding evidence, and side-specific economics
-changed materially.
+v1.3 plans are intentionally rejected by v1.4. Conditional/MAX semantics and
+the action/evidence contracts changed materially.
 
-1. Install v1.3 with `./install --upgrade`.
+1. Install with `./install --upgrade`.
 2. Re-run `plan` from the original natural-language request.
-3. Review and explicitly authorize the new v2 policy digest.
-4. If using a credentialed Preview, bind and authorize a new execution digest.
+3. Review and authorize the new v3 policy digest.
+4. For credentialed Preview, bind and authorize a new execution digest.
 
-Do not copy an old digest, confirmation receipt, or plan into v1.3.
+Do not reuse an old policy digest, confirmation, plan, or receipt.
 
 ## Develop and verify
 
@@ -390,40 +380,42 @@ Do not copy an old digest, confirmation receipt, or plan into v1.3.
 pnpm test
 pnpm run check:skill
 pnpm run check:links
+pnpm run check:release
 ```
 
-The suite covers multiple BUY and SELL pairs, USD/USDC non-substitution,
-eight-decimal base sizes, product restrictions, increments and bounds,
-insufficient/wrong funds, incomplete pagination, Preview warnings,
-adversarial descriptor/payload/evidence tampering, exact PASS gating,
-one-use behavior, locked Create, reconciliation, fresh install, and upgrade.
+The suite covers BUY and SELL across multiple quote assets, exact and maximum
+sizing, side-correct conditions, unsupported actions, source-clause smuggling,
+USD/USDC non-substitution, eight-decimal base sizes, pagination, duplicate and
+wrong funds, restricted products, crossed/stale/divergent books, incoherent
+Preview economics, warnings, proof/verifier misbinding, receipt/payload
+tampering, one-use gating, locked Create, recovery, managed install, deletion
+of the downloaded source, and upgrades.
 
 ## Repository map
 
 ```text
-install                                  user-local Codex skill installer
-skills/delta-coinbase-guard/             chat-first guard workflow
-config/coinbase-spot-policy.v2.schema.json
-config/preview-capability-profile.json   generic plan/simulate/Preview scope
-config/execution-safety-profile.json     separate future 5-USDC live ceiling
+install                                  managed user-local installer
+skills/delta-coinbase-guard/             chat-first workflow
+config/coinbase-spot-policy.v3.schema.json
+config/preview-capability-profile.json   planning/simulation/Preview scope
+config/execution-safety-profile.json     future 5-USDC live-test ceiling
 src/intent-compiler.js                   closed natural-language compiler
-src/spot-action.js                       canonical action descriptor
-src/funding.js                           held-asset funding evidence
-src/coinbase-rest.js                     Accounts/Product/BBO/Preview adapter
-src/execution-pipeline.js                deterministic exact-PASS controller
-src/mandate/                             simulated Delta contract and receipts
+src/spot-action.js                       canonical action descriptor v2
+src/funding.js                           complete held-asset evidence
+src/coinbase-rest.js                     direct Accounts/Product/BBO/Preview
+src/execution-policy.js                  proposal and Preview verification
+src/execution-pipeline.js                exact-PASS eligibility controller
+src/mandate/                             Delta contract, simulation, receipts
 src/integration/production-composition.js
-                                           compile-time locked production seam
+                                           compile-time locked Create seam
 test/                                    unit, adversarial, and install tests
-output/coinbase-demo-panels/             authentic-chat companion panels
 runtime/                                 ignored local plans and reports
 ```
 
 ## Official Coinbase references
 
-- [Coinbase for Agents (CLI/MCP)](https://docs.cdp.coinbase.com/coinbase-for-agents/overview)
+- [Coinbase for Agents](https://docs.cdp.coinbase.com/coinbase-for-agents/overview)
 - [Advanced Trade endpoint permissions](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/rest-api)
-- [Advanced Trade order guide](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/guides/orders)
 - [List Accounts](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/accounts/list-accounts)
 - [Get Product](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/products/get-product)
 - [List Products](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/products/list-products)

@@ -1,4 +1,4 @@
-import { canonicalize } from "../evidence.js";
+import { canonicalize, digest } from "../evidence.js";
 
 const STATUS_VALUES = new Set([
   "open",
@@ -36,10 +36,49 @@ export function assertMandateAdapter(adapter) {
     "getStatus",
     "getVerificationOutcome",
     "getProof",
+    "verifyProofArtifact",
   ]) {
     requireFunction(adapter, method);
   }
   return adapter;
+}
+
+export function assertProofVerificationAttestation(
+  attestation,
+  { proof, securityClass },
+) {
+  if (!attestation || typeof attestation !== "object" || Array.isArray(attestation)) {
+    throw new Error("Delta proof verifier omitted its verification attestation");
+  }
+  if (
+    attestation.verified !== true ||
+    attestation.proof_digest !== digest(proof)
+  ) {
+    throw new Error("Delta proof verifier did not verify the exact proof artifact");
+  }
+  if (securityClass === "simulation-only") {
+    if (
+      attestation.cryptographically_verified !== false ||
+      attestation.method !== "SIMULATED_BINDING_CHECK_ONLY" ||
+      attestation.verifier_identity !== "SIMULATED_LOCAL_TEST_DOUBLE" ||
+      attestation.program_id !== null
+    ) {
+      throw new Error("Simulation proof verification attestation is malformed");
+    }
+  } else if (
+    attestation.cryptographically_verified !== true ||
+    typeof attestation.method !== "string" ||
+    !attestation.method ||
+    typeof attestation.verifier_identity !== "string" ||
+    !attestation.verifier_identity ||
+    typeof attestation.program_id !== "string" ||
+    !attestation.program_id
+  ) {
+    throw new Error(
+      "Production Delta proof requires a pinned cryptographic verifier attestation",
+    );
+  }
+  return attestation;
 }
 
 export function assertMandateStatus(status) {

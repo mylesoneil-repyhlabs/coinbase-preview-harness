@@ -55,6 +55,9 @@ export class OrchestratorMandateAdapter {
     orchestratorBearerToken,
     verifierBearerToken,
     bearerToken,
+    proofVerifier,
+    verifierIdentity,
+    proofProgramId,
     fetchImpl = fetch,
     timeoutMs = 20_000,
   }) {
@@ -67,6 +70,17 @@ export class OrchestratorMandateAdapter {
       throw new Error(
         "A trusted action registry implementing registerAction() is required",
       );
+    }
+    if (typeof proofVerifier?.verifyProofArtifact !== "function") {
+      throw new Error(
+        "A cryptographic proof verifier implementing verifyProofArtifact() is required",
+      );
+    }
+    if (typeof verifierIdentity !== "string" || !verifierIdentity) {
+      throw new Error("A pinned verifierIdentity is required");
+    }
+    if (typeof proofProgramId !== "string" || !proofProgramId) {
+      throw new Error("A pinned proofProgramId is required");
     }
     this.name = "delta-orchestrator-verifier";
     this.securityClass = "production-delta-mandate";
@@ -87,6 +101,9 @@ export class OrchestratorMandateAdapter {
     }
     this.signer = signer;
     this.actionRegistry = actionRegistry;
+    this.proofVerifier = proofVerifier;
+    this.verifierIdentity = verifierIdentity;
+    this.proofProgramId = proofProgramId;
     this.orchestratorBearerToken = optionalBearerToken(
       orchestratorBearerToken,
       "orchestratorBearerToken",
@@ -246,6 +263,26 @@ export class OrchestratorMandateAdapter {
         bearerToken: this.verifierBearerToken,
       },
     );
+  }
+
+  async verifyProofArtifact(input) {
+    const result = await this.proofVerifier.verifyProofArtifact({
+      ...input,
+      verifierIdentity: this.verifierIdentity,
+      proofProgramId: this.proofProgramId,
+    });
+    if (
+      result?.verified !== true ||
+      result.cryptographically_verified !== true ||
+      result.verifier_identity !== this.verifierIdentity ||
+      result.program_id !== this.proofProgramId ||
+      result.proof_digest !== digest(input.proof)
+    ) {
+      throw new Error(
+        "Pinned Delta proof verifier rejected or misbound the proof artifact",
+      );
+    }
+    return result;
   }
 }
 

@@ -90,7 +90,7 @@ function credentialBinding(attestation) {
 
 export function createBoundExecution(plan, attestation, confirmPolicyDigest) {
   if (
-    plan?.schema_version !== "delta.coinbase.execution_plan.v2" ||
+    plan?.schema_version !== "delta.coinbase.execution_plan.v3" ||
     plan?.status !== "AWAITING_HUMAN_CONFIRMATION" ||
     digest(plan.policy) !== plan.policy_digest
   ) {

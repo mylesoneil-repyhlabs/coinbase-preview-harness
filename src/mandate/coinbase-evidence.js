@@ -105,6 +105,38 @@ export function extractSimulatedCoinbaseEvidence(
     (settlement.kind === "MAX_QUOTE_DEBIT"
       ? settlementComparison <= 0
       : settlementComparison >= 0);
+  const sizeComparison = compareDecimals(
+    configuration[sizeField],
+    descriptor.size.value,
+  );
+  const sizeWithinLimit =
+    descriptor.size.operator === "EXACT"
+      ? sizeComparison === 0
+      : descriptor.size.operator === "MAX" && sizeComparison <= 0;
+  const marketCondition = descriptor.constraints.market_condition;
+  let marketConditionMet = marketCondition == null;
+  if (marketCondition) {
+    const marketReference =
+      marketCondition.reference === "BEST_ASK"
+        ? market.best_ask
+        : market.best_bid;
+    const previewReference =
+      marketCondition.reference === "BEST_ASK"
+        ? preview.best_ask
+        : preview.best_bid;
+    const marketComparison = compareDecimals(
+      marketReference,
+      marketCondition.value,
+    );
+    const previewComparison = compareDecimals(
+      previewReference,
+      marketCondition.value,
+    );
+    marketConditionMet =
+      marketCondition.operator === "AT_OR_BELOW"
+        ? marketComparison <= 0 && previewComparison <= 0
+        : marketComparison >= 0 && previewComparison >= 0;
+  }
   return {
     category: COINBASE_EVIDENCE_CATEGORY,
     environment: "production",
@@ -117,6 +149,8 @@ export function extractSimulatedCoinbaseEvidence(
     time_in_force: "ioc",
     size_field: sizeField,
     size_value: configuration[sizeField],
+    size_operator: descriptor.size.operator,
+    size_within_limit: sizeWithinLimit,
     limit_price: configuration.limit_price,
     price_reference_value: priceReferenceValue,
     authorized_limit_price: authorizedLimitPrice,
@@ -134,6 +168,10 @@ export function extractSimulatedCoinbaseEvidence(
     settlement_kind: settlement.kind,
     settlement_value: settlement.value,
     settlement_within_limit: settlementWithinLimit,
+    market_condition_reference: marketCondition?.reference ?? "NONE",
+    market_condition_operator: marketCondition?.operator ?? "NONE",
+    market_condition_value: marketCondition?.value ?? "0",
+    market_condition_met: marketConditionMet,
     funding_asset: funding.funding_asset,
     funding_available: funding.available_balance,
     funding_required: funding.required_available,
