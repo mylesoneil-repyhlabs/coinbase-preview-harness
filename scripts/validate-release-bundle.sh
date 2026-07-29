@@ -116,7 +116,11 @@ if [[ ! -d "$MANAGED_HARNESS" ]] || [[ -L "$MANAGED_HARNESS" ]]; then
   echo "Cold install did not create the expected managed version." >&2
   exit 1
 fi
-if [[ "$(cd -P "$INSTALLED_SKILL" && pwd -P)" != "$MANAGED_HARNESS/skills/delta-coinbase-guard" ]]; then
+RESOLVED_INSTALLED_SKILL="$(cd -P "$INSTALLED_SKILL" && pwd -P)"
+RESOLVED_MANAGED_SKILL="$(
+  cd -P "$MANAGED_HARNESS/skills/delta-coinbase-guard" && pwd -P
+)"
+if [[ "$RESOLVED_INSTALLED_SKILL" != "$RESOLVED_MANAGED_SKILL" ]]; then
   echo "Installed skill does not resolve inside the managed version." >&2
   exit 1
 fi
