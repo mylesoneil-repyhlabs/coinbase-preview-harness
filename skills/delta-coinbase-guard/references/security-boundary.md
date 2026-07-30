@@ -1,89 +1,97 @@
-# Security boundary
+# Security and evidence boundary
 
-## Installed code
+## Install integrity
 
-- Install only from the published archive after verifying its SHA-256.
-- v1.4 copies an explicit allowlist into a versioned managed directory and
-  links the skill to that copy; it does not depend on the download afterward.
-- Same-version content drift or tampering must fail installation.
-- Upgrade may retarget only a verified Coinbase Guard symlink.
-- A checksum proves download integrity relative to the published checksum. It
-  is not publisher identity or a code signature.
+- Use the managed copy installed from the published archive after SHA-256
+  verification.
+- Keep the launcher and all referenced paths absolute so restricted `PATH`
+  works after the download/source directory is removed.
+- Treat a checksum as archive-integrity evidence, not publisher identity or a
+  code signature.
+- Stop if `doctor` fails; never fall back to another checkout or hand-written
+  policy logic.
 
-## Credentials
+## View-only credential
 
-- Never request, paste, log, screenshot, or commit private keys, JWTs, bearer
-  tokens, seed phrases, or raw Coinbase responses.
-- Accept a key only by absolute local file path.
-- Require current-user ownership, mode `0600`, regular non-symlink file,
-  bounded size, and location outside the repository and managed install.
-- Validate and read through the same no-follow file descriptor.
-- Planner/Preview credentials are ECDSA/ES256, View-only, no Trade or Transfer,
-  and restricted to one isolated portfolio.
-- The implemented Coinbase path is allowlisted direct REST. Coinbase MCP is
-  documented topology only. Never expose a full mutating MCP namespace to the
-  agent.
-- Any future View+Trade key belongs only in an isolated external executor.
+- View-only is optional. The credential-free dry run is the default.
+- Ask only for an absolute path to a user-managed external key file. Never ask
+  the user to paste a key, secret, JWT, bearer token, seed phrase, or raw API
+  response into chat.
+- Require an owner-only `0600` regular non-symlink file outside the repository
+  and managed install. Read it no-follow with bounded size.
+- Require `can_view=true`, `can_trade=false`, `can_transfer=false`, and
+  `can_receive=false`. Never continue with an over-scoped key.
+- Use key material and permission results only in the current preflight. Do
+  not copy the key or persist a permission attestation, raw header, raw API
+  body, account ID, or portfolio label.
+- The allowlisted direct REST surface is permission status, Accounts, exact
+  Product, BBO, and Preview only. Redirects, retries to a different route,
+  Create, cancel, transfers, conversions, and every mutation are unavailable.
+- Do not expose Coinbase's broader MCP/CLI namespace to the model.
 
 ## Authorization
 
-- The original request is not authorization of the compiled policy.
-- A draft is not authorization.
-- Require a new user-authored message containing the exact displayed digest.
-- Any policy, size operator, market condition, credential, portfolio, expiry,
-  or capability change creates a new digest and requires new approval.
-- Never have the agent type or echo a confirmation as though the user authored
-  it.
-- The CLI checks equality; it does not authenticate message authorship.
-- Production must replace procedural chat attribution with an authenticated
-  approval or Delta-native signer session.
+- The original intent and compiled draft are not authorization.
+- Wait for a new user-authored `Authorize this mandate` after showing the
+  complete plain-English policy.
+- Bind that message internally to the exact saved policy digest.
+- Any policy, side, pair, size, condition, credential scope, portfolio,
+  evidence attempt, expiry, or prospective payload change requires the
+  appropriate new binding.
+- The CLI verifies digest equality but cannot authenticate chat authorship.
+  Production needs an authenticated signer session.
 
-## Evidence
+## Evidence and fail-closed behavior
 
-- The agent may propose but may not author account, product, BBO, Preview,
-  portfolio, credential, verifier, or proof evidence.
-- Require complete pagination, reject duplicate IDs/cursors and ambiguous
-  portfolios, and bind exact held funds.
-- Treat USD, USDC, and all other assets as distinct.
-- Check Preview BBO and economic coherence against the trusted snapshot.
-- Bind the exact prospective Create bytes and Preview request.
-- Fixtures must remain visibly labeled and never be described as Coinbase
-  source evidence.
+- The model may propose; it may not author balances, product facts, BBO,
+  Preview, permission status, decision, retry budget, or receipt.
+- Normalize only allowlisted facts and redact identifiers. Do not display raw
+  private responses.
+- Bind policy, proposal, normalized evidence, exact Preview request,
+  prospective Create bytes, decision, nonce, expiry, and preflight fingerprint
+  in the local receipt.
+- Fail to `REVIEW`, not `PASS`, on stale, missing, malformed, mismatched,
+  replayed, partial, rate-limited, revoked, timed-out, or unavailable evidence.
+- Use `BLOCK` only when verified facts violate policy.
+- Any order-relevant field or Preview fingerprint change invalidates the prior
+  decision and receipt. Never silently substitute another product.
+- An exact nonce retry may return the original result. Reusing a nonce with
+  changed semantics must fail closed.
 
-## Delta and proof
+## Receipt truth
 
-- Public v1.4 production composition is compile-time hard-disabled.
-- Only exact Delta success plus matching independent outcome and proof may
-  reach the gate.
-- Production requires cryptographic verification of the exact proof digest
-  under a pinned verifier identity and pinned proof program ID.
-- Fail closed on open, timeout, failure, expiry, review, missing proof,
-  nonempty-but-unverified proof, malformed attestation, verifier disagreement,
-  or any intent/policy/proposal/evidence mismatch.
-- The simulation accepts only explicit placeholder proof material and reports
-  `cryptographically_verified: false`.
-- A local SHA-256 receipt is tamper-evident, not signed and not a liability
-  guarantee.
+The receipt is versioned local SHA-256 integrity evidence over normalized
+facts and bindings. It helps detect later mutation. It is
+not independent authentication of Coinbase data, and it is not:
 
-## Coinbase execution
+- a production Delta signature or cryptographic proof;
+- authenticated user identity;
+- an execution grant, liability guarantee, exchange order, or fill.
 
-- Checked-in v1.4 cannot invoke Create.
-- The public direct REST adapter exposes reads and Preview, not Create.
-- The separate Create transport and LIVE pipeline require the non-exported
-  capability from reviewed production composition.
-- Preview must precede Create.
-- The evaluated and transmitted UTF-8 Create bytes must match exactly.
-- Consume one durable, transactional grant before submission.
-- If submission may have begun, mark it uncertain and reconcile; never issue a
-  second Create.
-- In simulation, PASS ends at `EXECUTION_ELIGIBLE`; no executor, order, fill,
-  reconciliation, or exchange outcome exists.
+Dry-run proof material is explicitly simulated and not cryptographically
+verified. View-only data arrives over the Coinbase API connection but is not
+independently signed by Coinbase in this harness.
 
-## Reporting
+## Output and local state
 
-- Share only sanitized artifacts.
-- Do not expose raw account IDs, portfolio labels, headers, credentials, local
-  home paths, or unredacted API responses.
-- Always report artifact class, proof-verification method and cryptographic
-  status, executor status, Coinbase contact, Create status, and money movement.
-- Never use `FILLED` or `SUBMITTED` for a simulation.
+- Default output shows the human mandate, proposal, decision and one reason,
+  impact, provenance/freshness, recovery, receipt status, and no-order
+  boundary.
+- Show hashes, full normalized metadata, and private paths only after an
+  explicit details request.
+- Store only bounded redacted history with private filesystem permissions.
+- Never include credentials, raw headers, account IDs, portfolio labels, or
+  raw Coinbase bodies in output, errors, reports, history, exports, or logs.
+- Clear local history only after explicit user confirmation.
+- No remote telemetry is enabled by default.
+
+## Execution
+
+Public v1.5 cannot invoke Coinbase Create. The preflight may serialize
+prospective Create bytes only to bind what would have been eligible. It never
+transmits them.
+
+Every outcome—`PASS`, `BLOCK`, or `REVIEW`—must state that Create is
+unavailable, no external executor ran, no order was submitted, and no money
+moved. A Coinbase Preview is point-in-time evidence, not execution or a price
+guarantee.

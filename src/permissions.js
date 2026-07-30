@@ -12,6 +12,7 @@ import {
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { HARNESS_ROOT, RUNTIME_DIR } from "./paths.js";
+import { reviewError } from "./guard-errors.js";
 
 const PERMISSIONS_URL = "https://api.coinbase.com/api/v3/brokerage/key_permissions";
 const PERMISSIONS_PATH = "/api/v3/brokerage/key_permissions";
@@ -113,7 +114,14 @@ export function assertViewOnlyPermissions(response) {
   if (response?.can_receive === true) failures.push("can_receive must not be true");
   if (!response?.portfolio_uuid) failures.push("portfolio_uuid must be present");
   if (failures.length) {
-    throw new Error(`Key is not safe for the preview harness: ${failures.join("; ")}`);
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_REJECTED",
+      `Key is not safe for the preview harness: ${failures.join("; ")}`,
+      {
+        recovery:
+          "Supply a Coinbase key with View enabled and Trade, Transfer, and Receive disabled.",
+      },
+    );
   }
   return true;
 }
@@ -262,16 +270,42 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
       "Content-Type": "application/json",
     },
     redirect: "error",
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(5_000),
   });
   const responseText = await response.text();
   if (responseText.length > 64 * 1024) {
     throw new Error("Coinbase permission response exceeded the safety limit");
   }
   if (!response.ok) {
-    throw new Error(`Coinbase permission check failed with HTTP ${response.status}`);
+    const code =
+      response.status === 401 || response.status === 403
+        ? "VIEW_ONLY_CREDENTIAL_REJECTED"
+        : response.status === 429
+          ? "VIEW_ONLY_PERMISSION_RATE_LIMITED"
+          : response.status >= 500
+            ? "VIEW_ONLY_PERMISSION_OUTAGE"
+            : "VIEW_ONLY_PERMISSION_CHECK_FAILED";
+    throw reviewError(
+      code,
+      `Coinbase permission check failed with HTTP ${response.status}`,
+      {
+        httpStatus: response.status,
+        retryable: response.status === 429 || response.status >= 500,
+        recovery:
+          response.status === 401 || response.status === 403
+            ? "Reconnect a current View-only key. No order was submitted."
+            : "Retry the View-only permission check later. No order was submitted.",
+      },
+    );
   }
-  return JSON.parse(responseText);
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+      "Coinbase permission response was not valid JSON",
+    );
+  }
 }
 
 export async function verifyTradeKeyFileAndConfigure(

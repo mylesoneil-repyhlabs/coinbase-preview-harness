@@ -184,7 +184,7 @@ test("Preview rechecks the threshold and coherent economic fields", () => {
       base_size: "999999",
     },
   );
-  assert.equal(contradictory.decision, "BLOCK");
+  assert.equal(contradictory.decision, "REVIEW");
   assert.ok(
     contradictory.failures.some(
       ({ code }) => code === "PREVIEW_SIZE_PRICE_INCONSISTENT",

@@ -35,7 +35,27 @@ function proposalDecision(failures) {
   return failures.length ? "BLOCK" : "PASS";
 }
 
+const UNVERIFIABLE_PREVIEW_CODES = new Set([
+  "INVALID_PREVIEW",
+  "PREVIEW_ERRORS",
+  "PREVIEW_WARNINGS_INVALID",
+  "MISSING_PREVIEW_ID",
+  "INVALID_PREVIEW_DECIMAL",
+  "PREVIEW_BBO_INVALID",
+  "PREVIEW_BBO_DRIFT",
+  "PREVIEW_SIZE_PRICE_INCONSISTENT",
+  "PREVIEW_ORDER_TOTAL_INCONSISTENT",
+  "SETTLEMENT_ECONOMICS_INVALID",
+]);
+
 function previewDecision(failures, reviewReasons) {
+  if (
+    failures.some((failure) =>
+      UNVERIFIABLE_PREVIEW_CODES.has(failure.code),
+    )
+  ) {
+    return "REVIEW";
+  }
   if (failures.length) return "BLOCK";
   if (reviewReasons.length) return "REVIEW";
   return "PASS";
@@ -310,8 +330,8 @@ export function evaluateExecutionPreview(policy, proposal, market, preview) {
   const reviewReasons = [];
   if (!isPlainObject(preview)) {
     return {
-      decision: "BLOCK",
-      verdict: "BLOCK",
+      decision: "REVIEW",
+      verdict: "REVIEW",
       failures: [
         issue(
           "INVALID_PREVIEW",

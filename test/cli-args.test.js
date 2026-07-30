@@ -368,8 +368,8 @@ test("default help presents only the safe journey", async () => {
     CLI_PATH,
     "help",
   ]);
-  assert.match(stdout, /Safe start:/);
-  assert.match(stdout, /Optional View-only Coinbase reads and Preview:/);
+  assert.match(stdout, /Start here — no credential required:/);
+  assert.match(stdout, /Optional View-only facts:/);
   assert.doesNotMatch(stdout, /^\s+execute /m);
   assert.match(stdout, /help --all/);
 
@@ -393,9 +393,9 @@ test("unsupported natural language returns actionable closed-policy guidance", a
     assert.fail("incomplete intent unexpectedly produced a policy");
   } catch (error) {
     assert.equal(error.code, 2);
-    assert.match(error.stdout, /REQUEST NOT READY — NO POLICY WAS CREATED/);
-    assert.match(error.stdout, /How to fix it:/);
-    assert.match(error.stdout, /exact pair; BUY or SELL/);
-    assert.match(error.stdout, /discarded nothing and contacted no service/);
+    assert.match(error.stdout, /NEEDS CLARIFICATION — NO POLICY, PREVIEW, OR ORDER/);
+    assert.match(error.stdout, /I can protect this spot request\. I still need:/);
+    assert.match(error.stdout, /State the exact Coinbase pair/);
+    assert.match(error.stdout, /combine these details with your original request/);
   }
 });

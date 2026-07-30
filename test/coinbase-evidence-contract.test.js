@@ -112,6 +112,8 @@ function fixture(intent) {
   );
   const {
     decision: _decision,
+    evidence_issues: _evidenceIssues,
+    policy_failures: _policyFailures,
     failures: _failures,
     ...funding
   } = fundingResult;

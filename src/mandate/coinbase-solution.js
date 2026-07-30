@@ -266,7 +266,7 @@ function assertFunding(funding) {
     "Coinbase funding evidence",
   );
   if (
-    funding.schema_version !== "delta.coinbase.funding_evidence.v1" ||
+    funding.schema_version !== "delta.coinbase.funding_evidence.v2" ||
     funding.complete !== true
   ) {
     throw new Error("Coinbase funding evidence is incomplete");

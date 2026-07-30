@@ -60,6 +60,17 @@ function parseExplicitProduct(intent) {
       quote: match[0],
     };
   }
+  const relation = intent.match(
+    /\b(?:buy|sell)\s+(?:(?:exactly|up to|at most)\s+\$?\s*(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+(?:[A-Z0-9]{2,12}\s+of\s+)?)*([A-Z0-9]{2,12})\s+(?:with|for)\s+([A-Z0-9]{2,12})\b/i,
+  );
+  if (relation) {
+    return {
+      product_id: `${relation[1].toUpperCase()}-${relation[2].toUpperCase()}`,
+      base_asset: relation[1].toUpperCase(),
+      quote_asset: relation[2].toUpperCase(),
+      quote: relation[0],
+    };
+  }
   return null;
 }
 
@@ -171,6 +182,9 @@ export function compileDeterministicIntent(intent) {
   const product = parseExplicitProduct(intent);
   const sizeBound = parseSizeBound(intent);
   const marketCondition = parseMarketCondition(intent);
+  const looseMarketCondition = intent.match(
+    /\bif\s+([A-Z0-9]{2,12})\s+is\s+(?:at\s+or\s+)?(below|above)\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(dollars?|USD|USDC)?\b/i,
+  );
   const lower = intent.toLowerCase();
   const actionText = lower.replaceAll(/do not sell|never sell/g, "");
   const hasBuy = /\bbuy\b/.test(actionText);
@@ -183,7 +197,7 @@ export function compileDeterministicIntent(intent) {
   );
   const partialFillQuote = matchQuote(
     intent,
-    /\bpartial fill(?:s)? (?:(?:is|are) )?(?:acceptable|allowed)\b/i,
+    /\b(?:partial fill(?:s)? (?:(?:is|are) )?(?:acceptable|allowed)|allow partial fills?)\b/i,
   );
   const slippageMatch = intent.match(
     /\b(?:do not (?:pay|accept)|never (?:pay|accept)|not) more than\s+(\d+)\s+bps\s+(?:above|below)\b/i,
@@ -191,6 +205,9 @@ export function compileDeterministicIntent(intent) {
   const commission = parseNamedLimit(intent, "(?:in\\s+)?(?:commission|fees?)");
   const total = parseNamedLimit(intent, "total");
   const minimumProceeds = parseMinimumProceeds(intent);
+  const heldFunding = intent.match(
+    /\busing\s+(?:only\s+)?held\s+([A-Z0-9]{2,12})\b/i,
+  );
   const settlement =
     side === "BUY" ? total : side === "SELL" ? minimumProceeds : null;
   const ttl = parseTtl(intent);
@@ -213,7 +230,7 @@ export function compileDeterministicIntent(intent) {
       unsupported(
         "SLIPPAGE_OUTSIDE_CAPABILITY",
         slippageMatch[0],
-        "A price bound must remain strictly positive; v1.4 supports at most 9999 bps.",
+        "A price bound must remain strictly positive; this release supports at most 9999 bps.",
       ),
     );
   }
@@ -222,7 +239,7 @@ export function compileDeterministicIntent(intent) {
       unsupported(
         "EXPIRY_OUTSIDE_CAPABILITY",
         ttl.quote,
-        "v1.4 authorization validity must be between 30 and 600 seconds.",
+        "Authorization validity must be between 30 and 600 seconds.",
       ),
     );
   }
@@ -304,6 +321,17 @@ export function compileDeterministicIntent(intent) {
       issue("EXECUTION_COUNT_REQUIRED", "", "State that the authorization is for one execution."),
     );
   }
+  if (looseMarketCondition && !marketCondition) {
+    ambiguities.push(
+      issue(
+        "MARKET_CONDITION_NEEDS_PRECISION",
+        looseMarketCondition[0],
+        side === "SELL"
+          ? "State the condition as Coinbase's fresh best bid at or above an exact price and quote asset."
+          : "State the condition as Coinbase's fresh best ask at or below an exact price and quote asset.",
+      ),
+    );
+  }
 
   if (product && sizeBound && side === "BUY" && sizeBound.asset !== product.quote_asset) {
     ambiguities.push(
@@ -322,6 +350,19 @@ export function compileDeterministicIntent(intent) {
         `A SELL of ${product.product_id} must be sized in ${product.base_asset}.`,
       ),
     );
+  }
+  if (product && side && heldFunding) {
+    const expectedFunding =
+      side === "BUY" ? product.quote_asset : product.base_asset;
+    if (heldFunding[1].toUpperCase() !== expectedFunding) {
+      ambiguities.push(
+        issue(
+          "FUNDING_ASSET_MISMATCH",
+          heldFunding[0],
+          `A ${side} of ${product.product_id} must use held ${expectedFunding}; no conversion or substitution is allowed.`,
+        ),
+      );
+    }
   }
   for (const value of [commission, settlement]) {
     if (product && value && value.asset !== product.quote_asset) {

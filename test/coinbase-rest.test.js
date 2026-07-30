@@ -99,7 +99,12 @@ test("direct adapter fails closed on redirects, non-JSON, and HTTP errors", asyn
   });
   await assert.rejects(
     () => adapter.getBestBidAsk("ETH-USDC"),
-    /permission denied/,
+    (error) => {
+      assert.equal(error.code, "COINBASE_CREDENTIAL_REJECTED");
+      assert.equal(error.httpStatus, 403);
+      assert.doesNotMatch(error.message, /permission denied/);
+      return true;
+    },
   );
 });
 

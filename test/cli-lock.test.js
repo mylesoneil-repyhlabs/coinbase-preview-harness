@@ -66,7 +66,22 @@ test("reconciliation is also locked before reading credentials", async () => {
   assert.equal(result.stdout, "");
 });
 
-test("plan prints an absolute artifact path for an installed skill handoff", async () => {
+test("plan hides operational paths by default and reveals one for an installed skill handoff on request", async () => {
+  const compact = await execFileAsync(
+    process.execPath,
+    [
+      CLI_PATH,
+      "plan",
+      "--intent-file",
+      EXAMPLE_INTENT_PATH,
+      "--compiler",
+      "deterministic",
+    ],
+    { cwd: tmpdir() },
+  );
+  assert.doesNotMatch(compact.stdout, /^Plan: /m);
+  assert.doesNotMatch(compact.stdout, /^Policy digest: /m);
+
   const result = await execFileAsync(
     process.execPath,
     [
@@ -76,6 +91,7 @@ test("plan prints an absolute artifact path for an installed skill handoff", asy
       EXAMPLE_INTENT_PATH,
       "--compiler",
       "deterministic",
+      "--details",
     ],
     { cwd: tmpdir() },
   );

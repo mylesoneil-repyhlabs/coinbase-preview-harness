@@ -46,6 +46,9 @@ function normalizeUseCount(match) {
   return quote === "twice" || quote.startsWith("two ") ? "2" : "1";
 }
 
+const PRODUCT_EXPRESSION =
+  /\b(?:([A-Z0-9]{2,12})[-/]([A-Z0-9]{2,12})|(?:buy|sell)\s+(?:(?:exactly|up to|at most)\s+\$?\s*(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+(?:[A-Z0-9]{2,12}\s+of\s+)?)*([A-Z0-9]{2,12})\s+(?:with|for)\s+([A-Z0-9]{2,12}))\b/gi;
+
 const MATERIAL_CONSTRAINTS = Object.freeze([
   {
     field: "policy.size.value",
@@ -60,11 +63,13 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
   {
     field: "policy.product_id",
     label: "Coinbase product",
-    expression: /\b([A-Z0-9]{2,12})[-/]([A-Z0-9]{2,12})\b/gi,
+    expression: PRODUCT_EXPRESSION,
     include: (_intent, match) =>
       match[0].toLocaleLowerCase("en-US") !== "price-bounded",
     normalize: (match) =>
-      `${match[1].toUpperCase()}-${match[2].toUpperCase()}`,
+      `${(match[1] ?? match[3]).toUpperCase()}-${(
+        match[2] ?? match[4]
+      ).toUpperCase()}`,
     policyValue: (policy) => policy.product_id,
   },
   {
@@ -87,7 +92,7 @@ const MATERIAL_CONSTRAINTS = Object.freeze([
     field: "policy.partial_fill_policy",
     label: "partial-fill policy",
     expression:
-      /\b(?:partial fill(?:s)? (?:(?:is|are) )?(?:not )?(?:acceptable|allowed)|full fill (?:is )?required)\b/gi,
+      /\b(?:partial fill(?:s)? (?:(?:is|are) )?(?:not )?(?:acceptable|allowed)|allow partial fills?|full fill (?:is )?required)\b/gi,
     normalize: normalizePartialFill,
     policyValue: (policy) => policy.partial_fill_policy,
   },
@@ -188,8 +193,8 @@ export function findRepeatedMaterialConstraints(intent) {
         : "DUPLICATE_MATERIAL_CONSTRAINT",
       source_text: matches.map((match) => match.quote).join(" | "),
       reason: conflicting
-        ? `The ${definition.label} has conflicting source statements; v1.4 requires exactly one authorized value.`
-        : `The ${definition.label} is stated more than once; v1.4 requires exactly one source statement even when the values match.`,
+        ? `The ${definition.label} has conflicting source statements; the Guard requires exactly one authorized value.`
+        : `The ${definition.label} is stated more than once; the Guard requires exactly one source statement even when the values match.`,
     });
   }
   return issues;
@@ -232,7 +237,11 @@ const NON_MATERIAL_LANGUAGE = new Set([
 
 const RECOGNIZED_LANGUAGE_PATTERNS = Object.freeze([
   /\busing my isolated Coinbase Advanced portfolio\b/gi,
+  /\busing\s+(?:only\s+)?held\s+[A-Z0-9]{2,12}\b/gi,
   /\b(?:buy|sell)\s+(?:some\s+)?[A-Z0-9]{2,12}\b/gi,
+  /\b(?:buy|sell)\s+(?:(?:exactly|up to|at most)\s+\$?\s*\d+(?:\.\d+)?\s+[A-Z0-9]{2,12}\s+of\s+)?[A-Z0-9]{2,12}\s+on Coinbase\b/gi,
+  /\bif\s+[A-Z0-9]{2,12}\s+is\s+(?:at\s+or\s+)?(?:below|above)\s+\$?\s*\d+(?:\.\d+)?\s*(?:dollars?|USD|USDC)?\b/gi,
+  /\bof\s+[A-Z0-9]{2,12}\s+on\b/gi,
   /\bCoinbase(?:['’]s)? fresh best (?:ask|bid)\b/gi,
   /\bafter I confirm it\b/gi,
 ]);

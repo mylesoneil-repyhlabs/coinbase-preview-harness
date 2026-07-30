@@ -1,6 +1,6 @@
 # Delta Mandate adapter contract
 
-Delta Coinbase Guard v1.4 has one application boundary between the Coinbase
+Delta Coinbase Guard v1.5 has one application boundary between the Coinbase
 controller and Delta. The simulation adapter and a future production adapter
 implement the same eight-operation port:
 
@@ -90,12 +90,16 @@ fail-closed.
 - `PASS` requires local Coinbase checks plus terminal Delta success, matching
   independent outcome, exact proof bindings, and a successful proof-verifier
   attestation.
-- `BLOCK` represents a deterministic constraint failure, Preview error,
-  terminal Delta failure, or expiry.
-- `REVIEW` represents a Preview warning or a bound terminal adapter review.
+- `BLOCK` represents verified violation of an authorized constraint, terminal
+  Delta constraint failure, or semantic nonce misuse.
+- `REVIEW` represents missing, stale, malformed, mismatched, rate-limited, or
+  otherwise unverifiable evidence; expiry; a Preview warning; or a bound
+  terminal adapter review.
 
 A Preview warning stops before Delta. Infrastructure, verifier, cryptography,
-schema, and binding errors are hard stops, not `REVIEW` and never `PASS`.
+schema, and binding errors are hard stops and never `PASS`; the chat-facing
+Guard projects safe evidence/provider failures into `REVIEW — unable to
+verify` while retaining typed local codes.
 
 The adapter `review` state is an application-contract state. It is not a claim
 that private Delta currently exposes that native vocabulary.
@@ -185,6 +189,13 @@ Every structured result carries `delta.coinbase.decision_receipt.v3`, binding:
 The simulation receipt is tamper-evident under local SHA-256 recomputation. It
 is not signed and does not establish production source authenticity or
 liability.
+
+The separate `delta.coinbase.guard_receipt.v1` is the v1.5 user-facing
+preflight/history artifact. It binds Guard mode, nonce, policy, proposal,
+normalized evidence, exact Preview request, prospective Create payload,
+preflight fingerprint, decision, and expiry. It is also local SHA-256
+integrity evidence, not a production Delta signature or independent Coinbase
+source authentication.
 
 ## Retry contract
 

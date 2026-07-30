@@ -1,7 +1,7 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.4.0",
-  "description": "Generic mandate-gated Coinbase Advanced spot BUY/SELL planner, Preview guard, and locked executor reference.",
+  "version": "1.5.0",
+  "description": "Chat-native mandate-gated Coinbase spot BUY/SELL dry-run and optional View-only preflight guard.",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,6 +17,8 @@
     "mastra-demo": "node src/cli.js mastra-demo",
     "plan": "node src/cli.js plan",
     "simulate": "node src/cli.js simulate",
+    "preflight": "node src/cli.js preflight",
+    "history": "node src/cli.js history",
     "configure-execution": "node src/cli.js configure-execution",
     "bind-execution": "node src/cli.js bind-execution",
     "confirm-execution": "node src/cli.js confirm-execution",

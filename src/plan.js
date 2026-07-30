@@ -109,7 +109,8 @@ export async function createExecutionPlan(
     },
     confirmation: {
       required: true,
-      instruction: `Review the canonical action and every closed constraint, then authorize policy digest ${policyDigest} in a new message.`,
+      instruction:
+        'Review every displayed constraint, then reply “Authorize this mandate” in a new message. The host must bind that message to this exact policy digest.',
     },
   };
 }
@@ -127,7 +128,7 @@ export async function readExecutionPlan(filePath) {
   const plan = JSON.parse(raw);
   if (plan.schema_version !== "delta.coinbase.execution_plan.v3") {
     throw new Error(
-      "Unsupported execution plan schema; pre-v1.4 plans must be recompiled under v1.4",
+      "Unsupported execution plan schema; recompile the request under the installed v1.5 Guard",
     );
   }
   return plan;

@@ -80,6 +80,7 @@ REQUIRED_RELEASE_PATHS=(
   "docs/COINBASE-EVIDENCE-CONTRACT.md"
   "docs/ENGINEERING-HANDOFF.md"
   "docs/MANDATE-ADAPTER-CONTRACT.md"
+  "docs/SPRINT-LOG.md"
   "examples/conditional-buy-intent.txt"
   "examples/conditional-sell-intent.txt"
   "examples/first-live-intent.txt"
@@ -88,7 +89,7 @@ REQUIRED_RELEASE_PATHS=(
   "examples/recording-v1.3-buy-intent.txt"
   "examples/recording-v1.3-sell-intent.txt"
   "output/coinbase-demo-panels"
-  "output/coinbase-v1.4-capability-panels"
+  "output/coinbase-v1.5-trust-panels"
   "skills"
   "src"
   "test"
@@ -157,18 +158,23 @@ REQUIRED_FILES=(
   "config/preview-capability-profile.json"
   "config/execution-safety-profile.json"
   "src/cli.js"
+  "src/preflight.js"
+  "src/preflight-presentation.js"
+  "src/guard-receipt.js"
+  "src/dry-run-history.js"
   "src/funding.js"
   "src/spot-action.js"
   "src/mandate/controller.js"
   "docs/COINBASE-CREDENTIAL-SETUP.md"
   "docs/COINBASE-CODEX-RECORDING-KIT.md"
   "docs/COINBASE-DEMO-ASSURANCE.md"
+  "docs/SPRINT-LOG.md"
   "examples/generic-buy-intent.txt"
   "examples/generic-sell-intent.txt"
   "examples/conditional-buy-intent.txt"
   "examples/conditional-sell-intent.txt"
   "output/coinbase-demo-panels/00-overview.svg"
-  "output/coinbase-v1.4-capability-panels/01-v1-4-action-inventory.svg"
+  "output/coinbase-v1.5-trust-panels/01-start-protected.svg"
   "skills/delta-coinbase-guard/SKILL.md"
   "skills/delta-coinbase-guard/agents/openai.yaml"
   "skills/delta-coinbase-guard/scripts/run"
@@ -209,7 +215,7 @@ while IFS= read -r archive_path; do
     pnpm-workspace.yaml|install|run|\
     config/*|docs/*|examples/*|skills/*|src/*|test/*|\
     output/coinbase-demo-panels/*|\
-    output/coinbase-v1.4-capability-panels/*|\
+    output/coinbase-v1.5-trust-panels/*|\
     scripts/build-release-bundle.sh|\
     scripts/check-local-links.mjs|\
     scripts/generate-coinbase-demo-panels.mjs|\

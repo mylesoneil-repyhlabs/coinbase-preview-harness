@@ -97,7 +97,7 @@ function mandateFixture() {
   };
   const collectedAt = FIXED_NOW.toISOString();
   const fundingUnsigned = {
-    schema_version: "delta.coinbase.funding_evidence.v1",
+    schema_version: "delta.coinbase.funding_evidence.v2",
     portfolio_fingerprint: "portfolio-1",
     funding_asset: "USDC",
     required_available: "5.50",

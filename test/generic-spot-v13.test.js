@@ -202,29 +202,33 @@ test("SELL funding binds the held base asset and preserves eight decimals", () =
   assert.equal(result.required_available, "0.05000000");
 });
 
-for (const [name, accountResponse, code] of [
+for (const [name, accountResponse, code, expectedDecision] of [
   [
     "insufficient balance",
     accounts({ currency: "USDC", value: "10" }),
     "INSUFFICIENT_AVAILABLE_BALANCE",
+    "BLOCK",
   ],
   [
     "wrong source currency",
     accounts({ currency: "USD", value: "1000" }),
     "FUNDING_ASSET_NOT_HELD",
+    "BLOCK",
   ],
   [
     "inactive account",
     accounts({ currency: "USDC", value: "1000", active: false }),
     "FUNDING_ASSET_NOT_HELD",
+    "BLOCK",
   ],
   [
     "incomplete pagination",
     accounts({ currency: "USDC", value: "1000", hasNext: true }),
     "ACCOUNTS_EVIDENCE_INCOMPLETE",
+    "REVIEW",
   ],
 ]) {
-  test(`${name} BLOCKS funding evidence`, () => {
+  test(`${name} returns ${expectedDecision} funding evidence`, () => {
     const policy = compileDeterministicIntent(
       buyIntent({
         base: "SOL",
@@ -233,12 +237,12 @@ for (const [name, accountResponse, code] of [
       }),
     ).policy;
     const result = evaluateCoinbaseFunding(policy, accountResponse);
-    assert.equal(result.decision, "BLOCK");
+    assert.equal(result.decision, expectedDecision);
     assert.ok(result.failures.some((failure) => failure.code === code));
   });
 }
 
-test("funding rejects missing pagination status and duplicate account IDs", () => {
+test("funding reviews missing pagination status and duplicate account IDs", () => {
   const policy = compileDeterministicIntent(
     buyIntent({
       base: "SOL",
@@ -257,7 +261,7 @@ test("funding rejects missing pagination status and duplicate account IDs", () =
   const duplicate = accounts({ currency: "USDC", value: "126" });
   duplicate.accounts.push(structuredClone(duplicate.accounts[0]));
   const duplicatedResult = evaluateCoinbaseFunding(policy, duplicate);
-  assert.equal(duplicatedResult.decision, "BLOCK");
+  assert.equal(duplicatedResult.decision, "REVIEW");
   assert.ok(
     duplicatedResult.failures.some(
       ({ code }) => code === "DUPLICATE_ACCOUNT_ID",

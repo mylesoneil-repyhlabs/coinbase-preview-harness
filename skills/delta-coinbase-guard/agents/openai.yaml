@@ -1,4 +1,4 @@
 interface:
   display_name: "Delta Coinbase Guard"
-  short_description: "Authorize and verify Coinbase spot actions"
-  default_prompt: "Use $delta-coinbase-guard to turn my conditional Coinbase spot request into a reviewable mandate and safely simulate its exact PASS gate."
+  short_description: "Protected Coinbase spot dry runs"
+  default_prompt: "Use $delta-coinbase-guard to turn my Coinbase spot request into a mandate I can review, then run a protected dry run; no order can be sent."

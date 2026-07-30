@@ -205,7 +205,7 @@ test("SELL Preview passes only above the net-proceeds and price floors", () => {
   );
 });
 
-test("Preview warnings produce REVIEW while errors and fee drift BLOCK", () => {
+test("Preview warnings and malformed errors produce REVIEW before fee policy evaluation", () => {
   const proposal = proposeSpotOrder(buyPolicy, buyMarket).action;
   const base = {
     order_total: "250",
@@ -238,7 +238,7 @@ test("Preview warnings produce REVIEW while errors and fee drift BLOCK", () => {
       errs: ["INSUFFICIENT_FUND"],
     },
   );
-  assert.equal(block.decision, "BLOCK");
+  assert.equal(block.decision, "REVIEW");
   assert.ok(
     block.failures.some(
       ({ code }) => code === "COMMISSION_CAP_EXCEEDED",

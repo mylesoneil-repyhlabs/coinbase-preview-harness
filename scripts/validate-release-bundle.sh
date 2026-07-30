@@ -177,7 +177,8 @@ validate_generic_simulation() {
       PATH="/usr/bin:/bin" \
       "$INSTALLED_SKILL/scripts/run" plan \
       --intent-file "$MANAGED_HARNESS/$intent_file" \
-      --compiler deterministic
+      --compiler deterministic \
+      --details
   )"
   printf '%s\n' "$plan_output" | grep -Fq "AWAITING_HUMAN_CONFIRMATION"
   plan_path="$(
@@ -197,12 +198,13 @@ validate_generic_simulation() {
     env -i \
       HOME="$COLD_HOME" \
       PATH="/usr/bin:/bin" \
-      "$INSTALLED_SKILL/scripts/run" simulate \
+      "$INSTALLED_SKILL/scripts/run" preflight \
       --plan "$plan_path" \
-      --confirm-policy "$policy_digest"
+      --confirm-policy "$policy_digest" \
+      --details
   )"
   for expected_line in \
-    "SIMULATION_ONLY" \
+    "DRY RUN · SIMULATED FACTS · NO ORDER SUBMITTED" \
     "\"side\":\"$expected_side\"" \
     "\"field\":\"$expected_size_field\"" \
     "\"operator\":\"MAX\"" \

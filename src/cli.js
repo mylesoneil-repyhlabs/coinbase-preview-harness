@@ -5,7 +5,12 @@ import { parseCliArguments } from "./cli-args.js";
 import {
   createCoinbaseExecutionAdapter,
   createCoinbaseRestAdapter,
+  createCoinbaseViewOnlyPreflightAdapter,
 } from "./coinbase-rest.js";
+import {
+  clearHistory,
+  readHistory,
+} from "./dry-run-history.js";
 import { runCoinbaseDemo } from "./coinbase-demo.js";
 import { runExecutionPipeline } from "./execution-pipeline.js";
 import {
@@ -53,6 +58,12 @@ import {
 import { recoverExecution } from "./recovery.js";
 import { sanitize } from "./sanitize.js";
 import { simulateExecution } from "./simulator.js";
+import { runGuardPreflight } from "./preflight.js";
+import {
+  formatGuardResult,
+  formatHistory,
+  formatMandateCaptured,
+} from "./preflight-presentation.js";
 
 function optionValue(args, name) {
   return args[name];
@@ -96,31 +107,87 @@ function printPlanSummary(plan) {
 }
 
 function printCompilationGuidance(compilation) {
-  const problems = [
-    ...(compilation.ambiguities ?? []).map((item) => ({
-      code: item.code,
-      detail: item.question,
-    })),
-    ...(compilation.unsupported_constraints ?? []).map((item) => ({
-      code: item.code,
-      detail: item.reason,
-    })),
+  const unsupported = compilation.unsupported_constraints ?? [];
+  if (unsupported.length) {
+    process.stdout.write(
+      "\nUNSUPPORTED REQUEST — NO POLICY, COINBASE REQUEST, OR ORDER\n",
+    );
+    process.stdout.write(
+      "The Guard will not silently drop these instructions:\n",
+    );
+    for (const problem of unsupported) {
+      process.stdout.write(
+        `- ${problem.source_text ? `“${problem.source_text}” — ` : ""}${problem.reason}\n`,
+      );
+    }
+    process.stdout.write(
+      "\nTry one Coinbase Advanced spot BUY or SELL using held funds. This version cannot submit an order.\n\n",
+    );
+    return;
+  }
+
+  const ambiguities = compilation.ambiguities ?? [];
+  const groups = [
+    {
+      codes: new Set([
+        "SIDE_REQUIRED",
+        "PRODUCT_REQUIRED",
+        "EXACT_SIZE_REQUIRED",
+        "BUY_SIZE_ASSET_MISMATCH",
+        "SELL_SIZE_ASSET_MISMATCH",
+      ]),
+      label: "Action and amount",
+    },
+    {
+      codes: new Set([
+        "ORDER_TYPE_REQUIRED",
+        "PARTIAL_FILL_POLICY_REQUIRED",
+        "SLIPPAGE_CAP_REQUIRED",
+      ]),
+      label: "Execution protection",
+    },
+    {
+      codes: new Set([
+        "COMMISSION_CAP_REQUIRED",
+        "MAX_QUOTE_DEBIT_REQUIRED",
+        "MIN_NET_PROCEEDS_REQUIRED",
+        "LIMIT_ASSET_MISMATCH",
+      ]),
+      label: "Fee and settlement limits",
+    },
+    {
+      codes: new Set([
+        "MARKET_CONDITION_NEEDS_PRECISION",
+        "MARKET_CONDITION_SIDE_MISMATCH",
+        "MARKET_CONDITION_ASSET_MISMATCH",
+      ]),
+      label: "Price condition",
+    },
+    {
+      codes: new Set(["EXPIRY_REQUIRED", "EXECUTION_COUNT_REQUIRED"]),
+      label: "Validity",
+    },
   ];
-  process.stdout.write("\nREQUEST NOT READY — NO POLICY WAS CREATED\n");
-  for (const problem of problems) {
-    process.stdout.write(`- ${problem.code}: ${problem.detail}\n`);
+  process.stdout.write(
+    "\nNEEDS CLARIFICATION — NO POLICY, PREVIEW, OR ORDER\n",
+  );
+  process.stdout.write(
+    "I can protect this spot request. I still need:\n",
+  );
+  const shown = new Set();
+  for (const group of groups) {
+    const details = ambiguities.filter((item) => group.codes.has(item.code));
+    if (!details.length) continue;
+    details.forEach((item) => shown.add(item));
+    process.stdout.write(
+      `- ${group.label}: ${details.map((item) => item.question).join(" ")}\n`,
+    );
+  }
+  for (const item of ambiguities) {
+    if (!shown.has(item)) process.stdout.write(`- ${item.question}\n`);
   }
   process.stdout.write(
-    "\nHow to fix it: restate one complete action with an exact pair; BUY or SELL; " +
-      "exactly or up to plus its funding asset; price-bounded IOC; partial-fill choice; " +
-      "side-correct slippage, commission, and debit/proceeds limits; one use; and expiry.\n",
-  );
-  process.stdout.write(
-    "Optional condition: BUY only if fresh best ask is at or below a quote-asset price, " +
-      "or SELL only if fresh best bid is at or above one.\n",
-  );
-  process.stdout.write(
-    "Run `help` for a copyable supported request. The guard discarded nothing and contacted no service.\n\n",
+    "\nReply once in Codex; the installed skill will combine these details with your original request. No policy exists yet, no service was contacted, and this version cannot send an order.\n\n",
   );
 }
 
@@ -210,16 +277,16 @@ async function doctor(args = {}) {
       requiredFiles.map((file) => access(path.join(HARNESS_ROOT, file))),
     );
     checks.push({
-      name: "v1.4 contracts and skill",
+      name: "v1.5 contracts and skill",
       status: "PASS",
       detail:
         "Generic spot policy, Preview capability, live safety profile, and installable skill are present.",
     });
   } catch {
     checks.push({
-      name: "v1.4 contracts and skill",
+      name: "v1.5 contracts and skill",
       status: "FAIL",
-      detail: "One or more required v1.4 files are missing.",
+      detail: "One or more required v1.5 files are missing.",
     });
   }
   checks.push({
@@ -235,7 +302,7 @@ async function doctor(args = {}) {
   });
 
   if (optionValue(args, "--json")) {
-    process.stdout.write(`${JSON.stringify({ version: "1.4.0", checks })}\n`);
+    process.stdout.write(`${JSON.stringify({ version: "1.5.0", checks })}\n`);
   } else {
     console.table(checks);
   }
@@ -268,26 +335,31 @@ async function createPlanCommand(args) {
     return;
   }
   process.stdout.write(`${plan.status}\n`);
-  process.stdout.write(`Plan: ${path.resolve(filePath)}\n`);
   if (plan.policy_digest) {
-    printPlanSummary(plan);
+    const details = optionValue(args, "--details") === true;
     process.stdout.write(
-      `\nCompiled policy:\n${JSON.stringify(plan.policy, null, 2)}\n\n`,
+      formatMandateCaptured(
+        { ...plan, __path: path.resolve(filePath) },
+        { details },
+      ),
     );
-    process.stdout.write(
-      `Canonical Coinbase action:\n${JSON.stringify(
-        plan.action_descriptor,
-        null,
-        2,
-      )}\n\n`,
-    );
-    process.stdout.write(`Policy digest: ${plan.policy_digest}\n`);
-    process.stdout.write(
-      "PAUSE: nothing may be proposed or previewed until a trusted host receives a new user-authored message authorizing the displayed policy digest.\n",
-    );
+    if (details) {
+      process.stdout.write(
+        `\nCompiled policy:\n${JSON.stringify(plan.policy, null, 2)}\n\n`,
+      );
+      process.stdout.write(
+        `Canonical Coinbase action:\n${JSON.stringify(
+          plan.action_descriptor,
+          null,
+          2,
+        )}\n`,
+      );
+    }
   } else {
     printCompilationGuidance(plan.compilation);
-    process.stdout.write(`${JSON.stringify(plan.compilation, null, 2)}\n`);
+    if (optionValue(args, "--details")) {
+      process.stdout.write(`${JSON.stringify(plan.compilation, null, 2)}\n`);
+    }
     process.exitCode = 2;
   }
 }
@@ -313,6 +385,9 @@ async function configurePreview(args) {
       "Usage: configure-preview-credentials --key-file /absolute/path/to/cdp_key.json",
     );
   }
+  process.stdout.write(
+    "VIEW ONLY · reads permission status only during setup · NO ORDER CAN BE SENT\n",
+  );
   const result = await verifyViewKeyFileAndConfigure(keyFile);
   process.stdout.write(`${JSON.stringify(result.attestation, null, 2)}\n`);
   process.stdout.write(
@@ -448,36 +523,13 @@ async function confirmExecution(args) {
 }
 
 async function simulate(args) {
-  const planPath = optionValue(args, "--plan");
-  const confirmation = optionValue(args, "--confirm-policy");
-  if (!planPath || !confirmation) {
-    throw new Error(
-      "Usage: simulate --plan /path/to/plan.json --confirm-policy <digest>",
-    );
-  }
-  const plan = await readExecutionPlan(planPath);
-  const record = await simulateExecution(plan, confirmation);
-  const paths = optionValue(args, "--no-artifacts")
-    ? null
-    : await writeExecutionReport(record, "execution-readiness");
-  if (optionValue(args, "--json")) {
-    process.stdout.write(
-      `${JSON.stringify({
-        record,
-        artifacts:
-          paths == null
-            ? null
-            : {
-                json: path.resolve(paths.jsonPath),
-                html: path.resolve(paths.htmlPath),
-              },
-      })}\n`,
-    );
-    if (record.status !== "EXECUTION_ELIGIBLE") process.exitCode = 1;
-    return;
-  }
-  printSimulationSummary(record);
-  process.stdout.write("SIMULATION_ONLY\n");
+  return preflight({
+    ...args,
+    "--view-key-file": undefined,
+  });
+}
+
+function printTechnicalGuardDetails(record) {
   process.stdout.write(
     `AUTHORIZED_POLICY=${JSON.stringify(record.policy)}\n`,
   );
@@ -497,61 +549,117 @@ async function simulate(args) {
     `PROPOSAL_DECISION=${record.proposal_check?.decision ?? "NOT_REACHED"}\n`,
   );
   process.stdout.write(
-    `COINBASE_PREVIEW_FIXTURE=${JSON.stringify(record.preview)}\n`,
+    `PREVIEW_EVIDENCE=${JSON.stringify(record.preview)}\n`,
   );
   process.stdout.write(
     `PREVIEW_DECISION=${record.preview_check?.decision ?? "NOT_REACHED"}\n`,
   );
   process.stdout.write(
-    `DELTA_DECISION=${record.delta?.decision ?? "NOT_REACHED"}\n`,
-  );
-  process.stdout.write(
-    `DELTA_DECISION_RECEIPT=${JSON.stringify(record.delta?.receipt ?? null)}\n`,
-  );
-  process.stdout.write(
-    `PROOF_PRESENT=${record.delta?.proof_present === true}\n`,
-  );
-  process.stdout.write(
-    `PROOF_DIGEST=${record.delta?.proof_digest ?? "none"}\n`,
+    `DELTA_DECISION=${record.delta?.decision ?? "NOT_RUN_VIEW_ONLY"}\n`,
   );
   process.stdout.write(
     `FAILURE=${JSON.stringify(record.failure ?? null)}\n`,
   );
   process.stdout.write(
-    "RETRY_POLICY=Only a structured retryable BLOCK may be retried; maximum attempts are controller-bounded; REVIEW stops locked.\n",
-  );
-  process.stdout.write(
     `EXACT_PASS_GATE=${
+      record.guard_mode === "dry_run" &&
       record.delta?.decision === "PASS" &&
       record.delta?.verifier_confirmed === true
     }\n`,
   );
   process.stdout.write(`SIMULATED_RESULT=${record.status}\n`);
-  process.stdout.write(`TARGET_ENVIRONMENT=${record.target_environment}\n`);
-  process.stdout.write(`RUN_MODE=${record.run_mode}\n`);
   process.stdout.write(
-    `FIXTURE_CLOCK=${JSON.stringify(record.fixture_clock)}\n`,
+    `ONE_TIME_GATE_CONSUMED=${record.execution?.one_time_gate_consumed === true}\n`,
   );
-  process.stdout.write(
-    `SIMULATED_EXECUTOR_INVOKED=${record.execution.adapter_invoked}\n`,
-  );
-  process.stdout.write(
-    "SIMULATED_EXECUTOR_TYPE=NONE; IN_MEMORY_GATE_ONLY\n",
-  );
-  process.stdout.write(
-    `ONE_TIME_GATE_CONSUMED=${record.execution.one_time_gate_consumed}\n`,
-  );
-  process.stdout.write(
-    `CRYPTOGRAPHIC_PROOF_VERIFIED=${record.delta?.cryptographic_proof_verified === true}\n`,
-  );
-  process.stdout.write("EXCHANGE_OUTCOME_OBSERVED=false\n");
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
-  process.stdout.write("COINBASE_CONTACTED=false\n");
+  process.stdout.write(
+    `COINBASE_CONTACTED=${record.boundary?.coinbase_contacted === true}\n`,
+  );
   process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
   process.stdout.write("MONEY_MOVED=false\n");
-  if (paths) printPaths(paths);
-  if (record.status !== "EXECUTION_ELIGIBLE") {
-    process.exitCode = 1;
+}
+
+async function preflight(args) {
+  const planPath = optionValue(args, "--plan");
+  const confirmation = optionValue(args, "--confirm-policy");
+  const viewKeyFile = optionValue(args, "--view-key-file") ?? null;
+  const nonce = optionValue(args, "--nonce");
+  const plan = await readExecutionPlan(planPath);
+  const result = await runGuardPreflight({
+    plan,
+    confirmPolicyDigest: confirmation,
+    viewKeyFile,
+    nonce,
+    progress: (message) => process.stdout.write(`${message}\n`),
+  });
+  if (result.replayed) {
+    const entry = result.history_entry;
+    process.stdout.write(
+      "EXACT RETRY · RETURNING PRIOR RESULT · NO NEW COINBASE REQUEST · NO ORDER\n\n",
+    );
+    process.stdout.write(
+      `${entry.outcome} — ${entry.reason}\nPrior evidence remains historical only; ask for details to see its receipt hash.\n`,
+    );
+    if (optionValue(args, "--details")) {
+      process.stdout.write(
+        `Receipt digest: ${entry.receipt.receipt_digest}\n`,
+      );
+    }
+    return;
+  }
+  const record = result.record;
+  const paths = optionValue(args, "--no-artifacts")
+    ? null
+    : await writeExecutionReport(
+        record,
+        record.guard_mode === "dry_run"
+          ? "guard-dry-run"
+          : "guard-view-only-preflight",
+      );
+  if (optionValue(args, "--json")) {
+    process.stdout.write(
+      `${JSON.stringify({
+        record,
+        history: result.history?.entry ?? null,
+        artifacts:
+          paths == null
+            ? null
+            : {
+                json: path.resolve(paths.jsonPath),
+                html: path.resolve(paths.htmlPath),
+              },
+      })}\n`,
+    );
+    if (record.decision !== "PASS") process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(
+    formatGuardResult(record, {
+      details: optionValue(args, "--details") === true,
+    }),
+  );
+  if (optionValue(args, "--details")) {
+    printTechnicalGuardDetails(record);
+    if (paths) printPaths(paths);
+  }
+  if (record.decision !== "PASS") process.exitCode = 1;
+}
+
+async function historyCommand(args) {
+  if (optionValue(args, "--clear")) {
+    const count = await clearHistory();
+    process.stdout.write(
+      `GUARD HISTORY CLEARED · ${count} local entr${count === 1 ? "y" : "ies"} removed · no credentials or orders affected\n`,
+    );
+    return;
+  }
+  const rawLimit = optionValue(args, "--limit");
+  const limit = rawLimit == null ? 10 : Number(rawLimit);
+  const entries = await readHistory({ limit });
+  if (optionValue(args, "--json")) {
+    process.stdout.write(`${JSON.stringify({ entries })}\n`);
+  } else {
+    process.stdout.write(formatHistory(entries));
   }
 }
 
@@ -725,6 +833,9 @@ async function probeExecution(args) {
       "Usage: probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/cdp_key.json",
     );
   }
+  process.stdout.write(
+    "VIEW ONLY · checking balances, exact product, BBO, and Preview · NO ORDER CAN BE SENT\n",
+  );
   const [boundExecution, executionConfirmation, capabilityProfile] =
     await Promise.all([
       readBoundExecution(boundPath),
@@ -738,7 +849,9 @@ async function probeExecution(args) {
     attestation: verifiedTrade.attestation,
     current: new Date(),
   });
-  const coinbase = createCoinbaseRestAdapter(verifiedTrade.credentials);
+  const coinbase = createCoinbaseViewOnlyPreflightAdapter(
+    verifiedTrade.credentials,
+  );
   const record = await runExecutionPipeline({
     mode: "PROBE",
     plan,
@@ -761,13 +874,20 @@ async function probeExecution(args) {
     `execution-probe-${timestamp}`,
   );
   process.stdout.write(`${record.status}\n`);
-  printPreviewProbeSummary(record);
-  printPaths(paths);
+  process.stdout.write(
+    formatGuardResult(record, {
+      details: optionValue(args, "--details") === true,
+    }),
+  );
+  if (optionValue(args, "--details")) {
+    printTechnicalGuardDetails(record);
+    printPaths(paths);
+  }
   if (record.status !== "PREVIEW_PROBE_PASS") {
     process.exitCode = 1;
   } else {
     process.stdout.write(
-      "Coinbase Preview passed and Create was not called. Public v1.4 cannot submit an order; reviewed Delta and executor integration is required.\n",
+      "Coinbase Preview passed and Create was not called. Public v1.5 cannot submit an order; production Delta and an executor are not present.\n",
     );
   }
 }
@@ -905,17 +1025,22 @@ async function version() {
 }
 
 function usage({ all = false } = {}) {
-  const safeUsage = `Delta Coinbase Guard v1.4
+  const safeUsage = `Delta Coinbase Guard v1.5
 
-Safe start:
+Start here — no credential required:
+  Tell the installed skill what spot BUY or SELL you want.
+  It will capture a mandate, ask only for missing material constraints, and
+  pause for your confirmation.
+
+  Then it runs a protected dry run by default. No order can be sent.
+
+Safe commands:
   doctor [--json]
-  plan --intent "..." [--compiler deterministic|openai] [--json]
-  plan --intent-file /absolute/path/to/intent.txt [--compiler deterministic|openai] [--json]
-  simulate --plan /path/to/plan.json --confirm-policy <digest> [--no-artifacts] [--json]
-  coinbase-demo --no-artifacts
-  credential-readiness
+  plan --intent "..." [--compiler deterministic|openai] [--details] [--json]
+  preflight --plan /path/to/plan.json --confirm-policy <digest> [--details] [--json]
+  history [--limit 10] [--json]
 
-Copyable conditional BUY request:
+Example intent:
   Using my isolated Coinbase Advanced portfolio, use up to 3000 USDC to buy ETH
   on ETH-USDC once now with a price-bounded IOC limit order. Only if Coinbase's
   fresh best ask is at or below 3000 USDC. Partial fill is acceptable. Do not
@@ -923,23 +1048,27 @@ Copyable conditional BUY request:
   commission, or more than 3015 USDC total. This authorization expires 10
   minutes after I confirm it.
 
-Optional View-only Coinbase reads and Preview:
-  configure-preview-credentials --key-file /outside/repo/view_key.json
-  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/view_key.json --credential-role preview
-  confirm-execution --bound-execution /path/to/bound.json --confirm-execution <digest> --key-file /outside/repo/view_key.json
-  probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/view_key.json
+Optional View-only facts:
+  Add --view-key-file /outside/repo/view_key.json to preflight.
+  The key is used only for permission status, balances, the exact product, BBO,
+  and Preview in that session. It is never copied or persisted. Trade,
+  Transfer, Receive, Create, and all money movement remain unavailable.
 
-Public v1.4 supports generic immediate SPOT BUY/SELL planning, optional one-shot
-absolute price conditions, exact or maximum sizing, credential-free simulation,
-and a real View-only Coinbase Preview probe. Simulation can reach exact-payload
-eligibility but never an exchange outcome. Coinbase Create remains compile-time
-locked.
+Every result says DRY RUN or VIEW ONLY, shows one PASS/BLOCK/REVIEW reason,
+evidence freshness, a compact impact preview, and NO ORDER SUBMITTED.
 
 Run "help --all" only for internal integration seams.`;
   if (!all) return `${safeUsage}\n`;
   return `${safeUsage}
 
 Locked integration/developer seams:
+  simulate --plan /path/to/plan.json --confirm-policy <digest> [--details]
+  coinbase-demo --no-artifacts
+  credential-readiness
+  configure-preview-credentials --key-file /outside/repo/view_key.json
+  bind-execution --plan /path/to/plan.json --confirm-policy <digest> --key-file /outside/repo/view_key.json --credential-role preview
+  confirm-execution --bound-execution /path/to/bound.json --confirm-execution <digest> --key-file /outside/repo/view_key.json
+  probe-execution --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/view_key.json
   configure-executor-credentials --key-file /outside/repo/trade_key.json
   configure-execution --key-file /outside/repo/trade_key.json
   execute --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/trade_key.json --live-execution --accept-real-money-risk
@@ -980,8 +1109,12 @@ try {
       await mastraDemo(args);
     } else if (command === "plan") {
       await createPlanCommand(args);
+    } else if (command === "preflight") {
+      await preflight(args);
     } else if (command === "simulate") {
       await simulate(args);
+    } else if (command === "history") {
+      await historyCommand(args);
     } else if (command === "configure-execution") {
       await configureExecution(args);
     } else if (command === "bind-execution") {

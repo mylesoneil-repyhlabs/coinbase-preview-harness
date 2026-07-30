@@ -1,11 +1,29 @@
 import { createRequestJwt } from "./permissions.js";
 import { digestBytes } from "./evidence.js";
 import { assertProductionExecutionCapability } from "./integration/production-composition.js";
-import { sanitize } from "./sanitize.js";
+import { reviewError } from "./guard-errors.js";
 
 export const COINBASE_API_ORIGIN = "https://api.coinbase.com";
 export const COINBASE_API_HOST = "api.coinbase.com";
 export const BROKERAGE_PATH = "/api/v3/brokerage";
+export const VIEW_ONLY_PREFLIGHT_ROUTES = Object.freeze([
+  Object.freeze({
+    method: "GET",
+    path: `${BROKERAGE_PATH}/accounts`,
+  }),
+  Object.freeze({
+    method: "GET",
+    pathPattern: /^\/api\/v3\/brokerage\/products\/[A-Z0-9]+-[A-Z0-9]+$/,
+  }),
+  Object.freeze({
+    method: "GET",
+    path: `${BROKERAGE_PATH}/best_bid_ask`,
+  }),
+  Object.freeze({
+    method: "POST",
+    path: `${BROKERAGE_PATH}/orders/preview`,
+  }),
+]);
 
 function assertCredential(credentials) {
   if (
@@ -64,21 +82,19 @@ function safeCursor(cursor) {
   return cursor;
 }
 
-function safeErrorMessage(body, status) {
-  const parsed = body && typeof body === "object" ? body : {};
-  const message =
-    parsed.message ??
-    parsed.error_response?.message ??
-    parsed.error ??
-    `Coinbase API returned HTTP ${status}`;
-  return sanitize(String(message));
+function safeErrorMessage(_body, status) {
+  // Provider bodies can contain account, request, or tenant identifiers. The
+  // local receipt needs the typed class and status, not arbitrary upstream
+  // text.
+  return `Coinbase API request failed (HTTP ${status})`;
 }
 
 function createCoinbaseRequest(
   credentials,
   {
     fetchImpl = fetch,
-    timeoutMs = 20_000,
+    timeoutMs = 5_000,
+    routeAllowlist = null,
   } = {},
 ) {
   assertCredential(credentials);
@@ -93,6 +109,19 @@ function createCoinbaseRequest(
       !requestPath.startsWith(`${BROKERAGE_PATH}/`)
     ) {
       throw new Error("Coinbase request path is outside the pinned brokerage API");
+    }
+    if (
+      routeAllowlist &&
+      !routeAllowlist.some(
+        (route) =>
+          route.method === method &&
+          (route.path === requestPath ||
+            route.pathPattern?.test(requestPath)),
+      )
+    ) {
+      throw new Error(
+        "Coinbase View-only preflight denied a route outside its explicit allowlist",
+      );
     }
     const url = new URL(requestPath, COINBASE_API_ORIGIN);
     for (const [key, value] of Object.entries(query ?? {})) {
@@ -145,10 +174,31 @@ function createCoinbaseRequest(
     try {
       parsed = text ? JSON.parse(text) : {};
     } catch {
-      throw new Error(`Coinbase API returned invalid JSON (HTTP ${response.status})`);
+      throw reviewError(
+        "COINBASE_RESPONSE_MALFORMED",
+        `Coinbase API returned invalid JSON (HTTP ${response.status})`,
+        { httpStatus: response.status },
+      );
     }
     if (!response.ok) {
-      throw new Error(safeErrorMessage(parsed, response.status));
+      const code =
+        response.status === 401 || response.status === 403
+          ? "COINBASE_CREDENTIAL_REJECTED"
+          : response.status === 429
+            ? "COINBASE_RATE_LIMITED"
+            : response.status >= 500
+              ? "COINBASE_OUTAGE"
+              : "COINBASE_REQUEST_REJECTED";
+      throw reviewError(code, safeErrorMessage(parsed, response.status), {
+        httpStatus: response.status,
+        retryable: response.status === 429 || response.status >= 500,
+        recovery:
+          response.status === 401 || response.status === 403
+            ? "Reconnect a current View-only key. No order was submitted."
+            : response.status === 429
+              ? "Wait briefly, then run a fresh View-only preflight. No order was submitted."
+              : "Run a fresh View-only preflight when Coinbase is available. No order was submitted.",
+      });
     }
     return {
       response: parsed,
@@ -323,6 +373,22 @@ export function createCoinbaseRestAdapter(credentials, options = {}) {
         query: { order_ids: safeId, limit: "100" },
       }).then((result) => result.response);
     },
+  });
+}
+
+export function createCoinbaseViewOnlyPreflightAdapter(
+  credentials,
+  options = {},
+) {
+  const adapter = createCoinbaseRestAdapter(credentials, {
+    ...options,
+    routeAllowlist: VIEW_ONLY_PREFLIGHT_ROUTES,
+  });
+  return Object.freeze({
+    listAccounts: adapter.listAccounts,
+    getProduct: adapter.getProduct,
+    getBestBidAsk: adapter.getBestBidAsk,
+    previewOrder: adapter.previewOrder,
   });
 }
 

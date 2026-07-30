@@ -23,14 +23,17 @@ allow a reasonable remediation window before public disclosure.
 
 ## Supported version
 
-Only the latest commit on the default branch is supported. This is a v1.4
+Only the latest commit on the default branch is supported. This is a v1.5
 integration preview, not a production custody or trading service.
 
 ## Operator safety
 
 - Keep Coinbase credentials outside the repository and pass credential paths
-  only at runtime. Use a dedicated portfolio and a View-only key for reads and
-  Preview. A future Trade key belongs only in an isolated executor.
+  only at runtime. The default flow needs no credential. For optional real
+  reads and Preview, use a dedicated portfolio and a View-only key with Trade,
+  Transfer, and Receive disabled. The composite v1.5 preflight does not persist
+  its attestation or key. A future Trade key belongs only in an isolated
+  executor.
 - Do not commit anything under `credentials/` or `runtime/`. Generated
   execution reports can contain sensitive trading metadata and are written
   under ignored `runtime/artifacts/` with user-only permissions.
@@ -38,6 +41,13 @@ integration preview, not a production custody or trading service.
   order. Simulation HTML is labeled `SIMULATION_ONLY`; its local receipt is a
   SHA-256 integrity artifact and its placeholder proof is explicitly not
   cryptographically verified.
+- A View-only receipt is local integrity evidence over redacted normalized
+  facts. It is not a Coinbase signature, production Delta authorization,
+  execution grant, or price guarantee.
+- Local Guard history is bounded and private. It must never contain raw
+  provider bodies/headers, account or key IDs, credential paths, private key
+  material, JWTs, or arbitrary provider error text. No remote telemetry is
+  enabled by default.
 - Install from a pinned release and verify its SHA-256 file. The installer
   creates an integrity-manifested managed copy and rejects credential-shaped
   paths, private-key material, provider tokens, binaries, and unexpected

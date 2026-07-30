@@ -40,15 +40,37 @@ import { sanitize } from "./sanitize.js";
 import { JWT_PROFILE } from "./permissions.js";
 import { reconcileSubmittedOrder } from "./reconciliation.js";
 import { assertProductionExecutionCapability } from "./integration/production-composition.js";
+import {
+  createGuardReceipt,
+  GUARD_MODES,
+} from "./guard-receipt.js";
+import {
+  blockError,
+  GuardDecisionError,
+  reviewError,
+  toGuardReviewError,
+} from "./guard-errors.js";
 
 // A module-private identity token created without calling mutable globals.
 // The fixed simulator can reach it; external callers cannot manufacture the
 // same function identity.
 const BUILT_IN_SIMULATION_CAPABILITY = () => undefined;
 
-function finalRecord(record) {
+function finalRecord(record, { guardMode = null, nonce = null } = {}) {
   const safe = sanitize(record);
-  return { ...safe, record_digest: digest(safe) };
+  if (!guardMode) {
+    return { ...safe, record_digest: digest(safe) };
+  }
+  const guardReceipt = createGuardReceipt(safe, {
+    mode: guardMode,
+    nonce,
+    issuedAt: new Date(safe.generated_at),
+  });
+  const withReceipt = {
+    ...safe,
+    guard_receipt: guardReceipt,
+  };
+  return { ...withReceipt, record_digest: digest(withReceipt) };
 }
 
 function validAttestation(attestation, { tradeRequired = false } = {}) {
@@ -202,6 +224,8 @@ async function runExecutionPipelineCore({
   now = () => new Date(),
   consumeGrant,
   markGrant,
+  preflightNonce = randomUUID(),
+  onProgress = () => {},
 }) {
   if (mode !== "LIVE" && mode !== "PROBE" && mode !== "SIMULATION") {
     throw new Error("Execution mode must be exactly LIVE, PROBE, or SIMULATION");
@@ -235,6 +259,12 @@ async function runExecutionPipelineCore({
     );
   }
   const startedAt = now();
+  const guardMode =
+    mode === "SIMULATION"
+      ? GUARD_MODES.DRY_RUN
+      : mode === "PROBE"
+        ? GUARD_MODES.VIEW_ONLY_PREFLIGHT
+        : null;
   const {
     plan: boundPlan,
     confirmedAt,
@@ -249,10 +279,12 @@ async function runExecutionPipelineCore({
     throw new Error("Execution plan does not match its confirmed binding");
   }
   const record = {
-    schema_version: "delta.coinbase.execution_record.v2",
+    schema_version: "delta.coinbase.execution_record.v3",
     artifact_class: mode,
+    guard_mode: guardMode,
     generated_at: startedAt.toISOString(),
-    status: "BLOCKED",
+    status: "REVIEW",
+    decision: "REVIEW",
     source_intent_digest: plan?.source_intent?.digest ?? null,
     policy: plan?.policy ?? null,
     policy_digest: plan?.policy_digest ?? null,
@@ -287,6 +319,12 @@ async function runExecutionPipelineCore({
       : null,
     market: null,
     funding: null,
+    sources: {
+      accounts: null,
+      product: null,
+      best_bid_ask: null,
+      preview: null,
+    },
     proposal: null,
     proposal_check: null,
     preview: null,
@@ -303,16 +341,45 @@ async function runExecutionPipelineCore({
       one_time_gate_consumed: false,
       persistence_warnings: [],
     },
+    preflight: {
+      schema_version: "delta.coinbase.preflight_binding.v1",
+      nonce_digest: digest(preflightNonce),
+      fingerprint: null,
+      expires_at: null,
+      supersedes: null,
+    },
+    boundary: {
+      mode: guardMode,
+      view_only: mode === "PROBE",
+      dry_run: mode === "SIMULATION",
+      create_available: false,
+      no_order_submitted: true,
+      money_moved: false,
+      coinbase_contacted: mode === "PROBE",
+      preview_is_not_execution_or_price_guarantee: true,
+    },
     failure: null,
   };
+  const finish = () =>
+    finalRecord(record, {
+      guardMode,
+      nonce: preflightNonce,
+    });
 
   let consumedGrantPlanId = null;
   try {
+    onProgress("Validating the authorized mandate.");
     if (plan?.schema_version !== "delta.coinbase.execution_plan.v3") {
-      throw new Error("Execution plan schema is invalid");
+      throw blockError(
+        "PLAN_SCHEMA_INVALID",
+        "Execution plan schema is invalid",
+      );
     }
     if (plan.status !== "AWAITING_HUMAN_CONFIRMATION") {
-      throw new Error("Execution plan is not ready for confirmation");
+      throw blockError(
+        "PLAN_NOT_AUTHORIZABLE",
+        "Execution plan is not ready for confirmation",
+      );
     }
     if (typeof plan.plan_id !== "string" || !plan.plan_id) {
       throw new Error("Execution plan id is missing");
@@ -321,13 +388,22 @@ async function runExecutionPipelineCore({
       typeof plan.source_intent?.text !== "string" ||
       digest(plan.source_intent.text) !== plan.source_intent.digest
     ) {
-      throw new Error("Execution plan source intent digest does not match its text");
+      throw blockError(
+        "SOURCE_INTENT_TAMPERED",
+        "Execution plan source intent digest does not match its text",
+      );
     }
     if (digest(plan.policy) !== plan.policy_digest) {
-      throw new Error("Execution plan policy digest does not match its policy");
+      throw blockError(
+        "POLICY_TAMPERED",
+        "Execution plan policy digest does not match its policy",
+      );
     }
     if (confirmPolicyDigest !== plan.policy_digest) {
-      throw new Error("Human confirmation digest does not match the compiled policy");
+      throw blockError(
+        "POLICY_CONFIRMATION_MISMATCH",
+        "Human confirmation digest does not match the compiled policy",
+      );
     }
     record.confirmation.matched = true;
 
@@ -336,7 +412,8 @@ async function runExecutionPipelineCore({
       plan.capability_profile?.digest !== digest(capabilityProfile) ||
       plan.capability_profile?.create_enabled !== false
     ) {
-      throw new Error(
+      throw blockError(
+        "CAPABILITY_PROFILE_CHANGED",
         "Preview capability profile has changed since planning",
       );
     }
@@ -358,7 +435,8 @@ async function runExecutionPipelineCore({
         tradeRequired: mode === "LIVE" && !builtInSimulation,
       })
     ) {
-      throw new Error(
+      throw reviewError(
+        "CREDENTIAL_ATTESTATION_INVALID",
         mode === "LIVE" && !builtInSimulation
           ? "Coinbase View+Trade credential attestation is missing or unsafe"
           : "Coinbase View credential attestation is missing or unsafe",
@@ -369,25 +447,62 @@ async function runExecutionPipelineCore({
     record.confirmation.confirmed_at = confirmedAt.toISOString();
     record.confirmation.policy_expires_at = policyExpiresAt.toISOString();
     if (startedAt.getTime() >= policyExpiresAt.getTime()) {
-      throw new Error(
+      throw reviewError(
+        "POLICY_EXPIRED",
         "Human-confirmed policy expired before credential verification completed",
+        {
+          recovery:
+            "Authorize a fresh mandate before requesting new evidence. No order was submitted.",
+        },
       );
     }
 
     if (typeof listAccounts !== "function") {
-      throw new Error(
+      throw reviewError(
+        "ACCOUNTS_ADAPTER_UNAVAILABLE",
         "Trusted Coinbase account/balance evidence is required",
       );
     }
-    const [
-      productResponse,
-      bestBidAskResponse,
-      accountsResponse,
-    ] = await Promise.all([
+    const evidenceRequestedAt = now();
+    onProgress("Collecting balances, product, and market evidence.");
+    const evidenceResults = await Promise.allSettled([
       getProduct(plan.policy.product_id),
       getBestBidAsk(plan.policy.product_id),
       listAccounts(),
     ]);
+    const evidenceReceivedAt = now();
+    const evidenceNames = ["PRODUCT", "BEST_BID_ASK", "ACCOUNTS"];
+    for (let index = 0; index < evidenceResults.length; index += 1) {
+      const result = evidenceResults[index];
+      if (result.status === "rejected") {
+        throw toGuardReviewError(result.reason, evidenceNames[index]);
+      }
+    }
+    const [
+      { value: productResponse },
+      { value: bestBidAskResponse },
+      { value: accountsResponse },
+    ] = evidenceResults;
+    const receivedAt = evidenceReceivedAt.toISOString();
+    record.sources.product = {
+      provenance: builtInSimulation
+        ? "SIMULATED_FIXTURE"
+        : "COINBASE_AUTHENTICATED_VIEW",
+      timestamp_kind: "LOCAL_RECEIPT_TIME",
+      requested_at: evidenceRequestedAt.toISOString(),
+      received_at: receivedAt,
+      age_ms: 0,
+    };
+    record.sources.accounts = {
+      provenance: builtInSimulation
+        ? "SIMULATED_FIXTURE"
+        : "COINBASE_AUTHENTICATED_VIEW",
+      timestamp_kind: "LOCAL_RECEIPT_TIME",
+      requested_at: evidenceRequestedAt.toISOString(),
+      received_at: receivedAt,
+      age_ms: 0,
+      complete: accountsResponse?.has_next === false,
+    };
     const market = normalizeCoinbaseMarketData(
       productResponse,
       bestBidAskResponse,
@@ -400,6 +515,19 @@ async function runExecutionPipelineCore({
       "Coinbase market evidence",
     );
     record.market = market;
+    record.sources.best_bid_ask = {
+      provenance: builtInSimulation
+        ? "SIMULATED_FIXTURE"
+        : "COINBASE_AUTHENTICATED_VIEW",
+      timestamp_kind: "COINBASE_PRICEBOOK_TIME",
+      requested_at: evidenceRequestedAt.toISOString(),
+      received_at: receivedAt,
+      observed_at: market.observed_at,
+      age_ms: Math.max(
+        0,
+        evidenceReceivedAt.getTime() - Date.parse(market.observed_at),
+      ),
+    };
     const funding = evaluateCoinbaseFunding(
       plan.policy,
       accountsResponse,
@@ -408,21 +536,34 @@ async function runExecutionPipelineCore({
       },
     );
     record.funding = funding;
+    onProgress("Checking held funds and portfolio scope.");
     if (funding.decision !== "PASS") {
-      throw new Error(
-        `Coinbase funding check blocked the proposal: ${funding.failures
+      const message =
+        `Coinbase funding check did not pass: ${funding.failures
           .map((failure) => failure.code)
-          .join(", ")}`,
-      );
+          .join(", ")}`;
+      throw funding.decision === "REVIEW"
+        ? reviewError(
+            funding.evidence_issues?.[0]?.code ??
+              "FUNDING_EVIDENCE_UNAVAILABLE",
+            message,
+          )
+        : blockError(
+            funding.policy_failures?.[0]?.code ??
+              "FUNDING_POLICY_BLOCK",
+            message,
+          );
     }
 
     const proposed = proposeSpotOrder(plan.policy, market, { now: startedAt });
+    onProgress("Preparing and checking the exact proposal.");
     record.proposal = proposed;
     if (
       digest(proposed.action_descriptor) !==
       digest(plan.action_descriptor)
     ) {
-      throw new Error(
+      throw blockError(
+        "ACTION_DESCRIPTOR_MISMATCH",
         "Agent proposal action descriptor differs from authorization",
       );
     }
@@ -433,17 +574,77 @@ async function runExecutionPipelineCore({
     );
     record.proposal_check = proposalCheck;
     if (proposalCheck.decision !== "PASS") {
-      throw new Error("Agent proposal failed the deterministic policy check");
+      throw blockError(
+        proposalCheck.failures?.[0]?.code ?? "PROPOSAL_POLICY_BLOCK",
+        "Agent proposal failed the deterministic policy check",
+      );
     }
 
+    const beforePreview = now();
+    if (beforePreview.getTime() >= policyExpiresAt.getTime()) {
+      throw reviewError(
+        "POLICY_EXPIRED_BEFORE_PREVIEW",
+        "The authorized policy expired before Coinbase Preview could be requested",
+        {
+          recovery:
+            "Authorize a fresh mandate, then run a new View-only preflight. No order was submitted.",
+        },
+      );
+    }
     const previewRequest = buildCoinbasePreviewRequest(proposed.action);
-    const previewResult = await previewAdapter(previewRequest);
+    onProgress("Checking the exact Preview request and response.");
+    const serializedPreviewRequest = JSON.stringify(previewRequest);
+    const previewRequestDigest = digestBytes(serializedPreviewRequest);
+    let previewResult;
+    const previewRequestedAt = now();
+    try {
+      previewResult = await previewAdapter(previewRequest);
+    } catch (error) {
+      throw toGuardReviewError(error, "PREVIEW");
+    }
     const previewResponse = previewResult?.response ?? previewResult;
     const selectedPreview = selectExecutionPreviewEvidence(previewResponse);
-    const previewCollectedAt = now().toISOString();
+    if (selectedPreview == null) {
+      throw reviewError(
+        "INVALID_PREVIEW",
+        "Coinbase Preview did not return a verifiable response object",
+        {
+          recovery:
+            "Run a fresh View-only preflight when Coinbase Preview is available. No order was submitted.",
+        },
+      );
+    }
+    const previewReceivedAt = now();
+    const previewCollectedAt = previewReceivedAt.toISOString();
+    const transport = previewResult?.transport ?? null;
+    if (
+      mode === "PROBE" &&
+      (transport?.method !== "POST" ||
+        transport?.host !== "api.coinbase.com" ||
+        transport?.path !== "/api/v3/brokerage/orders/preview" ||
+        transport?.sent_body_digest !== previewRequestDigest)
+    ) {
+      throw reviewError(
+        "PREVIEW_TRANSPORT_BINDING_MISMATCH",
+        "The Coinbase Preview transport was not bound to the exact prepared request",
+      );
+    }
+    record.sources.preview = {
+      provenance: builtInSimulation
+        ? "SIMULATED_FIXTURE"
+        : "COINBASE_AUTHENTICATED_VIEW",
+      timestamp_kind: "LOCAL_RECEIPT_TIME",
+      requested_at: previewRequestedAt.toISOString(),
+      received_at: previewCollectedAt,
+      age_ms: 0,
+    };
     record.preview = {
       collected_at: previewCollectedAt,
+      request_digest: previewRequestDigest,
+      transport_body_digest:
+        transport?.sent_body_digest ?? previewRequestDigest,
       evidence: selectedPreview,
+      response_fingerprint: digest(selectedPreview),
       evidence_digest: digest({
         market,
         preview: selectedPreview,
@@ -469,23 +670,18 @@ async function runExecutionPipelineCore({
     record.preview_check = previewCheck;
     if (previewCheck.decision !== "PASS") {
       record.status = previewCheck.decision;
-      throw new Error(
-        previewCheck.decision === "REVIEW"
-          ? "Coinbase Preview requires human review; execution remains locked"
-          : "Coinbase Preview failed the deterministic policy check",
-      );
-    }
-    if (mode === "PROBE") {
-      assertSubmissionWindow({
-        current: now(),
-        policyExpiresAt,
-        proposalExpiresAt: proposed.expires_at,
-        marketObservedAt: market.observed_at,
-        previewCollectedAt,
-        safetyProfile: capabilityProfile,
-      });
-      record.status = "PREVIEW_PROBE_PASS";
-      return finalRecord(record);
+      record.decision = previewCheck.decision;
+      throw previewCheck.decision === "REVIEW"
+        ? reviewError(
+            previewCheck.review_reasons?.[0]?.code ??
+              previewCheck.failures?.[0]?.code ??
+              "PREVIEW_UNABLE_TO_VERIFY",
+            "Coinbase Preview requires human review; execution remains locked",
+          )
+        : blockError(
+            previewCheck.failures?.[0]?.code ?? "PREVIEW_POLICY_BLOCK",
+            "Coinbase Preview failed the deterministic policy check",
+          );
     }
 
     const clientOrderId = randomUUID();
@@ -500,6 +696,60 @@ async function runExecutionPipelineCore({
     const createPayloadDigest = digestBytes(createPayloadSerialized);
     record.execution.client_order_id = clientOrderId;
     record.execution.create_payload_digest = createPayloadDigest;
+    const evidenceExpiry = Math.min(
+      policyExpiresAt.getTime(),
+      Date.parse(proposed.expires_at),
+      Date.parse(market.observed_at) + capabilityProfile.max_market_age_ms,
+      Date.parse(previewCollectedAt) + capabilityProfile.max_preview_age_ms,
+    );
+    record.preflight.expires_at = new Date(evidenceExpiry).toISOString();
+    record.preflight.fingerprint = digest({
+      schema_version: record.preflight.schema_version,
+      mode: guardMode,
+      nonce_digest: record.preflight.nonce_digest,
+      policy_digest: plan.policy_digest,
+      action_descriptor_digest:
+        plan.action_descriptor.descriptor_digest,
+      proposal_digest: proposed.proposal_digest,
+      preview_request_digest: previewRequestDigest,
+      preview_transport_body_digest:
+        record.preview.transport_body_digest,
+      preview_response_fingerprint:
+        record.preview.response_fingerprint,
+      evidence_digest: record.preview.evidence_digest,
+      prospective_create_payload_digest: createPayloadDigest,
+      source_times: {
+        accounts_received_at: record.sources.accounts.received_at,
+        product_received_at: record.sources.product.received_at,
+        bbo_observed_at: record.sources.best_bid_ask.observed_at,
+        preview_received_at: record.sources.preview.received_at,
+      },
+    });
+    onProgress("Binding policy, proposal, evidence, and prospective payload.");
+    if (mode === "PROBE") {
+      try {
+        assertSubmissionWindow({
+          current: now(),
+          policyExpiresAt,
+          proposalExpiresAt: proposed.expires_at,
+          marketObservedAt: market.observed_at,
+          previewCollectedAt,
+          safetyProfile: capabilityProfile,
+        });
+      } catch (error) {
+        throw reviewError(
+          "PREFLIGHT_EVIDENCE_EXPIRED",
+          error instanceof Error ? error.message : String(error),
+          {
+            recovery:
+              "Run a fresh View-only preflight. The old result cannot be reused and no order was submitted.",
+          },
+        );
+      }
+      record.status = "PREVIEW_PROBE_PASS";
+      record.decision = "PASS";
+      return finish();
+    }
     const evaluationRequest = deepFreeze(structuredClone({
       schema_version: "delta.coinbase.evaluation_request.v2",
       requested_at: now().toISOString(),
@@ -540,7 +790,10 @@ async function runExecutionPipelineCore({
       },
     }));
     if (!mandateAdapter) {
-      throw new Error("A production-shaped Delta mandate adapter is required before execution");
+      throw reviewError(
+        "DELTA_ADAPTER_UNAVAILABLE",
+        "A production-shaped Delta mandate adapter is required before execution",
+      );
     }
     const policyBundle = buildCoinbasePolicyBundle({
       plan,
@@ -574,6 +827,7 @@ async function runExecutionPipelineCore({
         credential_fingerprint: attestation.key_fingerprint,
       },
     });
+    onProgress("Evaluating the exact proposal against the Delta mandate contract.");
     record.delta = {
       surface: "delta_orchestrator_and_verifier",
       adapter: mandateAdapter.name ?? "mandate-adapter",
@@ -599,12 +853,16 @@ async function runExecutionPipelineCore({
     };
     if (mandate.decision !== "PASS" || mandate.verified !== true) {
       record.status = mandate.decision;
+      record.decision =
+        mandate.decision === "REVIEW" ? "REVIEW" : "BLOCK";
       const failed = mandate.constraint_failures
         .map((failure) => `#${failure.index}: ${failure.reason}`)
         .join("; ");
-      throw new Error(
-        `Delta mandate rejected the Coinbase action${failed ? ` (${failed})` : ""}`,
-      );
+      const message =
+        `Delta mandate rejected the Coinbase action${failed ? ` (${failed})` : ""}`;
+      throw mandate.decision === "REVIEW"
+        ? reviewError("DELTA_REVIEW", message)
+        : blockError("DELTA_POLICY_BLOCK", message);
     }
     const deltaDecision = {
       decision_id: mandate.intent_id,
@@ -619,7 +877,8 @@ async function runExecutionPipelineCore({
       digestBytes(evaluationRequest.create_payload_serialized) !==
         createPayloadDigest
     ) {
-      throw new Error(
+      throw reviewError(
+        "PAYLOAD_INTEGRITY_CHANGED",
         "The Coinbase Create payload changed during delta evaluation",
       );
     }
@@ -635,6 +894,7 @@ async function runExecutionPipelineCore({
     });
 
     consumedGrantPlanId = plan.plan_id;
+    onProgress("Consuming the one-time simulated eligibility.");
     await consumeGrant(consumedGrantPlanId, mandate.intent_id, {
       status: "SUBMITTING",
       consumed_at: preSubmitNow.toISOString(),
@@ -667,11 +927,15 @@ async function runExecutionPipelineCore({
       JSON.stringify(createPayload) !== createPayloadSerialized ||
       digestBytes(createPayloadSerialized) !== createPayloadDigest
     ) {
-      throw new Error("The authorized Coinbase Create payload changed before submission");
+      throw reviewError(
+        "PAYLOAD_INTEGRITY_CHANGED",
+        "The authorized Coinbase Create payload changed before submission",
+      );
     }
 
     if (mode === "SIMULATION") {
       record.status = "EXECUTION_ELIGIBLE";
+      record.decision = "PASS";
       record.simulation = {
         fixture_data: true,
         network_access: false,
@@ -682,7 +946,8 @@ async function runExecutionPipelineCore({
         external_executor_invoked: false,
         exchange_outcome_observed: false,
       };
-      return finalRecord(record);
+      onProgress("Dry run complete. No executor or Coinbase Create was invoked.");
+      return finish();
     }
 
     record.execution.adapter_invoked = true;
@@ -709,7 +974,7 @@ async function runExecutionPipelineCore({
         },
         record.execution.persistence_warnings,
       );
-      return finalRecord(record);
+      return finish();
     }
     const transmittedBodyDigest = createResult?.transport?.sent_body_digest;
     record.execution.transmitted_body_digest =
@@ -731,7 +996,7 @@ async function runExecutionPipelineCore({
         },
         record.execution.persistence_warnings,
       );
-      return finalRecord(record);
+      return finish();
     }
     const createResponse = createResult?.response ?? createResult;
     let submitted;
@@ -750,7 +1015,7 @@ async function runExecutionPipelineCore({
           { status: "COINBASE_REJECTED", error: error.message },
           record.execution.persistence_warnings,
         );
-        return finalRecord(record);
+        return finish();
       }
       record.status = "SUBMISSION_UNCERTAIN";
       record.execution.order_submitted = null;
@@ -768,7 +1033,7 @@ async function runExecutionPipelineCore({
         },
         record.execution.persistence_warnings,
       );
-      return finalRecord(record);
+      return finish();
     }
     record.execution = {
       ...record.execution,
@@ -809,7 +1074,7 @@ async function runExecutionPipelineCore({
         },
         record.execution.persistence_warnings,
       );
-      return finalRecord(record);
+      return finish();
     }
 
     let fillsResponse;
@@ -838,7 +1103,7 @@ async function runExecutionPipelineCore({
         },
         record.execution.persistence_warnings,
       );
-      return finalRecord(record);
+      return finish();
     }
     try {
       record.reconciliation = reconcileSubmittedOrder({
@@ -880,7 +1145,7 @@ async function runExecutionPipelineCore({
       },
       record.execution.persistence_warnings,
     );
-    return finalRecord(record);
+    return finish();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (consumedGrantPlanId) {
@@ -893,12 +1158,31 @@ async function runExecutionPipelineCore({
         record.execution.persistence_warnings,
       );
     }
+    const typed =
+      error instanceof GuardDecisionError
+        ? error
+        : toGuardReviewError(error, "PREFLIGHT");
+    if (!consumedGrantPlanId && guardMode) {
+      record.status = typed.decision;
+      record.decision = typed.decision;
+    }
     record.failure = {
       stage:
-        consumedGrantPlanId ? "POST_AUTHORIZATION" : "PRE_EXECUTION_GATE",
+        typed.stage ??
+        (consumedGrantPlanId
+          ? "POST_AUTHORIZATION"
+          : "PRE_EXECUTION_GATE"),
+      code: typed.code ?? "PREFLIGHT_UNAVAILABLE",
+      class:
+        typed.decision === "BLOCK"
+          ? "POLICY_VIOLATION"
+          : "UNABLE_TO_VERIFY",
       message,
+      recovery: typed.recovery ?? null,
+      retryable: typed.retryable === true,
+      http_status: typed.httpStatus ?? null,
     };
-    return finalRecord(record);
+    return finish();
   }
 }
 
@@ -921,7 +1205,14 @@ export async function runExecutionPipeline(args) {
  * does not accept transport or adapter callbacks, so it cannot be repurposed
  * to reach Coinbase Create.
  */
-export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
+export async function runBuiltInSimulation(
+  plan,
+  confirmPolicyDigest,
+  {
+    preflightNonce = randomUUID(),
+    onProgress = () => {},
+  } = {},
+) {
   const fixtureNow = new Date();
   const now = () => new Date(fixtureNow);
   const consumed = new Set();
@@ -933,8 +1224,8 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
     can_transfer: false,
     can_receive: false,
     jwt_profile: JWT_PROFILE,
-    portfolio_fingerprint: "simulated-portfolio-fingerprint",
-    key_fingerprint: "simulated-trade-key-fingerprint",
+    portfolio_fingerprint: digest("simulated-portfolio"),
+    key_fingerprint: digest("simulated-view-only-session"),
   };
   const boundExecution = createBoundExecution(
     plan,
@@ -1061,20 +1352,29 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
         },
       ],
     }),
-    previewAdapter: async (requestBody) => ({
-      response: {
-        order_total: previewQuoteSize,
-        commission_total: "0",
-        quote_size: previewQuoteSize,
-        base_size: previewBaseSize,
-        est_average_filled_price: fillPrice,
-        best_bid: bestBid,
-        best_ask: bestAsk,
-        preview_id: `sim-preview-${randomUUID()}`,
-        errs: [],
-        warning: [],
-      },
-    }),
+    previewAdapter: async (requestBody) => {
+      const serializedBody = JSON.stringify(requestBody);
+      return {
+        response: {
+          order_total: previewQuoteSize,
+          commission_total: "0",
+          quote_size: previewQuoteSize,
+          base_size: previewBaseSize,
+          est_average_filled_price: fillPrice,
+          best_bid: bestBid,
+          best_ask: bestAsk,
+          preview_id: `sim-preview-${randomUUID()}`,
+          errs: [],
+          warning: [],
+        },
+        transport: {
+          method: "SIMULATED",
+          host: "none",
+          path: "/api/v3/brokerage/orders/preview",
+          sent_body_digest: digestBytes(serializedBody),
+        },
+      };
+    },
     mandateAdapter: createSimulatedMandateAdapter({ now }),
     consumeGrant: async (planId, intentId) => {
       const grant = `${planId}:${intentId}`;
@@ -1087,6 +1387,8 @@ export async function runBuiltInSimulation(plan, confirmPolicyDigest) {
       consumedPlans.add(planId);
     },
     markGrant: async () => {},
+    preflightNonce,
+    onProgress,
   });
   const { record_digest: _previousDigest, ...record } = liveShapedRecord;
   const simulatedRecord = {

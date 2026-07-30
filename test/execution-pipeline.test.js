@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createBoundExecution } from "../src/execution-binding.js";
 import { createExecutionConfirmation } from "../src/execution-confirmation.js";
-import { digest } from "../src/evidence.js";
+import { digest, digestBytes } from "../src/evidence.js";
 import {
   runBuiltInSimulation,
   runExecutionPipeline,
@@ -130,6 +130,12 @@ async function probeFixture() {
           errs: [],
           warning: [],
         },
+        transport: {
+          method: "POST",
+          host: "api.coinbase.com",
+          path: "/api/v3/brokerage/orders/preview",
+          sent_body_digest: digestBytes(JSON.stringify(request)),
+        },
       };
     },
     mandateAdapter: {
@@ -200,7 +206,7 @@ test("Preview warnings return REVIEW and keep Delta/Create locked", async () => 
   assert.equal(state.createCalls, 0);
 });
 
-test("insufficient held quote funds BLOCK before proposal or Preview", async () => {
+test("verified insufficient held quote funds BLOCK before proposal or Preview", async () => {
   const { args, state } = await probeFixture();
   args.listAccounts = async () => {
     state.accountCalls += 1;
@@ -222,7 +228,8 @@ test("insufficient held quote funds BLOCK before proposal or Preview", async () 
     };
   };
   const record = await runExecutionPipeline(args);
-  assert.equal(record.status, "BLOCKED");
+  assert.equal(record.status, "BLOCK");
+  assert.equal(record.decision, "BLOCK");
   assert.equal(record.funding.decision, "BLOCK");
   assert.equal(state.previewCalls, 0);
 });

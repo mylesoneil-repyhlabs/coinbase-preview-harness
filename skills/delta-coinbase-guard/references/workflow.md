@@ -1,135 +1,123 @@
-# Workflow and state transitions
+# Chat-native workflow
 
-## Trust boundaries
+## Ownership
 
-| Component | May do | Must not do |
+| Component | Owns | Cannot do |
 | --- | --- | --- |
-| User | Authorize a displayed policy or execution digest | Approve implicitly or before seeing the closed draft |
-| Host/chat | Attribute a new confirmation to an authenticated user | Treat agent output, silence, or possession of a key as approval |
-| Agent | Preserve the user's words, propose within policy, explain results | Authenticate the user, author evidence, choose verdict/retry, hold a Trade key, or execute |
-| Coinbase read surface | Return account, product, BBO, and Preview data | Expose Create or mutation to the model-facing surface |
-| Delta integration | Evaluate trusted evidence and prove the exact action | Trust agent-authored evidence |
-| Proof verifier | Verify exact proof under pinned identity/program | Accept nonempty or self-asserted proof material |
-| Deterministic controller | Map verified state to retry, stop, or eligibility | Override failure or alter passed bytes |
-| External executor | Consume one durable grant and submit exact passed bytes | Accept free-form methods, paths, fields, or model credentials |
+| User | State intent; authorize the displayed mandate; optionally supply a View-key path | Authorize an unseen or changed policy |
+| Model | Preserve language; identify missing facts; explain output | Decide policy, arithmetic, evidence, retry, receipt, or release |
+| Deterministic Guard | Validate schemas; canonicalize and hash; compile policy; normalize and age evidence; decide; bind receipt; manage nonce/history | Contact Create or alter a passed proposal |
+| Coinbase View surface | Permission status, Accounts, exact Product, BBO, Preview | Create, cancel, transfer, convert, or move money |
+| Local Delta simulator | Exercise the public adapter contract against labeled fixtures | Claim production Delta authorization |
+| External executor | Future consumer of an exact verified, one-use grant | Exists in this public build |
 
-Coinbase MCP is topology-only in this repository. The implemented network
-surface is direct REST with View-only reads and Preview. If an agent-facing MCP
-advertises a mutating tool, stop with an unsafe-topology result before using it.
+The model must pass typed plan state to deterministic code. It must never
+perform monetary arithmetic or turn prose directly into a Coinbase request.
 
-## Generic v1.4 sequence
+## Ordinary sequence
 
-1. Preserve the natural-language request verbatim and classify the action.
-2. Reject unsupported actions instead of translating them into a spot trade.
-3. Compile one BUY or SELL into `digital-asset-spot-order.v3`.
-4. Bind `EXACT` or `MAX` sizing. BUY is quote-sized and funded by held quote
-   asset; SELL is base-sized and funded by held base asset.
-5. If present, bind one side-correct condition: BUY fresh best ask at or below
-   an absolute quote-asset price, or SELL fresh best bid at or above one.
-6. Bind SOR limit IOC, partial-fill policy, slippage, commission, settlement,
-   expiry, and one use.
-7. Display the complete v3 policy, v2 action descriptor, funding source,
-   provenance, and digests.
-8. Pause for a new user-authored policy-digest confirmation. The original
-   request and the agent's draft are not authorization.
-9. In credential-free mode, use only labeled account, product, market,
-   Preview, Delta, and proof fixtures.
-10. The trusted controller constructs a side-correct candidate, checks the
-    optional condition, and evaluates product, size, price, increment, funding,
-    and settlement constraints.
-11. Normalize one Preview and verify its BBO, implied price, order total,
-    commission, slippage, warnings/errors, and exact request binding.
-12. Freeze one evaluation request and prospective Coinbase Create byte string.
-13. Submit it through the replaceable Delta adapter.
-14. Require exact status, verifier, proof, nine Coinbase evidence bindings,
-    and proof-verification attestation.
-15. Map `BLOCK` with an explicit candidate failure to bounded retry; map
-    `REVIEW`, infrastructure failure, expiry, or mismatch to stop.
-16. On simulated `PASS`, consume one in-memory test gate and end at
-    `EXECUTION_ELIGIBLE`.
-17. Report that no external executor, Coinbase endpoint, production Delta,
-    Coinbase Create, fill, or money movement occurred.
+1. Offer the credential-free dry run and optional View-only facts; say no
+   order can be sent.
+2. Preserve the user's natural-language request.
+3. Compile it with `plan --json`.
+4. If incomplete, ask one concise question containing only missing material
+   constraints. Accumulate the answer and recompile.
+5. If unsupported, stop without substituting an action, pair, asset, side,
+   amount, or order type.
+6. Display the closed human-readable mandate without raw metadata.
+7. Wait for a new user-authored `Authorize this mandate`.
+8. Internally bind that message to the saved exact policy digest.
+9. Run one `preflight` with one nonce:
+   - no key: `dry_run` with explicitly simulated evidence;
+   - external View-key path: `view_only_preflight`.
+10. Present mode, mandate, proposal, decision plus one reason, impact,
+    provenance/freshness, recovery, receipt status, and no-order boundary.
+11. Reveal hashes or normalized technical detail only on request.
 
-`MAX` means one positive proposed size no greater than the user's cap. It does
-not authorize zero, a percentage, or a different asset. The one-shot market
-condition is evaluated during this attempt; it does not schedule, monitor, or
-rest an order.
+The user's original request is not authorization. A changed mandate requires a
+new display and authorization. The CLI's digest comparison is integrity
+binding, not chat-user authentication.
 
-The local proof adapter accepts only its explicit placeholders and reports
-`cryptographically_verified: false`. A local receipt digest is not a signature.
+## Deterministic proposal boundary
 
-## Credentialed Preview sequence
+The Guard owns:
 
-1. Verify a dedicated View-only/no-Trade/no-Transfer key from an external
-   owner-only file.
-2. Bind the policy to key and portfolio fingerprints.
-3. Display the execution digest and require a second new user-authored
-   confirmation.
-4. Fetch complete account pagination plus product and fresh BBO evidence via
-   the direct REST adapter.
-5. Require exact held quote funds for BUY or base funds for SELL.
-6. Check product type, flags, increments, and size bounds.
-7. Construct one SOR limit IOC Preview request and call Preview.
-8. Bind request, Preview ID, economics, funding, descriptor, portfolio, and
-   credential.
-9. Map errors/constraint failures to `BLOCK`, warnings to `REVIEW`, and a clean
-   result to `PREVIEW_PROBE_PASS`.
-10. Stop. Preview pass is not Delta pass, and Create remains unreachable.
+- side-correct sizing and held funding asset;
+- exact product identity and availability;
+- decimal precision, increments, product minima/maxima;
+- best-ask/best-bid condition and limit derivation;
+- commission, slippage, and settlement arithmetic;
+- exact Preview request serialization;
+- prospective Create payload serialization without transmission;
+- policy, proposal, evidence, Preview request, payload, and preflight digests;
+- expiry, nonce, replay behavior, receipt, and redacted history.
 
-The CLI validates digests but does not authenticate the author of a chat
-message. A production host must own that control.
+Any order-relevant change invalidates the old preflight fingerprint and receipt.
+Never silently substitute a product or reuse stale evidence.
 
-## Fixed conditional showcase
+## Decision meanings
 
-`coinbase-demo --no-artifacts` is a separate presentation fixture. It includes
-a post-trade exposure constraint that the generic v1.4 compiler does not
-support.
+### Dry run
 
-1. Display the simulated mandate and its digest.
-2. Let the agent fixture propose candidate one.
-3. Let the controller attach separately labeled market, Preview, and portfolio
-   evidence.
-4. Return `BLOCK` with every failed constraint and a locally verifiable
-   digest-bound receipt.
-5. Let the controller allow one retry within the fixed two-attempt budget.
-6. Attach a new evidence fixture and let the agent revise only its proposal.
-7. Return `PASS` for candidate two and verify the local receipt.
-8. Recheck proposal and evidence digests at the gate.
-9. Mark one simulated eligibility and stop with the external executor false.
+All accounts, product, BBO, Preview, Delta outcome, and proof data are labeled
+fixtures. A `PASS` exercises deterministic checks, the public Delta adapter
+contract, exact payload binding, and simulated one-time gate consumption.
+Coinbase and production Delta are not contacted. The terminal state is
+simulated eligibility only.
 
-The showcase is not generic compiler coverage, a cryptographic proof, a
-production Delta multi-proposal lifecycle, or a Coinbase order.
+### View-only preflight
 
-## Production sequence
+The Guard verifies a no-Trade/no-Transfer/no-Receive key for that session,
+fetches complete Accounts plus the exact Product and fresh BBO, and requests
+one exact Preview. A `PASS` means these point-in-time facts matched the
+proposal. It is not Delta authorization, execution eligibility, submission,
+fill, or a future price guarantee.
 
-Engineering preserves every planning, authorization, evidence, and fail-closed
-invariant, then:
+### BLOCK versus REVIEW
 
-1. registers the frozen action in authenticated append-only storage;
-2. submits the actual Delta policy and authenticated signed intent;
-3. submits the registry locator;
-4. waits for terminal outcome;
-5. obtains independent verification and proof;
-6. cryptographically verifies the exact proof with pinned verifier identity
-   and proof program;
-7. requires all nine Coinbase proof bindings;
-8. atomically consumes a durable grant for the exact Create bytes;
-9. submits those bytes once from an isolated executor; and
-10. reconciles by `client_order_id`, order ID, and fills.
+- `BLOCK`: complete, verified facts show a policy violation, such as wrong
+  side/size, insufficient held funds, unavailable product, or price/fee/
+  settlement outside the mandate.
+- `REVIEW`: fresh complete evidence could not be verified, including stale,
+  missing, malformed, mismatched, rate-limited, revoked, partial, timed-out, or
+  changed Preview data.
 
-Never retry Create after an uncertain submission.
+Both remain locked. Only follow the emitted recovery action. Do not describe an
+infrastructure or evidence failure as a policy block.
 
-The checked-in production composition is hard-disabled. It must be replaced in
-source after private integration review; do not add an arbitrary runtime plugin
-loader.
+## Freshness and recovery
 
-## Retry caveat
+Accounts, Product, BBO, and Preview have endpoint-specific request/receipt
+times; BBO also uses Coinbase's observed timestamp. Missing or stale required
+facts cannot pass. Preview is bound to the exact proposal and nonce.
 
-The public generic simulator evaluates one candidate; the fixed showcase
-demonstrates controller retry behavior with two fixture decisions. Neither
-proves that private Delta reopens one authorized intent.
+An exact process retry reuses the nonce and returns the prior result without a
+new network request. A genuine refresh uses a new nonce and a new receipt.
+Reusing one nonce for different semantics fails closed.
 
-Production must explicitly choose local refinement before one Delta proposal,
-a fresh authenticated intent per candidate, or an authenticated bounded
-proposal window. Do not claim “retry until pass under one authorization” until
-that lifecycle is implemented and tested.
+## Local history
+
+The Guard stores a bounded, redacted run summary in its private local state
+directory. It records mode, mandate summary, proposal summary, outcome,
+provenance, evidence age, no-order status, local IDs and receipt digest. It
+does not store credentials, account IDs, raw Coinbase responses, headers, or
+full payloads.
+
+List history only on request. Require explicit confirmation immediately before
+`history --clear`. History is an audit aid, never current market evidence.
+
+## Public boundary
+
+Every supported flow ends with:
+
+- `create_available=false`;
+- no external executor;
+- no Coinbase Create;
+- no submitted order or fill;
+- no money movement; and
+- a local SHA-256 receipt whose proof limits are stated.
+
+Production would additionally require authenticated user authorization,
+private Delta integration, pinned cryptographic verification, an append-only
+action registry, and durable atomic one-use grant consumption. None is claimed
+here.

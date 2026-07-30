@@ -102,6 +102,7 @@ export const CLI_COMMAND_SCHEMAS = Object.freeze({
         choices: ["deterministic", "openai"],
       }),
       "--json": flag(),
+      "--details": flag(),
     },
     exactlyOneOf: [["--intent", "--intent-file"]],
   }),
@@ -113,6 +114,30 @@ export const CLI_COMMAND_SCHEMAS = Object.freeze({
       "--plan": value("<path>", { required: true }),
       "--confirm-policy": value("<digest>", { required: true }),
       "--no-artifacts": flag(),
+      "--json": flag(),
+      "--details": flag(),
+    },
+  }),
+  preflight: schema({
+    command: "preflight",
+    usage:
+      "preflight --plan <path> --confirm-policy <digest> [--view-key-file <absolute-path>] [--nonce <retry-nonce>] [--no-artifacts] [--details] [--json]",
+    options: {
+      "--plan": value("<path>", { required: true }),
+      "--confirm-policy": value("<digest>", { required: true }),
+      "--view-key-file": value("<absolute-key-path>"),
+      "--nonce": value("<retry-nonce>"),
+      "--no-artifacts": flag(),
+      "--details": flag(),
+      "--json": flag(),
+    },
+  }),
+  history: schema({
+    command: "history",
+    usage: "history [--limit <1-100>] [--clear] [--json]",
+    options: {
+      "--limit": value("<1-100>"),
+      "--clear": flag(),
       "--json": flag(),
     },
   }),
@@ -154,6 +179,7 @@ export const CLI_COMMAND_SCHEMAS = Object.freeze({
       "--bound-execution": value("<path>", { required: true }),
       "--confirmation-receipt": value("<path>", { required: true }),
       "--key-file": value("<absolute-key-path>", { required: true }),
+      "--details": flag(),
     },
   }),
   execute: schema({

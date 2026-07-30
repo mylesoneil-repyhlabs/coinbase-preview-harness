@@ -23,8 +23,8 @@ assert(
 );
 const [major, minor] = packageJson.version.split(".");
 assert(
-  major === "1" && minor === "4",
-  "this release line must be delta-coinbase-guard v1.4.x",
+  major === "1" && minor === "5",
+  "this release line must be delta-coinbase-guard v1.5.x",
 );
 assert(
   packageJson.name === "delta-coinbase-guard",
@@ -103,6 +103,28 @@ assert(
   preview.max_executions === 1,
   "public Preview capability must remain one-shot",
 );
+
+for (const requiredSource of [
+  "src/preflight.js",
+  "src/preflight-presentation.js",
+  "src/guard-receipt.js",
+  "src/dry-run-history.js",
+]) {
+  await access(path.join(ROOT, requiredSource));
+}
+
+assert(
+  readme.includes("`dry_run`") &&
+    readme.includes("`view_only_preflight`") &&
+    readme.includes("Create remains unavailable"),
+  "README must describe both v1.5 modes and the locked Create boundary",
+);
+assert(
+  readme.includes("production Delta signature") &&
+    readme.includes("Independent authentication"),
+  "README must state local receipt proof limitations",
+);
+await access(path.join(ROOT, "docs/SPRINT-LOG.md"));
 
 const liveSafety = await json("config/execution-safety-profile.json");
 assert(

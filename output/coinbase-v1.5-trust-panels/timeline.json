@@ -1,0 +1,32 @@
+[
+  {
+    "panel": "01",
+    "suggested_duration_seconds": 12,
+    "title": "No credential required"
+  },
+  {
+    "panel": "02",
+    "suggested_duration_seconds": 18,
+    "title": "The user sees every boundary"
+  },
+  {
+    "panel": "03",
+    "suggested_duration_seconds": 18,
+    "title": "Typed data crosses the guard"
+  },
+  {
+    "panel": "04",
+    "suggested_duration_seconds": 18,
+    "title": "Protection is readable"
+  },
+  {
+    "panel": "05",
+    "suggested_duration_seconds": 18,
+    "title": "Exact and locally verifiable"
+  },
+  {
+    "panel": "06",
+    "suggested_duration_seconds": 15,
+    "title": "Preview never becomes Create"
+  }
+]
