@@ -61,7 +61,7 @@ jobs:
         run: pnpm check:links
 
       - name: Validate checked-in Mastra partner artifacts
-        run: pnpm check:mastra
+        run: node scripts/validate-mastra-partner-assets.mjs
 
   mastra-reference:
     name: Mastra 1.53 reference
