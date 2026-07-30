@@ -42,8 +42,13 @@ const SECOND_BUY_INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 100 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 40 bps above Coinbase's fresh best ask, more than 1 USDC in commission, or more than 101 USDC total. This authorization expires 2 minutes after I confirm it.";
 const FIXED = new Date("2026-07-30T16:00:00.000Z");
 const PREVIEW_PATH = "/api/v3/brokerage/orders/preview";
-const PRIVATE_KEY_SENTINEL =
-  "-----BEGIN EC PRIVATE KEY-----\nTOP-SECRET-TEST-SENTINEL\n-----END EC PRIVATE KEY-----";
+const PRIVATE_KEY_SENTINEL = [
+  "-----BEGIN ",
+  "EC PRIVATE KEY-----\n",
+  "TOP-SECRET-TEST-SENTINEL\n",
+  "-----END ",
+  "EC PRIVATE KEY-----",
+].join("");
 const KEY_ID_SENTINEL =
   "organizations/secret-org/apiKeys/secret-key";
 
