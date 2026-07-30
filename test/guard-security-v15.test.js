@@ -157,6 +157,17 @@ test("confirmation is revalidated before an exact nonce replay", async (t) => {
     invalid.record.failure.code,
     "POLICY_CONFIRMATION_MISMATCH",
   );
+  assert.match(
+    invalid.record.guard_receipt.bindings.authorization_digest,
+    /^[a-f0-9]{64}$/,
+  );
+  assert.equal(
+    verifyGuardReceipt(
+      invalid.record.guard_receipt,
+      invalid.record,
+    ).verified,
+    true,
+  );
   const validRetry = await runGuardPreflight({
     plan,
     confirmPolicyDigest: plan.policy_digest,
@@ -421,4 +432,15 @@ test("local credential failures have truthful provenance and redact local identi
     false,
   );
   assert.equal(JSON.stringify(result.record).includes(sentinel), false);
+  assert.match(
+    result.record.guard_receipt.bindings.authorization_digest,
+    /^[a-f0-9]{64}$/,
+  );
+  assert.equal(
+    verifyGuardReceipt(
+      result.record.guard_receipt,
+      result.record,
+    ).verified,
+    true,
+  );
 });

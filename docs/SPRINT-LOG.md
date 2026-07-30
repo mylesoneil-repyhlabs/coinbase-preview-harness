@@ -111,9 +111,59 @@ hashes, paths, and raw normalized metadata stay out of the ordinary chat.
 - independent authentication of stored Coinbase facts;
 - remote telemetry or centralized history.
 
-## Sprint 2 — patch release
+## Sprint 2 — v1.5.1
 
-Pending fresh QA and target-user review after v1.5.0.
+### PM requirement
+
+Keep every decision trustworthy, including the moments when the Guard stops
+before proposal or evidence collection. A user should receive a private,
+verifiable local receipt for `BLOCK` and `REVIEW`, not only for `PASS`.
+
+### Engineering decision
+
+Failure records now follow the same construction order as successful pipeline
+records: redact the base record first, create the receipt over those exact safe
+bytes, attach the untouched receipt, then compute the outer record digest.
+Global redaction rules were not weakened.
+
+### QA finding
+
+Independent simulated adversarial and Coinbase-engineering reviews reproduced
+the same defect in v1.5.0. `failedPreflightRecord()` sealed a receipt and then
+sanitized the receipt-containing object. The sanitizer replaced the
+`authorization_digest` binding with `[REDACTED]`, invalidating the earlier
+receipt digest. Invalid nonce, confirmation mismatch, local credential error,
+nonce mismatch/currentness, and wrapper-caught View-only failures could
+therefore return an unverifiable negative receipt.
+
+### Target-user feedback
+
+The simulated first-time-user review completed a restricted-`PATH` install and
+the ordinary dry-run journey successfully. It also found that the installer's
+final handoff still used old “digest authorization” and “exact PASS gate”
+language. That onboarding defect is recorded for the next mini-sprint; this
+sprint prioritizes the independently reproduced evidence-integrity failure
+because it affects every early `BLOCK`/`REVIEW` receipt.
+
+### Shipped fix
+
+- Sanitize failure content before receipt creation.
+- Preserve a canonical 64-character authorization binding inside the receipt.
+- Verify both confirmation-mismatch `BLOCK` and local credential `REVIEW`
+  receipts while retaining path/credential redaction.
+
+### Validation
+
+- focused preflight, presentation, and receipt-security regressions;
+- full repository test suite;
+- skill, links, release metadata, content scan, deterministic archive, and
+  restricted-`PATH` cold install before release.
+
+### User-facing impact
+
+Every supported outcome now has a locally verifiable integrity receipt. The
+normal chat remains compact, secrets remain redacted, and Create stays
+unavailable.
 
 ## Sprint 3 — patch release
 

@@ -154,16 +154,20 @@ function failedPreflightRecord(
       http_status: typed.httpStatus,
     },
   };
-  const receipt = createGuardReceipt(record, {
+  // Redact the record before sealing it. Sanitizing after receipt creation can
+  // rewrite a binding field (for example authorization_digest) and leave the
+  // receipt internally unverifiable.
+  const safeRecord = sanitize(record);
+  const receipt = createGuardReceipt(safeRecord, {
     mode,
     nonce,
     issuedAt: now,
   });
-  const safe = sanitize({
-    ...record,
+  const withReceipt = {
+    ...safeRecord,
     guard_receipt: receipt,
-  });
-  return { ...safe, record_digest: digest(safe) };
+  };
+  return { ...withReceipt, record_digest: digest(withReceipt) };
 }
 
 async function withProgress(

@@ -6,8 +6,8 @@
 
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
-[**Download v1.5.0**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.0/delta-coinbase-guard-v1.5.0.zip)
-· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.0/delta-coinbase-guard-v1.5.0.zip.sha256)
+[**Download v1.5.1**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.1/delta-coinbase-guard-v1.5.1.zip)
+· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.1/delta-coinbase-guard-v1.5.1.zip.sha256)
 · [Recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md)
 · [Claim ledger](docs/COINBASE-DEMO-ASSURANCE.md)
 · [Sprint log](docs/SPRINT-LOG.md)
@@ -81,6 +81,11 @@ metadata remain available on request.
 - **Locked execution:** Preview is point-in-time evidence, not an execution or
   price guarantee. Coinbase Create remains unavailable.
 
+v1.5.1 also makes every early `BLOCK` or `REVIEW` receipt independently
+verifiable by the local receipt checker. Redaction now happens before the
+receipt is sealed, so authorization and credential failures keep both their
+privacy boundary and their exact integrity binding.
+
 ## Supported action surface
 
 | Dimension | Public v1.5 |
@@ -145,15 +150,15 @@ credential is needed for the default flow. The installer finds Node.js 22+ in
 the shell or Codex Desktop runtime cache.
 
 1. Download the pinned
-   [v1.5.0 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.0/delta-coinbase-guard-v1.5.0.zip)
+   [v1.5.1 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.1/delta-coinbase-guard-v1.5.1.zip)
    and
-   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.0/delta-coinbase-guard-v1.5.0.zip.sha256).
+   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.1/delta-coinbase-guard-v1.5.1.zip.sha256).
 2. Verify and install:
 
 ```sh
-shasum -a 256 -c delta-coinbase-guard-v1.5.0.zip.sha256
-unzip delta-coinbase-guard-v1.5.0.zip
-cd delta-coinbase-guard-v1.5.0
+shasum -a 256 -c delta-coinbase-guard-v1.5.1.zip.sha256
+unzip delta-coinbase-guard-v1.5.1.zip
+cd delta-coinbase-guard-v1.5.1
 ./install
 ```
 
