@@ -1,6 +1,6 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Chat-native mandate-gated Coinbase spot BUY/SELL dry-run and optional View-only preflight guard.",
   "private": true,
   "type": "module",

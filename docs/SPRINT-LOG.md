@@ -165,9 +165,62 @@ Every supported outcome now has a locally verifiable integrity receipt. The
 normal chat remains compact, secrets remain redacted, and Create stays
 unavailable.
 
-## Sprint 3 — patch release
+## Sprint 3 — v1.5.2
 
-Pending fresh QA and target-user review after Sprint 2.
+### PM requirement
+
+Make the first post-install action obvious, outcome-neutral, and usable after
+the user deletes the downloaded archive. Starting the protected dry run should
+not require a local documentation file, a digest, or knowledge of the result.
+
+### Engineering decision
+
+Keep the managed install and source-deletion model unchanged. Replace only the
+installer's success handoff with a self-contained chat script: invoke the
+skill, state an ordinary BUY or SELL intent, review the complete mandate, and
+send a separate plain-English authorization message. Do not bias the outcome
+or expose a hash.
+
+### QA finding
+
+Fresh simulated install QA against the shipped v1.5.1 release found a
+contradiction in the success output. It first said the extracted release could
+be deleted, then pointed to a recording-kit file inside that release. Its
+fallback still asked for “digest authorization” and an “exact PASS gate,”
+despite the v1.5 skill keeping the digest private and returning any of
+`PASS`, `BLOCK`, or `REVIEW`.
+
+### Target-user feedback
+
+A fresh simulated first-time Codex user completed the restricted-`PATH`
+install, but the final instructions did not survive the advertised cleanup
+journey and implied technical ceremony the ordinary chat no longer requires.
+The requested recovery was one copyable, source-independent next step with an
+explicit no-order boundary.
+
+### Shipped fix
+
+- Put the complete protected BUY/SELL dry-run handoff directly in installer
+  output.
+- Ask for `Authorize this mandate` as a separate user message.
+- State `PASS/BLOCK/REVIEW`, receipt status, and the no-order boundary without
+  predicting the outcome.
+- Remove the source-relative recording-kit dependency and obsolete digest
+  language from the handoff.
+
+### Validation
+
+- restricted-`PATH` install output acceptance checks;
+- source deletion followed by installed `doctor`;
+- full repository test suite;
+- skill, links, release metadata, content scan, deterministic archive, and
+  cold-install validation before release.
+
+### User-facing impact
+
+A normal Codex user can go directly from successful install to the protected
+chat flow with no improvisation, no digest handling, and no dependency on the
+download they were told they could delete.
 
 ## Sprint 4 — patch release
 

@@ -207,20 +207,18 @@ Installation complete.
    downloaded archive and extracted release directory.
 2. Codex should detect the skill automatically. If it is absent, fully quit and
    reopen Codex, then start a new chat.
-3. For the primary conditional BUY/SELL journey, paste the complete prompt
-   from:
+3. In a fresh Codex chat, ask:
 
-   docs/COINBASE-CODEX-RECORDING-KIT.md
+   Use $delta-coinbase-guard for a protected spot BUY or SELL dry run. Let me
+   state the trade in plain English, turn it into a complete mandate, show it
+   to me, and stop for my authorization. No order can be sent.
 
-   Or ask:
+4. Review the mandate, then send this as a separate message:
 
-   Use $delta-coinbase-guard to turn my conditional Coinbase spot request into
-   a closed mandate, pause for my digest authorization, and safely simulate the
-   exact PASS gate with every result in this chat.
+   Authorize this mandate
 
-4. To show the separate fixed BLOCK -> RETRY -> PASS control story, ask for
-   the conditional-allocation partner showcase. The skill will label every
-   fixture and stop at execution eligibility.
+   The Guard will return PASS/BLOCK/REVIEW, the plain-English reason, receipt
+   status, and the no-order boundary directly in chat.
 
-No Coinbase, Delta, or OpenAI credentials are required for either simulation.
+No Coinbase, Delta, or OpenAI credentials are required for this dry run.
 NEXT_STEPS

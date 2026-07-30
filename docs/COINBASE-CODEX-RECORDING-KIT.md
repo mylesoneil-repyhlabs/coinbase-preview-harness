@@ -19,7 +19,7 @@ https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest
 ```sh
 shasum -a 256 -c delta-coinbase-guard-v1.zip.sha256
 unzip delta-coinbase-guard-v1.zip
-cd delta-coinbase-guard-v1.5.1
+cd delta-coinbase-guard-v1.5.2
 ./install
 ```
 

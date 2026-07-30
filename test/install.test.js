@@ -225,10 +225,28 @@ test("installed skill survives deletion of the downloaded release", async () => 
   try {
     await mkdir(home, { recursive: true });
     await copyDownloadedRelease(release);
-    await execFileAsync(path.join(release, "install"), [], {
-      env: installEnvironment(home, { XDG_DATA_HOME: xdgData }),
-      timeout: 20_000,
-    });
+    const { stdout: installStdout } = await execFileAsync(
+      path.join(release, "install"),
+      [],
+      {
+        env: installEnvironment(home, { XDG_DATA_HOME: xdgData }),
+        timeout: 20_000,
+      },
+    );
+
+    assert.match(installStdout, /\$delta-coinbase-guard/);
+    assert.match(
+      installStdout,
+      /protected spot BUY or SELL dry run/i,
+    );
+    assert.match(installStdout, /Authorize this mandate/);
+    assert.match(installStdout, /PASS\/BLOCK\/REVIEW/);
+    assert.match(installStdout, /No order can be sent/i);
+    assert.doesNotMatch(installStdout, /docs\//i);
+    assert.doesNotMatch(
+      installStdout,
+      /digest authorization|exact PASS gate/i,
+    );
 
     const target = installedSkill(home);
     const harness = managedHarness(home, xdgData);
