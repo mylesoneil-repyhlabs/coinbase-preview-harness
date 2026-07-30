@@ -73,15 +73,6 @@ test("trade execution requires exactly View+Trade and forbids money-movement per
     }),
     true,
   );
-  assert.equal(
-    assertTradeOnlyPermissions({
-      can_view: true,
-      can_trade: true,
-      can_transfer: false,
-      portfolio_uuid: "11111111-1111-1111-1111-111111111111",
-    }),
-    true,
-  );
   assert.throws(
     () =>
       assertTradeOnlyPermissions({
@@ -92,6 +83,16 @@ test("trade execution requires exactly View+Trade and forbids money-movement per
         portfolio_uuid: "11111111-1111-1111-1111-111111111111",
       }),
     /can_transfer must be false/,
+  );
+  assert.throws(
+    () =>
+      assertTradeOnlyPermissions({
+        can_view: true,
+        can_trade: true,
+        can_transfer: false,
+        portfolio_uuid: "11111111-1111-1111-1111-111111111111",
+      }),
+    /can_receive must be false/,
   );
 });
 
@@ -166,6 +167,30 @@ test("external credential file is permission-checked, read-only attested, and ne
     );
     assert.equal(viewResult.attestation.can_view, true);
     assert.equal(viewResult.attestation.can_trade, false);
+    assert.equal(viewResult.attestation.can_receive, false);
+    assert.equal(viewResult.attestation.can_receive_reported, true);
+
+    const omittedReceive = await verifyViewKeyFileAndConfigure(
+      keyFile,
+      async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            portfolio_uuid:
+              "33333333-3333-3333-3333-333333333333",
+          }),
+      }),
+      { persistAttestation: false },
+    );
+    assert.equal(omittedReceive.attestation.can_receive, null);
+    assert.equal(
+      omittedReceive.attestation.can_receive_reported,
+      false,
+    );
 
     await chmod(keyFile, 0o644);
     await assert.rejects(
@@ -185,6 +210,103 @@ test("external credential file is permission-checked, read-only attested, and ne
         }),
       /must not be a symlink/,
     );
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
+test("post-dispatch permission failures are typed without leaking provider details", async () => {
+  const temporary = await mkdtemp(
+    path.join(os.tmpdir(), "delta-coinbase-view-errors-"),
+  );
+  const sentinel = "provider-secret-identifier-9348";
+  try {
+    const { privateKey } = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+    });
+    const keyFile = path.join(temporary, "view_key.json");
+    await writeFile(
+      keyFile,
+      JSON.stringify({
+        name:
+          "organizations/11111111-1111-1111-1111-111111111111/apiKeys/22222222-2222-2222-2222-222222222222",
+        privateKey: privateKey
+          .export({ format: "pem", type: "sec1" })
+          .toString(),
+      }),
+      { mode: 0o600 },
+    );
+
+    const timeout = new Error(`timeout for ${sentinel}`);
+    timeout.name = "TimeoutError";
+    const cases = [
+      {
+        name: "transport",
+        code: "VIEW_ONLY_PERMISSION_TRANSPORT_UNAVAILABLE",
+        fetchImpl: async () => {
+          throw new TypeError(`socket failure for ${sentinel}`);
+        },
+      },
+      {
+        name: "timeout",
+        code: "VIEW_ONLY_PERMISSION_TIMEOUT",
+        fetchImpl: async () => {
+          throw timeout;
+        },
+      },
+      {
+        name: "response read",
+        code: "VIEW_ONLY_PERMISSION_RESPONSE_UNAVAILABLE",
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => {
+            throw new Error(`stream failure for ${sentinel}`);
+          },
+        }),
+      },
+      {
+        name: "oversized response",
+        code: "VIEW_ONLY_PERMISSION_RESPONSE_TOO_LARGE",
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => "x".repeat(64 * 1024 + 1),
+        }),
+      },
+      {
+        name: "partial response",
+        code: "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+        }),
+      },
+    ];
+
+    for (const scenario of cases) {
+      let fetchCalls = 0;
+      await assert.rejects(
+        () =>
+          verifyViewKeyFileAndConfigure(
+            keyFile,
+            async (...args) => {
+              fetchCalls += 1;
+              return scenario.fetchImpl(...args);
+            },
+            { persistAttestation: false },
+          ),
+        (error) => {
+          assert.equal(error.decision, "REVIEW", scenario.name);
+          assert.equal(error.code, scenario.code, scenario.name);
+          assert.equal(error.stage, "VIEW_ONLY_CREDENTIAL", scenario.name);
+          assert.equal(error.retryable, true, scenario.name);
+          assert.equal(error.message.includes(sentinel), false);
+          return true;
+        },
+      );
+      assert.equal(fetchCalls, 1, scenario.name);
+    }
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

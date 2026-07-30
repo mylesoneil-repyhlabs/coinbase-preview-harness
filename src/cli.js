@@ -41,14 +41,6 @@ import {
 } from "./permissions.js";
 import { HARNESS_ROOT } from "./paths.js";
 import {
-  runMastraPartnerBundle,
-  runMastraPartnerDemo,
-} from "./mastra-partner.js";
-import {
-  writeMastraPartnerBundleReport,
-  writePartnerDemoReport,
-} from "./partner-demo.js";
-import {
   createExecutionPlan,
   loadPreviewCapabilityProfile,
   loadSafetyProfile,
@@ -595,7 +587,9 @@ async function preflight(args) {
   if (result.replayed) {
     const entry = result.history_entry;
     process.stdout.write(
-      "EXACT RETRY · RETURNING PRIOR RESULT · NO NEW COINBASE REQUEST · NO ORDER\n\n",
+      entry.mode === "view_only_preflight"
+        ? "EXACT RETRY · RETURNING PRIOR RESULT · VIEW-ONLY PERMISSION RECHECKED · NO NEW ACCOUNT, PRODUCT, BBO, OR PREVIEW REQUEST · NO ORDER\n\n"
+        : "EXACT RETRY · RETURNING PRIOR RESULT · NO COINBASE REQUEST · NO ORDER\n\n",
     );
     process.stdout.write(
       `${entry.outcome} — ${entry.reason}\nPrior evidence remains historical only; ask for details to see its receipt hash.\n`,
@@ -771,57 +765,6 @@ async function coinbaseDemo() {
   process.stdout.write("COINBASE_CONTACTED=false\n");
   process.stdout.write("COINBASE_CREATE_INVOKED=false\n");
   process.stdout.write("ARTIFACTS_WRITTEN=false\n");
-}
-
-async function mastraDemo(args) {
-  const scenario = optionValue(args, "--scenario");
-  process.stdout.write("SIMULATION_ONLY\n");
-  process.stdout.write("MASTRA_PARTNER_PROOF=COMPLETE\n");
-  if (scenario) {
-    const record = await runMastraPartnerDemo({ scenario });
-    const paths = await writePartnerDemoReport(record, {
-      reportPrefix: "mastra-demo",
-    });
-    process.stdout.write(`DELTA_DECISION=${record.decision.decision}\n`);
-    process.stdout.write(
-      `PROPOSAL_DIGEST=${record.decision.proposal_digest}\n`,
-    );
-    process.stdout.write(
-      `EVIDENCE_DIGEST=${record.decision.evidence_digest}\n`,
-    );
-    process.stdout.write(
-      `EXECUTION_PAYLOAD_DIGEST=${record.decision.execution_payload_digest}\n`,
-    );
-    process.stdout.write(
-      `RECEIPT_DIGEST=${record.receipt.receipt_digest}\n`,
-    );
-    process.stdout.write(
-      `RECEIPT_INTEGRITY_VERIFIED=${record.receipt_verification.artifact_verified}\n`,
-    );
-    process.stdout.write(
-      `EXECUTION_ELIGIBILITY=${record.execution.eligibility}\n`,
-    );
-    process.stdout.write(
-      `ONE_USE_GRANT_CONSUMED=${record.execution.grant_consumed}\n`,
-    );
-    printPaths(paths);
-  } else {
-    const bundle = await runMastraPartnerBundle();
-    const paths = await writeMastraPartnerBundleReport(bundle);
-    process.stdout.write("SCENARIOS=PASS,BLOCK,REVIEW\n");
-    process.stdout.write(`BUNDLE_DIGEST=${bundle.bundle_digest}\n`);
-    process.stdout.write(
-      `OUTCOMES=${JSON.stringify(bundle.outcomes)}\n`,
-    );
-    printPaths(paths);
-  }
-  process.stdout.write("MASTRA_RUNTIME_EXERCISED=false\n");
-  process.stdout.write(
-    "REFERENCE_MASTRA_RUNTIME=examples/mastra (pinned createTool + persisted REVIEW workflow)\n",
-  );
-  process.stdout.write("BREX_CONTACTED=false\n");
-  process.stdout.write("PRODUCTION_DELTA_INVOKED=false\n");
-  process.stdout.write("MONEY_MOVED=false\n");
 }
 
 async function probeExecution(args) {
@@ -1073,7 +1016,6 @@ Locked integration/developer seams:
   configure-execution --key-file /outside/repo/trade_key.json
   execute --bound-execution /path/to/bound.json --confirmation-receipt /path/to/receipt.json --key-file /outside/repo/trade_key.json --live-execution --accept-real-money-risk
   reconcile-execution --bound-execution /path/to/bound.json --key-file /outside/repo/trade_key.json
-  mastra-demo [--scenario pass|block|review]
 
 These commands do not unlock public Create. The internal build must supply an
 authenticated user signer, pinned cryptographic Delta proof verifier, reviewed
@@ -1105,8 +1047,6 @@ try {
       await configureExecution(args);
     } else if (command === "coinbase-demo") {
       await coinbaseDemo();
-    } else if (command === "mastra-demo") {
-      await mastraDemo(args);
     } else if (command === "plan") {
       await createPlanCommand(args);
     } else if (command === "preflight") {

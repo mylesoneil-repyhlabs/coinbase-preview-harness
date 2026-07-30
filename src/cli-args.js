@@ -82,15 +82,6 @@ export const CLI_COMMAND_SCHEMAS = Object.freeze({
       "--no-artifacts": flag(),
     },
   }),
-  "mastra-demo": schema({
-    command: "mastra-demo",
-    usage: "mastra-demo [--scenario <pass|block|review>]",
-    options: {
-      "--scenario": value("<pass|block|review>", {
-        choices: ["pass", "block", "review"],
-      }),
-    },
-  }),
   plan: schema({
     command: "plan",
     usage:

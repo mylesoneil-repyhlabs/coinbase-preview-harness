@@ -124,6 +124,26 @@ test("fresh install creates a managed version and an atomic skill link", async (
     await assert.rejects(access(path.join(harness, "docs", "MASTRA-PARTNER-BRIEF.md")));
     await assert.rejects(access(path.join(harness, "examples", "mastra")));
     await assert.rejects(access(path.join(harness, "output", "mastra")));
+    await assert.rejects(access(path.join(harness, "src", "mastra-partner.js")));
+    await assert.rejects(access(path.join(harness, "src", "partner-demo.js")));
+    await assert.rejects(
+      access(
+        path.join(
+          harness,
+          "scripts",
+          "generate-mastra-partner-assets.mjs",
+        ),
+      ),
+    );
+    const managedPackage = JSON.parse(
+      await readFile(path.join(harness, "package.json"), "utf8"),
+    );
+    assert.equal(
+      Object.keys(managedPackage.scripts).some((name) =>
+        name.toLowerCase().includes("mastra"),
+      ),
+      false,
+    );
   } finally {
     await rm(home, { recursive: true, force: true });
   }

@@ -41,7 +41,7 @@ Open the checked-in
 run:
 
 ```sh
-./run mastra-demo
+node scripts/run-mastra-partner-demo.mjs
 
 cd examples/mastra
 pnpm install --ignore-scripts

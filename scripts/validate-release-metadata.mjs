@@ -48,6 +48,12 @@ assert(
     "bash scripts/build-release-bundle.sh HEAD",
   "package release:bundle must build the committed HEAD by default",
 );
+assert(
+  !Object.keys(packageJson.scripts ?? {}).some((name) =>
+    /mastra|brex|partner-demo/i.test(name),
+  ),
+  "Coinbase release package scripts must not expose partner-demo surfaces",
+);
 
 const nvmrc = (await readFile(path.join(ROOT, ".nvmrc"), "utf8")).trim();
 assert(nvmrc === "22", ".nvmrc must match the Node 22 release floor");
@@ -61,6 +67,12 @@ assert(
 const skill = await readFile(
   path.join(ROOT, "skills/delta-coinbase-guard/SKILL.md"),
   "utf8",
+);
+const cli = await readFile(path.join(ROOT, "src/cli.js"), "utf8");
+const cliArgs = await readFile(path.join(ROOT, "src/cli-args.js"), "utf8");
+assert(
+  !/mastra|brex|partner-demo/i.test(`${cli}\n${cliArgs}`),
+  "Coinbase CLI must not import, advertise, or dispatch partner demos",
 );
 assert(
   skill.includes(`# Delta Coinbase Guard v${major}.${minor}`),

@@ -20,6 +20,7 @@ artifacts/live-execution-*
 artifacts/execution-probe-*
 artifacts/execution-reconciliation-*
 artifacts/release-*/
+artifacts/public-v*/
 artifacts/delta-coinbase-guard-*.zip
 artifacts/delta-coinbase-guard-*.zip.sha256
 artifacts/delta-coinbase-guard-*.manifest.json

@@ -22,7 +22,7 @@ Then run the two layers:
 
 ```sh
 # Deterministic local presentation harness
-./run mastra-demo
+node scripts/run-mastra-partner-demo.mjs
 
 # Actual pinned Mastra createTool + persisted REVIEW workflow
 cd examples/mastra
@@ -264,7 +264,7 @@ Run:
 
 ```sh
 node --test test/partner-demo.test.js test/mastra-partner.test.js
-./run mastra-demo
+node scripts/run-mastra-partner-demo.mjs
 
 cd examples/mastra
 pnpm run typecheck

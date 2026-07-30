@@ -96,11 +96,9 @@ REQUIRED_RELEASE_PATHS=(
   "scripts/build-release-bundle.sh"
   "scripts/check-local-links.mjs"
   "scripts/generate-coinbase-demo-panels.mjs"
-  "scripts/generate-mastra-partner-assets.mjs"
   "scripts/generate-workflow-screenshots.mjs"
   "scripts/install-managed-copy.mjs"
   "scripts/scan-release-content.mjs"
-  "scripts/validate-mastra-partner-assets.mjs"
   "scripts/validate-release-bundle.sh"
   "scripts/validate-release-metadata.mjs"
   "scripts/validate-skill.mjs"
@@ -219,11 +217,9 @@ while IFS= read -r archive_path; do
     scripts/build-release-bundle.sh|\
     scripts/check-local-links.mjs|\
     scripts/generate-coinbase-demo-panels.mjs|\
-    scripts/generate-mastra-partner-assets.mjs|\
     scripts/generate-workflow-screenshots.mjs|\
     scripts/install-managed-copy.mjs|\
     scripts/scan-release-content.mjs|\
-    scripts/validate-mastra-partner-assets.mjs|\
     scripts/validate-release-bundle.sh|\
     scripts/validate-release-metadata.mjs|\
     scripts/validate-skill.mjs )
@@ -244,7 +240,7 @@ while IFS= read -r archive_path; do
     .env|.env.*|*/.env|*/.env.*|\
     *.pem|*.key|*.jwk|*.p12|*.pfx|\
     *api_key*.json|*cdp_key*.json|*credential*.json|\
-    docs/MASTRA*|examples/mastra/*|output/mastra/*|\
+    *mastra*|*brex*|*partner-demo*|\
     output/playwright/*|output/pdf/*|__macosx/*|*/.ds_store )
       echo "Release archive contains a forbidden path: $relative_path" >&2
       exit 1

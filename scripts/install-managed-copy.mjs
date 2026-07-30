@@ -47,6 +47,13 @@ const COPY_ENTRIES = Object.freeze([
   "skills",
   "src",
 ]);
+const REPOSITORY_ONLY_PATHS = new Set([
+  "scripts/generate-mastra-partner-assets.mjs",
+  "scripts/run-mastra-partner-demo.mjs",
+  "scripts/validate-mastra-partner-assets.mjs",
+  "src/mastra-partner.js",
+  "src/partner-demo.js",
+]);
 const REQUIRED_MANAGED_FILES = Object.freeze([
   "package.json",
   "run",
@@ -88,6 +95,12 @@ function assertSafeRelativePath(relativePath) {
   }
 }
 
+function isRepositoryOnlyPath(relativePath) {
+  return REPOSITORY_ONLY_PATHS.has(
+    relativePath.split(path.sep).join("/"),
+  );
+}
+
 function copyEntry(sourceRoot, destinationRoot, relativePath, files) {
   assertSafeRelativePath(relativePath);
   const sourcePath = path.join(sourceRoot, relativePath);
@@ -102,10 +115,12 @@ function copyEntry(sourceRoot, destinationRoot, relativePath, files) {
       mode: metadata.mode & 0o777,
     });
     for (const child of readdirSync(sourcePath).sort()) {
+      const childPath = path.join(relativePath, child);
+      if (isRepositoryOnlyPath(childPath)) continue;
       copyEntry(
         sourceRoot,
         destinationRoot,
-        path.join(relativePath, child),
+        childPath,
         files,
       );
     }
@@ -135,9 +150,11 @@ function collectSourceEntry(sourceRoot, relativePath, files) {
   }
   if (metadata.isDirectory()) {
     for (const child of readdirSync(sourcePath).sort()) {
+      const childPath = path.join(relativePath, child);
+      if (isRepositoryOnlyPath(childPath)) continue;
       collectSourceEntry(
         sourceRoot,
-        path.join(relativePath, child),
+        childPath,
         files,
       );
     }

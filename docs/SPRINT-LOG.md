@@ -222,6 +222,85 @@ A normal Codex user can go directly from successful install to the protected
 chat flow with no improvisation, no digest handling, and no dependency on the
 download they were told they could delete.
 
-## Sprint 4 — patch release
+## Sprint 4 — v1.5.3
 
-Pending fresh QA and target-user review after Sprint 3.
+### PM requirement
+
+Make every trust statement match the actual boundary, especially when optional
+View-only verification fails or an exact retry returns prior evidence. Ship a
+Coinbase artifact whose public and managed-install contents match the product
+described in its README.
+
+### Engineering decision
+
+Classify errors where they occur. Local key-file and JWT validation failures
+remain local-only; once the fixed permission request is dispatched, every
+transport, timeout, response, HTTP, schema, or scope failure becomes a typed
+View-only credential `REVIEW` with conservative contact provenance. An exact
+View-only replay continues to recheck the current credential scope, so its
+output states that fact while confirming that accounts, product, BBO, and
+Preview were not reread.
+
+Coinbase's documented permission response currently omits `can_receive`.
+The View-only attestation now records that omission as unreported instead of
+inventing `false`; an explicit `true` is rejected and the route allowlist still
+contains no Receive or money-movement operation. The Coinbase release uses
+repository export rules, managed-copy exclusions, CLI/package separation, and
+a product-scope scanner to keep the independent Mastra/Brex reference in the
+repository but outside the Coinbase archive and installed skill.
+
+### QA finding
+
+A fresh simulated security review reproduced four post-dispatch failures in
+v1.5.2—network, timeout, response read, and oversized response. Each returned a
+safe `REVIEW`, but its verifiable receipt falsely said `LOCAL_GUARD_ONLY` and
+`coinbase_contacted: false`; the compact result also said the proposal stopped
+at authorization even though authorization had succeeded.
+
+Fresh retry testing showed that an exact View-only replay performed a second
+permission check while the CLI promised “no new Coinbase request.” Release QA
+also found six runnable Mastra/partner-demo files, three package scripts, and a
+CLI command in the Coinbase archive and managed install. None was a Create
+bypass, but all expanded the product and review surface.
+
+### Target-user feedback
+
+The simulated skeptical external-engineer review found the main chat hierarchy
+clear, then asked why the rest of the receipt provenance should be trusted if
+failure and retry contact were misstated. It also flagged the undocumented
+Receive field and unrelated partner-demo surface as avoidable credibility
+costs. This is simulated feedback, not Coinbase or customer endorsement.
+
+### Shipped fix
+
+- Type and redact every permission failure after request dispatch.
+- Preserve `VIEW_ONLY_CREDENTIAL` stage through the receipt and compact chat.
+- Keep local pre-dispatch credential failures correctly local-only.
+- State that View-only replay rechecks permissions but does not reread
+  account/product/BBO/Preview evidence.
+- Record omitted `can_receive` as unreported; never claim it was verified
+  false.
+- Remove Mastra/Brex command, source, scripts, and tests from the Coinbase
+  release and managed install while retaining a repository-only runner.
+
+### Validation
+
+- table-driven transport, timeout, response-read, oversize, partial-shape,
+  malformed, HTTP, and scope regressions;
+- compact-output stage, receipt verification, provenance, redaction, and
+  no-Create assertions;
+- View-only replay permission/evidence call counts;
+- Coinbase-only archive, managed manifest, CLI, package-script, and content
+  scanner checks;
+- full repository tests and Mastra repository-only runner regression;
+- skill, links, metadata, deterministic bundle, restricted-`PATH` cold install,
+  source deletion, public download, and checksum verification.
+
+### User-facing impact
+
+Users can now distinguish “the local key was invalid” from “a Coinbase
+permission check was attempted but could not be verified.” Exact retry explains
+its one permission recheck instead of hiding it. Receipts remain local integrity
+evidence—not Coinbase-authenticated proof or production Delta signatures—and
+the installable artifact now contains only the Coinbase product it claims to
+be.

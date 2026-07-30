@@ -26,3 +26,17 @@ artifacts export-ignore
 output/playwright export-ignore
 output/pdf export-ignore
 scripts/generate-workflow-screenshots.mjs export-ignore
+
+# The Coinbase release is a single-product artifact. Mastra/Brex partner
+# material remains available in the repository but is never exported into the
+# Coinbase archive or managed install.
+docs/MASTRA* export-ignore
+examples/mastra export-ignore
+output/mastra export-ignore
+scripts/generate-mastra-partner-assets.mjs export-ignore
+scripts/run-mastra-partner-demo.mjs export-ignore
+scripts/validate-mastra-partner-assets.mjs export-ignore
+src/mastra-partner.js export-ignore
+src/partner-demo.js export-ignore
+test/mastra-partner.test.js export-ignore
+test/partner-demo.test.js export-ignore

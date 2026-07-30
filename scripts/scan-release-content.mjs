@@ -150,6 +150,13 @@ for (const file of files) {
   const extension = path.extname(basename);
 
   if (
+    lowerPath.includes("mastra") ||
+    lowerPath.includes("brex") ||
+    lowerPath.includes("partner-demo")
+  ) {
+    fail(`${normalizedPath} is outside the Coinbase release product scope.`);
+  }
+  if (
     pathParts.some((part) => FORBIDDEN_PATH_PARTS.has(part)) ||
     (FORBIDDEN_FILE_NAMES.has(basename) &&
       !(managedInstall && basename === ".delta-coinbase-guard-node")) ||

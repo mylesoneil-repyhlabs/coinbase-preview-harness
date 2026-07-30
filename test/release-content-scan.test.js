@@ -82,6 +82,20 @@ test("release content scan rejects runtime and credential-shaped paths", async (
   });
 });
 
+test("release content scan rejects non-Coinbase partner-demo paths", async () => {
+  await withPayload(async (root) => {
+    await mkdir(path.join(root, "src"));
+    await writeFile(
+      path.join(root, "src", "mastra-partner.js"),
+      "export {};\n",
+    );
+
+    const result = scan(root);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /outside the Coinbase release product scope/);
+  });
+});
+
 test("release content scan rejects binary files", async () => {
   await withPayload(async (root) => {
     await writeFile(path.join(root, "binary.dat"), Buffer.from([1, 0, 2]));

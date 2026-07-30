@@ -1,6 +1,6 @@
 {
   "name": "delta-coinbase-guard",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Chat-native mandate-gated Coinbase spot BUY/SELL dry-run and optional View-only preflight guard.",
   "private": true,
   "type": "module",
@@ -14,7 +14,6 @@
     "configure-credentials": "node src/cli.js configure-preview-credentials",
     "configure-executor-credentials": "node src/cli.js configure-executor-credentials",
     "coinbase-demo": "node src/cli.js coinbase-demo",
-    "mastra-demo": "node src/cli.js mastra-demo",
     "plan": "node src/cli.js plan",
     "simulate": "node src/cli.js simulate",
     "preflight": "node src/cli.js preflight",
@@ -31,8 +30,6 @@
     "release:bundle": "bash scripts/build-release-bundle.sh HEAD",
     "visuals": "node scripts/generate-workflow-screenshots.mjs",
     "coinbase:panels": "node scripts/generate-coinbase-demo-panels.mjs",
-    "mastra:assets": "node scripts/generate-mastra-partner-assets.mjs",
-    "check:mastra": "node scripts/validate-mastra-partner-assets.mjs",
     "test": "node --test test/*.test.js"
   }
 }

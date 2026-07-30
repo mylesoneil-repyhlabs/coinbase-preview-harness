@@ -19,12 +19,14 @@ import {
 } from "../src/dry-run-history.js";
 import { digest } from "../src/evidence.js";
 import { evaluateExecutionPreview } from "../src/execution-policy.js";
+import { reviewError } from "../src/guard-errors.js";
 import {
   runBuiltInSimulation,
 } from "../src/execution-pipeline.js";
 import { verifyGuardReceipt } from "../src/guard-receipt.js";
 import { createExecutionPlan } from "../src/plan.js";
 import { runGuardPreflight } from "../src/preflight.js";
+import { formatGuardResult } from "../src/preflight-presentation.js";
 
 const INTENT =
   "Using my isolated Coinbase Advanced portfolio, use exactly 250 USDC to buy SOL on SOL-USDC once now with a price-bounded IOC limit order. Partial fill is acceptable. Do not pay more than 40 bps above Coinbase's fresh best ask, more than 2 USDC in commission, or more than 252 USDC total. This authorization expires 2 minutes after I confirm it.";
@@ -410,6 +412,66 @@ test("provider errors retain typed status but discard arbitrary provider identif
   );
 });
 
+test("post-dispatch permission failures retain credential stage and contact provenance", async () => {
+  const plan = await createExecutionPlan(INTENT);
+  const sentinel = "provider-secret-identifier-9348";
+  const failureCodes = [
+    "VIEW_ONLY_PERMISSION_TRANSPORT_UNAVAILABLE",
+    "VIEW_ONLY_PERMISSION_TIMEOUT",
+    "VIEW_ONLY_PERMISSION_RESPONSE_UNAVAILABLE",
+    "VIEW_ONLY_PERMISSION_RESPONSE_TOO_LARGE",
+    "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+  ];
+
+  for (const [index, code] of failureCodes.entries()) {
+    const result = await runGuardPreflight({
+      plan,
+      confirmPolicyDigest: plan.policy_digest,
+      viewKeyFile: "/external/ephemeral.json",
+      nonce: `permission-contact-${index}`,
+      history: { enabled: false },
+      verifyViewCredentials: async () => {
+        throw reviewError(
+          code,
+          `provider failure for ${sentinel}`,
+          { stage: "VIEW_ONLY_CREDENTIAL" },
+        );
+      },
+    });
+
+    assert.equal(result.record.decision, "REVIEW", code);
+    assert.equal(result.record.failure.code, code);
+    assert.equal(
+      result.record.failure.stage,
+      "VIEW_ONLY_CREDENTIAL",
+    );
+    assert.equal(result.record.boundary.coinbase_contacted, true);
+    assert.equal(
+      result.record.guard_receipt.provenance.source,
+      "COINBASE_PERMISSION_CHECK_ONLY",
+    );
+    assert.equal(
+      result.record.guard_receipt.provenance.coinbase_contacted,
+      true,
+    );
+    assert.equal(result.record.execution.adapter_invoked, false);
+    assert.equal(result.record.execution.order_submitted, false);
+    assert.equal(result.record.boundary.create_available, false);
+    assert.equal(JSON.stringify(result.record).includes(sentinel), false);
+    assert.match(
+      formatGuardResult(result.record),
+      /verification stopped at the View-only credential check/i,
+    );
+    assert.equal(
+      verifyGuardReceipt(
+        result.record.guard_receipt,
+        result.record,
+      ).verified,
+      true,
+    );
+  }
+});
+
 test("local credential failures have truthful provenance and redact local identifiers", async () => {
   const plan = await createExecutionPlan(INTENT);
   const sentinel = "/private/users/alice/credential-secret.json";
@@ -430,6 +492,14 @@ test("local credential failures have truthful provenance and redact local identi
   assert.equal(
     result.record.guard_receipt.provenance.coinbase_contacted,
     false,
+  );
+  assert.equal(
+    result.record.failure.stage,
+    "VIEW_ONLY_CREDENTIAL",
+  );
+  assert.match(
+    formatGuardResult(result.record),
+    /verification stopped at the View-only credential check/i,
   );
   assert.equal(JSON.stringify(result.record).includes(sentinel), false);
   assert.match(

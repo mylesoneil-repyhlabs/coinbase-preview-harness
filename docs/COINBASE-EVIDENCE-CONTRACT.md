@@ -102,12 +102,15 @@ changes the descriptor digest.
 
 ## View-only credential and route boundary
 
-The composite preflight reads the key file for that process, verifies
-`can_view: true` and `can_trade/can_transfer/can_receive: false`, and calls the
-credential verifier with attestation persistence disabled. It retains only
-non-secret credential and portfolio fingerprints in the sanitized record.
-Secrets, key IDs, key-file paths, JWTs, headers, raw provider bodies, and raw
-account IDs are not written to the Guard receipt or history.
+The composite preflight reads the key file for that process and verifies
+`can_view: true` plus `can_trade/can_transfer: false`. The current documented
+key-permissions response does not include `can_receive`; the Guard rejects an
+explicit `true`, records an omitted field as unreported, and does not claim it
+verified `false`. Users must still configure Receive disabled. The View-only
+client has no Receive or other money-movement route. Credential attestation
+persistence is disabled. Only non-secret credential and portfolio fingerprints
+enter the sanitized record; secrets, key IDs, key-file paths, JWTs, headers,
+raw provider bodies, and raw account IDs do not enter the receipt or history.
 
 Permission verification uses the fixed
 `GET /api/v3/brokerage/key_permissions` route. The separate frozen View-only

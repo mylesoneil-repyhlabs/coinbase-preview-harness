@@ -67,7 +67,8 @@ simulated eligibility only.
 
 ### View-only preflight
 
-The Guard verifies a no-Trade/no-Transfer/no-Receive key for that session,
+The Guard verifies no-Trade/no-Transfer for that session, rejects explicitly
+reported Receive authority, records an omitted Receive field as unreported,
 fetches complete Accounts plus the exact Product and fresh BBO, and requests
 one exact Preview. A `PASS` means these point-in-time facts matched the
 proposal. It is not Delta authorization, execution eligibility, submission,
@@ -91,9 +92,11 @@ Accounts, Product, BBO, and Preview have endpoint-specific request/receipt
 times; BBO also uses Coinbase's observed timestamp. Missing or stale required
 facts cannot pass. Preview is bound to the exact proposal and nonce.
 
-An exact process retry reuses the nonce and returns the prior result without a
-new network request. A genuine refresh uses a new nonce and a new receipt.
-Reusing one nonce for different semantics fails closed.
+An exact dry-run retry reuses the nonce and returns the prior result without a
+network request. In View-only mode, the Guard rechecks the current key
+permissions before returning the prior result, but does not reread balances,
+product, BBO, or Preview. A genuine evidence refresh uses a new nonce and a new
+receipt. Reusing one nonce for different semantics fails closed.
 
 ## Local history
 

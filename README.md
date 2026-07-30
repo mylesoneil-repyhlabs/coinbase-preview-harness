@@ -6,8 +6,8 @@
 
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
-[**Download v1.5.2**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.2/delta-coinbase-guard-v1.5.2.zip)
-· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.2/delta-coinbase-guard-v1.5.2.zip.sha256)
+[**Download v1.5.3**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip)
+· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip.sha256)
 · [Recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md)
 · [Claim ledger](docs/COINBASE-DEMO-ASSURANCE.md)
 · [Sprint log](docs/SPRINT-LOG.md)
@@ -76,8 +76,9 @@ metadata remain available on request.
   locally with redacted facts, provenance, age, outcome, and no-order status.
   Credentials, account IDs, raw Coinbase bodies, and headers are not stored.
 - **Bounded retry:** an exact nonce retry can return its prior current result.
-  Reusing a nonce for different semantics blocks; changed evidence supersedes
-  the old result.
+  A View-only retry rechecks key permissions but does not reread account,
+  product, BBO, or Preview facts. Reusing a nonce for different semantics
+  blocks; changed evidence supersedes the old result.
 - **Locked execution:** Preview is point-in-time evidence, not an execution or
   price guarantee. Coinbase Create remains unavailable.
 
@@ -91,6 +92,14 @@ release is deleted. It now gives one outcome-neutral, copyable Codex prompt,
 the separate plain-English authorization message, and the
 `PASS`/`BLOCK`/`REVIEW`, receipt, and no-order expectations inline—without
 digest ceremony or a source-relative document dependency.
+
+v1.5.3 makes failure and retry provenance match what actually happened.
+Permission-check transport, timeout, response-read, shape, size, HTTP, and
+scope failures now stop at the View-only credential stage and conservatively
+record that the permission request was dispatched. Local key-file/JWT failures
+remain local-only. The Guard also stops claiming Coinbase's currently
+undocumented `can_receive` field was observed, and the Coinbase release archive
+and managed install no longer contain the separate Mastra/Brex partner demo.
 
 ## Supported action surface
 
@@ -156,15 +165,15 @@ credential is needed for the default flow. The installer finds Node.js 22+ in
 the shell or Codex Desktop runtime cache.
 
 1. Download the pinned
-   [v1.5.2 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.2/delta-coinbase-guard-v1.5.2.zip)
+   [v1.5.3 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip)
    and
-   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.2/delta-coinbase-guard-v1.5.2.zip.sha256).
+   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip.sha256).
 2. Verify and install:
 
 ```sh
-shasum -a 256 -c delta-coinbase-guard-v1.5.2.zip.sha256
-unzip delta-coinbase-guard-v1.5.2.zip
-cd delta-coinbase-guard-v1.5.2
+shasum -a 256 -c delta-coinbase-guard-v1.5.3.zip.sha256
+unzip delta-coinbase-guard-v1.5.3.zip
+cd delta-coinbase-guard-v1.5.3
 ./install
 ```
 
@@ -301,6 +310,12 @@ has no Create, transfer, or money-movement method. Permission, account,
 product, BBO, or Preview failures return `REVIEW — unable to verify` with a
 recovery action.
 
+Coinbase's current documented key-permissions response reports View, Trade,
+Transfer, and portfolio scope, but not Receive. Configure Receive disabled.
+The Guard rejects an explicit `can_receive: true`, records an omitted value as
+unreported, and does not claim the API verified `false`; its allowlisted client
+has no Receive route regardless.
+
 View-only setup should take fewer than three minutes after a key exists and
 requires no more than two user choices: authorize the mandate, then choose the
 optional key. The command emits progress immediately and a safe heartbeat
@@ -436,7 +451,8 @@ crossed books, incomplete pagination, Preview arithmetic and fingerprint
 drift, 401/403/429/outage/partial/malformed responses, wrong side/size,
 expired policy, payload mutation, exact-byte mismatch, nonce replay,
 supersession, no-secret history/log output, locked Create, managed install,
-restricted `PATH`, source deletion, and upgrades.
+restricted `PATH`, source deletion, upgrades, truthful permission-failure
+provenance, View-only retry contact, and Coinbase-only release contents.
 
 See [the sprint log](docs/SPRINT-LOG.md) for the PM requirement, engineering
 decision, QA/persona finding, shipped fix, validation, and user impact for each

@@ -118,6 +118,7 @@ export function assertViewOnlyPermissions(response) {
       "VIEW_ONLY_PERMISSION_REJECTED",
       `Key is not safe for the preview harness: ${failures.join("; ")}`,
       {
+        stage: "VIEW_ONLY_CREDENTIAL",
         recovery:
           "Supply a Coinbase key with View enabled and Trade, Transfer, and Receive disabled.",
       },
@@ -131,7 +132,7 @@ export function assertTradeOnlyPermissions(response) {
   if (response?.can_view !== true) failures.push("can_view must be true");
   if (response?.can_trade !== true) failures.push("can_trade must be true");
   if (response?.can_transfer !== false) failures.push("can_transfer must be false");
-  if (response?.can_receive === true) failures.push("can_receive must not be true");
+  if (response?.can_receive !== false) failures.push("can_receive must be false");
   if (!response?.portfolio_uuid) failures.push("portfolio_uuid must be present");
   if (failures.length) {
     throw new Error(`Key is not safe for the execution harness: ${failures.join("; ")}`);
@@ -262,19 +263,74 @@ async function persistPermissionAttestation(targetPath, attestation) {
 
 async function fetchPermissions(keyId, privateKey, fetchImpl) {
   const jwt = createRequestJwt(keyId, privateKey);
-  const response = await fetchImpl(PERMISSIONS_URL, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      "Cache-Control": "no-cache",
-      "Content-Type": "application/json",
-    },
-    redirect: "error",
-    signal: AbortSignal.timeout(5_000),
-  });
-  const responseText = await response.text();
-  if (responseText.length > 64 * 1024) {
-    throw new Error("Coinbase permission response exceeded the safety limit");
+  let response;
+  try {
+    response = await fetchImpl(PERMISSIONS_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Cache-Control": "no-cache",
+        "Content-Type": "application/json",
+      },
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (error) {
+    const timedOut =
+      error?.name === "TimeoutError" ||
+      error?.name === "AbortError" ||
+      /timed? ?out|timeout/i.test(
+        error instanceof Error ? error.message : String(error),
+      );
+    throw reviewError(
+      timedOut
+        ? "VIEW_ONLY_PERMISSION_TIMEOUT"
+        : "VIEW_ONLY_PERMISSION_TRANSPORT_UNAVAILABLE",
+      timedOut
+        ? "Coinbase View-only permission check timed out"
+        : "Coinbase View-only permission check could not complete",
+      {
+        stage: "VIEW_ONLY_CREDENTIAL",
+        recovery:
+          "Retry the View-only permission check later. No order was submitted.",
+      },
+    );
+  }
+  if (
+    !response ||
+    typeof response.ok !== "boolean" ||
+    !Number.isInteger(response.status) ||
+    typeof response.text !== "function"
+  ) {
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+      "Coinbase permission response metadata was malformed",
+      { stage: "VIEW_ONLY_CREDENTIAL" },
+    );
+  }
+  let responseText;
+  try {
+    responseText = await response.text();
+  } catch {
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_RESPONSE_UNAVAILABLE",
+      "Coinbase permission response could not be read",
+      { stage: "VIEW_ONLY_CREDENTIAL" },
+    );
+  }
+  if (typeof responseText !== "string") {
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+      "Coinbase permission response body was malformed",
+      { stage: "VIEW_ONLY_CREDENTIAL" },
+    );
+  }
+  if (Buffer.byteLength(responseText, "utf8") > 64 * 1024) {
+    throw reviewError(
+      "VIEW_ONLY_PERMISSION_RESPONSE_TOO_LARGE",
+      "Coinbase permission response exceeded the safety limit",
+      { stage: "VIEW_ONLY_CREDENTIAL" },
+    );
   }
   if (!response.ok) {
     const code =
@@ -289,6 +345,7 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
       code,
       `Coinbase permission check failed with HTTP ${response.status}`,
       {
+        stage: "VIEW_ONLY_CREDENTIAL",
         httpStatus: response.status,
         retryable: response.status === 429 || response.status >= 500,
         recovery:
@@ -304,6 +361,7 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
     throw reviewError(
       "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
       "Coinbase permission response was not valid JSON",
+      { stage: "VIEW_ONLY_CREDENTIAL" },
     );
   }
 }
@@ -354,15 +412,18 @@ export async function verifyViewKeyFileAndConfigure(
   const { keyId, privateKey } = await readExternalKeyFile(keyFilePath);
   const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
   assertViewOnlyPermissions(permissions);
+  const canReceiveReported = Object.hasOwn(permissions, "can_receive");
   const attestation = {
-    schema: "delta.coinbase.view_permission_attestation.v1",
+    schema: "delta.coinbase.view_permission_attestation.v2",
     verified_at: new Date().toISOString(),
     environment: "coinbase-read-preview",
     jwt_profile: JWT_PROFILE,
     can_view: true,
     can_trade: false,
     can_transfer: false,
-    can_receive: false,
+    can_receive:
+      permissions.can_receive === false ? false : null,
+    can_receive_reported: canReceiveReported,
     portfolio_fingerprint: createHash("sha256")
       .update(permissions.portfolio_uuid)
       .digest("hex"),

@@ -19,8 +19,10 @@
   response into chat.
 - Require an owner-only `0600` regular non-symlink file outside the repository
   and managed install. Read it no-follow with bounded size.
-- Require `can_view=true`, `can_trade=false`, `can_transfer=false`, and
-  `can_receive=false`. Never continue with an over-scoped key.
+- Require `can_view=true`, `can_trade=false`, and `can_transfer=false`. The
+  documented permission response currently omits `can_receive`: require the
+  user to configure Receive disabled, reject an explicit `true`, record an
+  omission as unreported, and never claim the API verified `false`.
 - Use key material and permission results only in the current preflight. Do
   not copy the key or persist a permission attestation, raw header, raw API
   body, account ID, or portfolio label.

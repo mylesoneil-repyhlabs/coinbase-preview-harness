@@ -232,6 +232,17 @@ function credentialCheckContactedCoinbase(error) {
   );
 }
 
+function viewCredentialReviewError(error) {
+  const typed = toGuardReviewError(error, "VIEW_ONLY_CREDENTIAL");
+  if (typed.stage === "VIEW_ONLY_CREDENTIAL") return typed;
+  return reviewError(typed.code, typed.message, {
+    stage: "VIEW_ONLY_CREDENTIAL",
+    recovery: typed.recovery,
+    httpStatus: typed.httpStatus,
+    retryable: typed.retryable,
+  });
+}
+
 function receiptSummary(entry) {
   return {
     receipt_digest: entry.receipt.receipt_digest,
@@ -332,9 +343,10 @@ export async function runGuardPreflight({
           }),
       );
     } catch (error) {
+      const credentialError = viewCredentialReviewError(error);
       const record = failedPreflightRecord(
         plan,
-        toGuardReviewError(error, "VIEW_ONLY_CREDENTIAL"),
+        credentialError,
         {
           mode,
           nonce,
@@ -342,7 +354,7 @@ export async function runGuardPreflight({
           confirmPolicyDigest,
           confirmationMatched: true,
           coinbaseContacted:
-            credentialCheckContactedCoinbase(error),
+            credentialCheckContactedCoinbase(credentialError),
           redactMessage: !(error instanceof GuardDecisionError),
         },
       );

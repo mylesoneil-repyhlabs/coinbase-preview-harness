@@ -37,7 +37,6 @@ const VALID_COMMAND_SURFACES = [
     "configure-executor-credentials",
   ],
   ["coinbase-demo", ["--no-artifacts"], "coinbase-demo"],
-  ["mastra-demo", ["--scenario", "review"], "mastra-demo"],
   [
     "plan",
     ["--intent", "Buy exactly 10 USDC of SOL", "--compiler", "deterministic"],
@@ -286,7 +285,6 @@ for (const command of REQUIRED_COMMANDS) {
 
 test("enumerated option values fail closed", () => {
   for (const [command, args] of [
-    ["mastra-demo", ["--scenario", "maybe"]],
     [
       "plan",
       ["--intent", "Buy SOL", "--compiler", "non-deterministic"],
@@ -336,6 +334,19 @@ test("unknown command and attacker-controlled tokens are not reflected", () => {
     ]),
   );
   assert.doesNotMatch(optionError.message, /Bearer|eyJ|secret|signature/);
+});
+
+test("Coinbase CLI does not expose the repository-only partner demo", () => {
+  const error = captureUsageError(() =>
+    parseCliArguments("mastra-demo", []),
+  );
+  assert.match(error.message, /unknown command/i);
+  assert.equal(
+    Object.keys(CLI_COMMAND_SCHEMAS).some((command) =>
+      /mastra|brex|partner-demo/i.test(command),
+    ),
+    false,
+  );
 });
 
 test("CLI validates the full argument vector before running a handler", async () => {

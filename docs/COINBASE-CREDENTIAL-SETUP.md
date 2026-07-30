@@ -62,7 +62,10 @@ The Guard validates:
 - private file permissions;
 - supported ECDSA key shape;
 - current permission response;
-- View present and Trade/Transfer/Receive absent;
+- View present and Trade/Transfer absent;
+- explicit Receive authority rejected; because the current documented response
+  omits this field, an omission is recorded as unreported rather than
+  misrepresented as verified false;
 - portfolio scope compatible with the returned accounts.
 
 Failure is `REVIEW — unable to verify`; it never falls back to a broader key or

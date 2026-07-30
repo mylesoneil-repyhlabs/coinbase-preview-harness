@@ -72,12 +72,18 @@ function credentialBinding(attestation) {
     can_receive: attestation?.can_receive,
   };
   assertExactFields(binding, CREDENTIAL_FIELDS, "credential binding");
+  const receiveScopeAccepted =
+    binding.can_receive === false ||
+    (
+      binding.can_trade === false &&
+      binding.can_receive === null
+    );
   if (
     binding.jwt_profile !== JWT_PROFILE ||
     binding.can_view !== true ||
     typeof binding.can_trade !== "boolean" ||
     binding.can_transfer !== false ||
-    binding.can_receive !== false ||
+    !receiveScopeAccepted ||
     typeof binding.portfolio_fingerprint !== "string" ||
     !binding.portfolio_fingerprint ||
     typeof binding.credential_fingerprint !== "string" ||

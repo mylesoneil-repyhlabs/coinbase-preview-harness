@@ -148,10 +148,11 @@ function previewResponse(request, { previewId = "preview-v15-1" } = {}) {
   };
 }
 
-async function pipelineFixture() {
+async function pipelineFixture(
+  attestation = viewAttestation(),
+) {
   const plan = await createExecutionPlan(BUY_INTENT);
   const capabilityProfile = await loadPreviewCapabilityProfile();
-  const attestation = viewAttestation();
   const boundExecution = createBoundExecution(
     plan,
     attestation,
@@ -273,6 +274,25 @@ test("View-only PASS is bound to the exact Preview transport body", async () => 
     create: 0,
   });
   assertLockedBoundary(record, GUARD_MODES.VIEW_ONLY_PREFLIGHT);
+});
+
+test("View-only preflight preserves an unreported Receive permission field", async () => {
+  const attestation = {
+    ...viewAttestation(),
+    can_receive: null,
+    can_receive_reported: false,
+  };
+  const { args } = await pipelineFixture(attestation);
+  const record = await runExecutionPipeline(args);
+
+  assert.equal(record.decision, "PASS");
+  assert.equal(record.status, "PREVIEW_PROBE_PASS");
+  assert.equal(attestation.can_receive, null);
+  assert.equal(attestation.can_receive_reported, false);
+  assertLockedBoundary(
+    record,
+    GUARD_MODES.VIEW_ONLY_PREFLIGHT,
+  );
 });
 
 for (const {
@@ -657,6 +677,69 @@ test("exact nonce retry returns prior history; changed semantics cannot reuse it
     "NONCE_REUSE_MISMATCH",
   );
   assert.equal(mismatched.record.execution.order_submitted, false);
+});
+
+test("View-only retry rechecks permissions but does not reread evidence", async (t) => {
+  const directory = await tempHistory(t);
+  const { args } = await pipelineFixture();
+  const plan = args.plan;
+  const nonce = "view-retry-permission-recheck";
+  let credentialChecks = 0;
+  let pipelineRuns = 0;
+  const common = {
+    plan,
+    confirmPolicyDigest: plan.policy_digest,
+    viewKeyFile: "/external/ephemeral-view-key.json",
+    nonce,
+    now: () => new Date(FIXED),
+    history: { directory },
+    verifyViewCredentials: async () => {
+      credentialChecks += 1;
+      return {
+        attestation: viewAttestation(),
+        credentials: {
+          keyId: KEY_ID_SENTINEL,
+          privateKey: PRIVATE_KEY_SENTINEL,
+        },
+      };
+    },
+    createViewAdapter: () => ({}),
+    loadCapabilityProfile: async () => ({}),
+    runPipeline: async (input) => {
+      pipelineRuns += 1;
+      return runExecutionPipeline({
+        ...args,
+        preflightNonce: input.preflightNonce,
+      });
+    },
+  };
+
+  const first = await runGuardPreflight(common);
+  const retry = await runGuardPreflight(common);
+
+  assert.equal(first.replayed, false);
+  assert.equal(retry.replayed, true);
+  assert.equal(credentialChecks, 2);
+  assert.equal(pipelineRuns, 1);
+  assert.equal(
+    retry.history_entry.receipt.receipt_digest,
+    first.record.guard_receipt.receipt_digest,
+  );
+  assert.equal(
+    JSON.stringify(retry).includes(PRIVATE_KEY_SENTINEL),
+    false,
+  );
+
+  const cli = await readFile(
+    new URL("../src/cli.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(cli, /VIEW-ONLY PERMISSION RECHECKED/);
+  assert.match(
+    cli,
+    /NO NEW ACCOUNT, PRODUCT, BBO, OR PREVIEW REQUEST/,
+  );
+  assert.doesNotMatch(cli, /NO NEW COINBASE REQUEST/);
 });
 
 test("history is redacted, versioned, and supersedes changed exact evidence", async (t) => {

@@ -119,8 +119,10 @@ Do not call Coinbase MCP, Create, execute, or reconcile.
 For View-only mode, first state that this one session reads only permission
 status, balances, the exact product, BBO, and Preview. Ask for an absolute path
 to an external owner-only View key file—never the credential text.
-Do not persist a key or permission attestation. Reject Trade, Transfer, or Receive
-authority.
+Do not persist a key or permission attestation. Reject Trade or Transfer
+authority and any explicitly reported Receive authority. The documented
+permission response currently omits Receive, so require it disabled in setup
+but never claim an omitted value was API-verified.
 
 Return the harness's compact result directly:
 

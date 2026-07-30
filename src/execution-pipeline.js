@@ -74,12 +74,19 @@ function finalRecord(record, { guardMode = null, nonce = null } = {}) {
 }
 
 function validAttestation(attestation, { tradeRequired = false } = {}) {
+  const receiveScopeAccepted =
+    attestation?.can_receive === false ||
+    (
+      !tradeRequired &&
+      attestation?.can_receive === null &&
+      attestation?.can_receive_reported === false
+    );
   return (
     attestation?.can_view === true &&
     typeof attestation?.can_trade === "boolean" &&
     (!tradeRequired || attestation.can_trade === true) &&
     attestation?.can_transfer === false &&
-    attestation?.can_receive === false &&
+    receiveScopeAccepted &&
     attestation?.jwt_profile === JWT_PROFILE &&
     typeof attestation.portfolio_fingerprint === "string" &&
     typeof attestation.key_fingerprint === "string"
