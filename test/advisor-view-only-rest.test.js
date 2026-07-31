@@ -173,11 +173,12 @@ async function relativeDependencyClosure(entry) {
 
 test("advisor dependency closure excludes the Coinbase execution REST adapter", async () => {
   const closure = await relativeDependencyClosure(
-    path.join(ROOT, "src", "advisor", "server.js"),
+    path.join(ROOT, "src", "advisor-server.js"),
   );
   const relative = [...closure].map((file) =>
     path.relative(ROOT, file),
   );
+  assert.equal(relative.includes("src/cli.js"), false);
   assert.equal(relative.includes("src/coinbase-rest.js"), false);
 
   const sources = await Promise.all(
@@ -191,5 +192,24 @@ test("advisor dependency closure excludes the Coinbase execution REST adapter", 
   assert.doesNotMatch(
     combined,
     /request\(\s*["']POST["']\s*,\s*[^)]*\/orders["']/,
+  );
+});
+
+test("run advisor dispatches directly before the execution-capable CLI can load", async () => {
+  const launcher = await readFile(
+    path.join(ROOT, "run"),
+    "utf8",
+  );
+  const directAdvisor = launcher.indexOf(
+    'exec "$NODE_BINARY" "$HARNESS_DIR/src/advisor-server.js"',
+  );
+  const cliFallback = launcher.indexOf(
+    'exec "$NODE_BINARY" "$HARNESS_DIR/src/cli.js" "$@"',
+  );
+  assert.ok(directAdvisor >= 0);
+  assert.ok(cliFallback > directAdvisor);
+  assert.match(
+    launcher,
+    /if \(\( \$# == 1 \)\) && \[\[ "\$1" == "advisor" \]\]/,
   );
 });

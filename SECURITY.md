@@ -68,9 +68,18 @@ before continuing.
 
 The advisor adds a loopback web interface, not a browser-side trading client.
 The implemented credential-capable server binds to `127.0.0.1`; credential
-material remains in server-process memory only and is cleared on disconnect,
-expiry, failure, or process exit. It must never enter browser storage, URLs,
-logs, history, screenshots, analytics, or release assets.
+material necessarily exists transiently in the connection form, page
+JavaScript, and one same-origin loopback request. The fields are cleared before
+dispatch. Once received, the accepted key reference remains only in
+server-process memory and is cleared on disconnect, expiry, failure, or
+process exit. It must never enter browser storage, browser history, URLs, logs,
+Guard history, screenshots, analytics, or release assets.
+
+Browser authority is a high-entropy capability returned by one same-origin
+session bootstrap and retained only in page memory. Every stateful read and
+mutation requires the capability header. Cookies are never issued and have no
+authority; missing, expired, cross-server, and cross-port capabilities fail
+closed. Reloading the page discards the browser-held capability.
 
 A hosted/static advisor is credential-free. Remote credential handling
 requires a separate reviewed service and threat model. A visible confirmation

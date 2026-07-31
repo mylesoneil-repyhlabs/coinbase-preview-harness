@@ -14,10 +14,36 @@ fi
 ARCHIVE_DIRECTORY="$(cd "$(dirname "$ARCHIVE_PATH")" && pwd -P)"
 ARCHIVE_PATH="$ARCHIVE_DIRECTORY/$(basename "$ARCHIVE_PATH")"
 
-if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+compatible_node() {
+  local candidate="$1"
+  local candidate_major
+  [[ -x "$candidate" ]] || return 1
+  candidate_major="$(
+    "$candidate" -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null
+  )" || return 1
+  [[ "$candidate_major" =~ ^[0-9]+$ ]] || return 1
+  (( candidate_major >= 22 ))
+}
+
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && \
+  compatible_node "$HARNESS_NODE_BINARY"; then
   NODE_BINARY="$HARNESS_NODE_BINARY"
-elif command -v node >/dev/null 2>&1; then
+elif command -v node >/dev/null 2>&1 && \
+  compatible_node "$(command -v node)"; then
   NODE_BINARY="$(command -v node)"
+elif [[ -n "${HOME:-}" ]]; then
+  NODE_BINARY=""
+  for codex_node_candidate in \
+    "$HOME"/.cache/codex-runtimes/*/dependencies/node/bin/node; do
+    if compatible_node "$codex_node_candidate"; then
+      NODE_BINARY="$codex_node_candidate"
+      break
+    fi
+  done
+  if [[ -z "$NODE_BINARY" ]]; then
+    echo "Node.js 22 or newer is required to validate a release bundle." >&2
+    exit 1
+  fi
 else
   echo "Node.js 22 or newer is required to validate a release bundle." >&2
   exit 1
@@ -32,7 +58,12 @@ fi
 VALIDATION_DIRECTORY="$(
   mktemp -d "${TMPDIR:-/tmp}/delta-coinbase-guard-cold-install.XXXXXX"
 )"
+ADVISOR_PID=""
 cleanup() {
+  if [[ -n "$ADVISOR_PID" ]]; then
+    kill "$ADVISOR_PID" 2>/dev/null || true
+    wait "$ADVISOR_PID" 2>/dev/null || true
+  fi
   rm -rf -- "$VALIDATION_DIRECTORY"
 }
 trap cleanup EXIT HUP INT TERM
@@ -136,6 +167,155 @@ if [[ -e "$RELEASE_ROOT" || -L "$RELEASE_ROOT" ]]; then
   exit 1
 fi
 
+ADVISOR_STDOUT="$VALIDATION_DIRECTORY/advisor.stdout"
+ADVISOR_STDERR="$VALIDATION_DIRECTORY/advisor.stderr"
+env -i \
+  HOME="$COLD_HOME" \
+  PATH="/usr/bin:/bin" \
+  DELTA_COINBASE_ADVISOR_PORT=0 \
+  "$MANAGED_HARNESS/run" advisor \
+  >"$ADVISOR_STDOUT" 2>"$ADVISOR_STDERR" &
+ADVISOR_PID=$!
+
+ADVISOR_URL=""
+for (( advisor_attempt = 0; advisor_attempt < 100; advisor_attempt += 1 )); do
+  if ! kill -0 "$ADVISOR_PID" 2>/dev/null; then
+    echo "Cold-installed Advisor exited before becoming ready." >&2
+    sed -n '1,80p' "$ADVISOR_STDERR" >&2
+    exit 1
+  fi
+  ADVISOR_URL="$(
+    "$NODE_BINARY" -e '
+      const fs = require("node:fs");
+      const text = fs.readFileSync(process.argv[1], "utf8");
+      const match = text.match(/^Delta Guard Advisor: (http:\/\/127\.0\.0\.1:\d+)$/m);
+      process.stdout.write(match?.[1] ?? "");
+    ' "$ADVISOR_STDOUT"
+  )"
+  if [[ -n "$ADVISOR_URL" ]]; then
+    break
+  fi
+  sleep 0.05
+done
+if [[ -z "$ADVISOR_URL" ]]; then
+  echo "Cold-installed Advisor did not report a loopback URL." >&2
+  sed -n '1,80p' "$ADVISOR_STDERR" >&2
+  exit 1
+fi
+
+"$NODE_BINARY" -e '
+  const base = new URL(process.argv[1]);
+  const request = async (pathname, options = {}) => {
+    const response = await fetch(new URL(pathname, base), {
+      ...options,
+      redirect: "error",
+      signal: AbortSignal.timeout(2_000),
+      headers: {
+        "Sec-Fetch-Site": "same-origin",
+        ...(options.headers ?? {}),
+      },
+    });
+    if (response.headers.has("set-cookie")) {
+      throw new Error(`${pathname} unexpectedly set a cookie`);
+    }
+    return response;
+  };
+  const assertSecurityHeaders = (response, pathname) => {
+    if (response.headers.get("cache-control") !== "no-store") {
+      throw new Error(`${pathname} is not non-cacheable`);
+    }
+    const csp = response.headers.get("content-security-policy") ?? "";
+    if (!csp.includes("default-src '\''self'\''") ||
+        !csp.includes("frame-ancestors '\''none'\''")) {
+      throw new Error(`${pathname} is missing the locked Content-Security-Policy`);
+    }
+    if (response.headers.get("x-content-type-options") !== "nosniff" ||
+        response.headers.get("x-frame-options") !== "DENY") {
+      throw new Error(`${pathname} is missing browser security headers`);
+    }
+  };
+  const assetBodies = new Map();
+  for (const [pathname, contentType] of [
+    ["/", "text/html"],
+    ["/app.js", "text/javascript"],
+    ["/styles.css", "text/css"],
+  ]) {
+    const response = await request(pathname);
+    if (response.status !== 200) {
+      throw new Error(`${pathname} returned ${response.status}, expected 200`);
+    }
+    assertSecurityHeaders(response, pathname);
+    if (!(response.headers.get("content-type") ?? "").startsWith(contentType)) {
+      throw new Error(`${pathname} has the wrong content type`);
+    }
+    const body = await response.text();
+    if (body.length === 0) throw new Error(`${pathname} is empty`);
+    assetBodies.set(pathname, body);
+  }
+  if (/<(?:script|link|img)\b[^>]*(?:src|href)=["'\''](?:https?:)?\/\//i.test(
+    assetBodies.get("/") ?? "",
+  )) {
+    throw new Error("Advisor HTML depends on an external asset");
+  }
+  if (/(?:\bimport\s*(?:\(|[^;"'\'']*\bfrom\s*)|\bfetch\s*\(|\bnew\s+(?:Worker|URL)\s*\()\s*["'\''](?:https?:)?\/\//i.test(
+    assetBodies.get("/app.js") ?? "",
+  )) {
+    throw new Error("Advisor JavaScript depends on an external asset");
+  }
+  if (/(?:@import\s+(?:url\(\s*)?|url\(\s*)["'\'']?(?:https?:)?\/\//i.test(
+    assetBodies.get("/styles.css") ?? "",
+  )) {
+    throw new Error("Advisor CSS depends on an external asset");
+  }
+  const statusResponse = await request("/api/status");
+  if (statusResponse.status !== 200) {
+    throw new Error(`/api/status returned ${statusResponse.status}`);
+  }
+  assertSecurityHeaders(statusResponse, "/api/status");
+  const status = await statusResponse.json();
+  if (status.ready !== true ||
+      status.execution?.enabled !== false ||
+      status.execution?.order_submitted !== false ||
+      status.execution?.money_moved !== false ||
+      status.capabilities?.live_create !== false) {
+    throw new Error("Advisor status did not preserve the locked execution boundary");
+  }
+  for (const pathname of [
+    "/api/execute",
+    "/api/create",
+    "/api/orders",
+    "/api/submit",
+    "/api/place",
+    "/api/proxy",
+    "/api/final-confirmation",
+    "/api/final-review-challenge",
+    "/api/grant",
+    "/api/claim",
+    "/api/live-readiness",
+  ]) {
+    const getResponse = await request(pathname);
+    if (getResponse.status !== 404) {
+      throw new Error(`${pathname} GET returned ${getResponse.status}, expected 404`);
+    }
+    const postResponse = await request(pathname, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Origin": base.origin,
+        "X-Delta-Advisor": "1",
+      },
+      body: "{}",
+    });
+    if (postResponse.status !== 404) {
+      throw new Error(`${pathname} POST returned ${postResponse.status}, expected 404`);
+    }
+  }
+' "$ADVISOR_URL"
+
+kill "$ADVISOR_PID" 2>/dev/null || true
+wait "$ADVISOR_PID" 2>/dev/null || true
+ADVISOR_PID=""
+
 DOCTOR_OUTPUT="$(
   env -i \
     HOME="$COLD_HOME" \
@@ -237,6 +417,6 @@ validate_generic_simulation \
   "BEST_BID" \
   "AT_OR_ABOVE"
 
-printf 'Release bundle cold-install validation passed: %s (Node %s, restricted PATH).\n' \
+printf 'Release bundle cold-install validation passed: %s (Node %s, restricted PATH, Advisor UI/API).\n' \
   "$(basename "$ARCHIVE_PATH")" \
   "$("$NODE_BINARY" --version)"

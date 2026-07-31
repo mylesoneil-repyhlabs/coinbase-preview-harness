@@ -88,12 +88,15 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
 | 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
 
-Current development checkpoint: Sprints 0–5 are implemented. Sprint 3 is a
+Current development checkpoint: Sprints 0–6 are implemented. Sprint 3 is a
 non-executable conditional template and one-check simulation only. Sprint 4
 is neutral educational planning with a fresh editable one-leg handoff; it
 does not create Guard evidence or authorize a trade. Sprint 5 is a locked
 server-derived explanation shown only for a fresh, complete, locally
-receipt-verified View-only PASS. Sprints 6–7 remain behind their own gates.
+receipt-verified View-only PASS. Sprint 6 replaces ambient cookie authority,
+enforces operator feature stops at the server, bounds session resource use,
+packages the real Advisor, and preserves the no-execution dependency closure.
+Sprint 7 remains behind its polish and public-release gates.
 
 ## Feature modes
 
@@ -213,6 +216,37 @@ and verifier, kill-switch epoch, expiry, and maximum uses. Its kill switch
 starts `STOPPED` and any executor requires a durable journal and
 reconciliation. None of that is implemented by this release.
 
+### Sprint 6 implementation contract
+
+One explicit same-origin `POST /api/session` creates a 256-bit random
+page-memory capability. It is not a credential and is never a cookie. Every
+stateful read or mutation requires the capability header; resolution and
+last-used extension happen atomically, so an expiring token cannot allocate a
+replacement session or reach a provider. Exact Host/Origin/Fetch-Metadata
+checks still apply to each request. Reload loses the browser capability;
+disconnect and server expiry erase retained provider state.
+
+Operator-disabled View-only, conditional, research, or portfolio features
+return before request-body parsing, session resolution, provider construction,
+or network access. The Advisor launcher dispatches directly to
+`src/advisor-server.js`; it does not load the CLI, Coinbase Create transport,
+Trade credential loader, live pipeline, or execution adapter.
+
+Conditional and education plans retain at most eight full revisions and
+sixteen minimal terminal tombstones per plan. The current revision is never
+compacted. In-flight conditional results, invalidated educational handoffs,
+ancient revisions, and second-use attempts cannot revive or create a second
+result. Request bodies fail early above the limit, server header/request/
+keep-alive timeouts are explicit, mutation concurrency is bounded, and public
+status/static recovery remains responsive under slow hostile bodies.
+
+The managed archive must contain the frontend, all linked Advisor documents,
+the direct entrypoint, and its narrow dependencies. Its cold gate installs
+under restricted `PATH`, deletes the extracted source, launches `./run
+advisor`, fetches the HTML/JavaScript/CSS/status with security headers and no
+external assets or cookies, and proves every execution/readiness mutation
+route remains `404`.
+
 ## Test plan
 
 Every sprint keeps the existing Node suite green and adds focused regression
@@ -256,7 +290,9 @@ v1.6.0 is releasable only when:
 - dry-run PASS, meaningful BLOCK, and unable-to-verify REVIEW are interactive;
 - optional credential entry is local/session-only, explicitly View-only, and
   independently disconnectable;
-- public status and connection reads allocate no session, provider, or cookie;
+- public status and static reads allocate no session or provider; stateful
+  reads require a page-memory capability created only by the explicit
+  same-origin bootstrap, and no cookie is issued or accepted as authority;
 - the advisor dependency closure contains no Create/order transport or
   execution adapter;
 - conditional, planning, and locked-readiness surfaces satisfy the scoped

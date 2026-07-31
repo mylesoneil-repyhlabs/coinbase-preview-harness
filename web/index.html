@@ -73,6 +73,7 @@
           class="nav-tab"
           type="button"
           data-view-target="connection"
+          data-view-only-capability
           aria-controls="view-connection"
           data-action-control="guard"
         >
@@ -121,6 +122,7 @@
                   class="quick-start"
                   type="button"
                   data-start="condition"
+                  data-conditional-capability
                   data-action-control="guard"
                 >
                   <span class="quick-start__icon" aria-hidden="true">⌁</span>
@@ -285,8 +287,8 @@
                   <li class="guard-step" data-guard-step="confirmation">
                     <span>4</span>
                     <div>
-                      <strong>Your final action</strong>
-                      <small>Live ordering remains disabled</small>
+                      <strong>Future preview</strong>
+                      <small>Locked design only · orders off</small>
                     </div>
                   </li>
                 </ol>
@@ -354,6 +356,7 @@
               class="plan-workspace-button is-active"
               type="button"
               data-plan-workspace="conditional"
+              data-conditional-capability
               aria-pressed="true"
               data-action-control="guard"
             >
@@ -381,6 +384,7 @@
 
           <form
             id="conditional-form"
+            data-conditional-capability
             class="feature-card feature-card--premium conditional-composer"
           >
             <div class="feature-card__topline">
@@ -832,7 +836,11 @@
             <p>
               Keep using the credential-free dry run, or connect a normal
               Coinbase CDP API key whose permissions are exactly View only.
-              The key stays in this local server process for this session.
+              During Connect, the key exists briefly in this page’s form,
+              JavaScript memory, and one same-origin loopback request. The
+              fields are cleared before that request is sent. After Coinbase
+              verifies it, only the local server process retains the key
+              reference for this private session.
             </p>
           </header>
 
@@ -858,7 +866,11 @@
                 labeled fixture data.
               </p>
 
-              <form id="connection-form" class="credential-form">
+              <form
+                id="connection-form"
+                class="credential-form"
+                data-view-only-capability
+              >
                 <div class="field-group">
                   <label for="coinbase-key-name">Coinbase API key name</label>
                   <input
@@ -935,6 +947,7 @@
                   class="button button--secondary button--danger"
                   type="button"
                   data-action-control="guard"
+                  data-view-only-capability
                 >
                   Disconnect and erase session key
                 </button>

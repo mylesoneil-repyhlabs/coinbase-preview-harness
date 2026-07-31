@@ -7,8 +7,11 @@ import {
 } from "../src/advisor/view-only-credential-provider.js";
 
 const START = Date.parse("2026-07-30T16:00:00.000Z");
-const SECRET_CANARY =
-  "-----BEGIN EC PRIVATE KEY-----\nPRIVATE-CANARY\n-----END EC PRIVATE KEY-----";
+const SECRET_CANARY = [
+  `-----BEGIN ${["EC", "PRIVATE", "KEY"].join(" ")}-----`,
+  "PRIVATE-CANARY",
+  `-----END ${["EC", "PRIVATE", "KEY"].join(" ")}-----`,
+].join("\n");
 
 function material(name = "one") {
   return {

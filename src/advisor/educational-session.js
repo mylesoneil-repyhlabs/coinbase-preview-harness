@@ -11,6 +11,8 @@ import {
 } from "./educational-planning.js";
 
 const MAX_EDUCATIONAL_PLANS_PER_SESSION = 8;
+const MAX_EDUCATIONAL_REVISIONS_PER_PLAN = 8;
+const MAX_EDUCATIONAL_REVISION_TOMBSTONES_PER_PLAN = 16;
 
 export class EducationalSessionError extends Error {
   constructor(code, message) {
@@ -69,6 +71,48 @@ function currentRecord(session, planId, revision) {
     );
   }
   return { entry, record };
+}
+
+function educationalRevisionTombstone(record) {
+  return Object.freeze({
+    schema_version:
+      "delta.coinbase.educational_revision_tombstone.v1",
+    revision: record.plan.revision,
+    terminal_state: "SUPERSEDED",
+    retired_at: record.plan.edited_at,
+  });
+}
+
+function compactEducationalRevisions(entry) {
+  while (
+    entry.revisions.size >
+    MAX_EDUCATIONAL_REVISIONS_PER_PLAN
+  ) {
+    const retiredRevision = [...entry.revisions.keys()]
+      .sort((left, right) => left - right)
+      .find(
+        (revision) =>
+          revision !== entry.current_revision,
+      );
+    if (retiredRevision === undefined) break;
+    const record = entry.revisions.get(retiredRevision);
+    if (!record) break;
+    entry.revision_tombstones.set(
+      retiredRevision,
+      educationalRevisionTombstone(record),
+    );
+    entry.revisions.delete(retiredRevision);
+  }
+  while (
+    entry.revision_tombstones.size >
+    MAX_EDUCATIONAL_REVISION_TOMBSTONES_PER_PLAN
+  ) {
+    const oldestRevision = [
+      ...entry.revision_tombstones.keys(),
+    ].sort((left, right) => left - right)[0];
+    if (oldestRevision === undefined) break;
+    entry.revision_tombstones.delete(oldestRevision);
+  }
 }
 
 function planView(record) {
@@ -229,6 +273,12 @@ export function createEducationalSessionPlan(
     scenarios,
     scenario_acknowledged,
   });
+  if (plans.has(planId)) {
+    throw new EducationalSessionError(
+      "EDUCATIONAL_PLAN_ALREADY_EXISTS",
+      "This educational plan already exists in the current local session.",
+    );
+  }
   while (plans.size >= MAX_EDUCATIONAL_PLANS_PER_SESSION) {
     const oldest = plans.keys().next().value;
     if (oldest === undefined) break;
@@ -245,6 +295,7 @@ export function createEducationalSessionPlan(
     plan_id: planId,
     current_revision: 1,
     revisions: new Map([[1, record]]),
+    revision_tombstones: new Map(),
   });
   return planView(record);
 }
@@ -285,6 +336,7 @@ export function reviseEducationalSessionPlan(
   };
   entry.current_revision = edited.revision;
   entry.revisions.set(edited.revision, next);
+  compactEducationalRevisions(entry);
   return Object.freeze({
     prior: planView(record),
     current: planView(next),

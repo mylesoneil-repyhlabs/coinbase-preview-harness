@@ -20,6 +20,9 @@ const state = {
   planWorkspace: "conditional",
   educationalPlan: null,
   capabilities: null,
+  sessionCapability: null,
+  sessionBootstrapPromise: null,
+  liveReadinessExpiryTimer: null,
 };
 
 const actionControlState = new WeakMap();
@@ -69,6 +72,12 @@ const dom = {
   ],
   educationCapabilityControls: [
     ...document.querySelectorAll("[data-education-capability]"),
+  ],
+  conditionalCapabilityControls: [
+    ...document.querySelectorAll("[data-conditional-capability]"),
+  ],
+  viewOnlyCapabilityControls: [
+    ...document.querySelectorAll("[data-view-only-capability]"),
   ],
   conditionalWorkspace: document.querySelector(
     "#conditional-workspace",
@@ -195,21 +204,58 @@ function renderViewContext() {
 
 function applyCapabilities(capabilities) {
   state.capabilities = capabilities;
+  const setCapabilityControls = (containers, enabled) => {
+    for (const container of containers) {
+      const controls = container.matches(
+        "form, fieldset",
+      )
+        ? [...container.querySelectorAll(
+            "button, input, select, textarea",
+          )]
+        : [container];
+      for (const control of controls) {
+        control.disabled = !enabled;
+        control.setAttribute(
+          "aria-disabled",
+          String(!enabled),
+        );
+      }
+    }
+  };
+  const conditionalEnabled =
+    capabilities?.conditional_plan_simulation === true;
+  const viewOnlyEnabled =
+    capabilities?.view_only_connection === true;
   const educationEnabled =
     capabilities?.educational_research === true &&
     capabilities?.portfolio_planning === true;
-  for (const control of dom.educationCapabilityControls) {
-    control.disabled = !educationEnabled;
-    control.setAttribute(
-      "aria-disabled",
-      String(!educationEnabled),
-    );
-  }
+  setCapabilityControls(
+    dom.conditionalCapabilityControls,
+    conditionalEnabled,
+  );
+  setCapabilityControls(
+    dom.viewOnlyCapabilityControls,
+    viewOnlyEnabled,
+  );
+  setCapabilityControls(
+    dom.educationCapabilityControls,
+    educationEnabled,
+  );
   if (
     !educationEnabled &&
     state.planWorkspace === "education"
   ) {
     setPlanWorkspace("conditional", { focus: false });
+  }
+  if (
+    !conditionalEnabled &&
+    state.planWorkspace === "conditional" &&
+    educationEnabled
+  ) {
+    setPlanWorkspace("education", { focus: false });
+  }
+  if (!viewOnlyEnabled && state.activeView === "connection") {
+    navigate("advisor", { focus: false });
   }
 }
 
@@ -265,7 +311,76 @@ function safeProviderMessage(payload, fallback) {
   return normalized;
 }
 
+function isPublicAdvisorRequest(path, method) {
+  return (
+    (method === "GET" && path === "/api/status") ||
+    (method === "POST" && path === "/api/session")
+  );
+}
+
+async function openPageMemorySession() {
+  if (state.sessionCapability) {
+    return state.sessionCapability;
+  }
+  if (state.sessionBootstrapPromise) {
+    return state.sessionBootstrapPromise;
+  }
+  state.sessionBootstrapPromise = (async () => {
+    let response;
+    try {
+      response = await fetch("/api/session", {
+        method: "POST",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-Delta-Advisor": "1",
+        },
+        body: "{}",
+      });
+    } catch {
+      throw new Error(
+        "The local Guard could not start a private page session. Reload the local service and try again.",
+      );
+    }
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(
+        "The local Guard returned an invalid session response. Reload and try again.",
+      );
+    }
+    const capability = payload?.session?.capability;
+    if (
+      !response.ok ||
+      payload?.session?.storage !== "PAGE_MEMORY_ONLY" ||
+      typeof capability !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(capability)
+    ) {
+      throw new Error(
+        safeProviderMessage(
+          payload,
+          "The local Guard could not start a private page session. Reload and try again.",
+        ),
+      );
+    }
+    state.sessionCapability = capability;
+    return capability;
+  })();
+  try {
+    return await state.sessionBootstrapPromise;
+  } finally {
+    state.sessionBootstrapPromise = null;
+  }
+}
+
 async function requestJson(path, { method = "GET", body } = {}) {
+  const capability = isPublicAdvisorRequest(path, method)
+    ? null
+    : await openPageMemorySession();
   const controller = new AbortController();
   if (state.pending) state.pendingAbortController = controller;
   const timeout = window.setTimeout(
@@ -276,12 +391,21 @@ async function requestJson(path, { method = "GET", body } = {}) {
   try {
     response = await fetch(path, {
       method,
-      credentials: "same-origin",
+      credentials: "omit",
       cache: "no-store",
       redirect: "error",
       headers: {
         Accept: "application/json",
+        ...(capability == null
+          ? {}
+          : {
+              "X-Delta-Advisor-Session": capability,
+            }),
         ...(method === "POST" ? { "X-Delta-Advisor": "1" } : {}),
+        ...(path === "/api/advisor/authorize" &&
+        ["dry_run", "view_only_preflight"].includes(body?.mode)
+          ? { "X-Delta-Advisor-Mode": body.mode }
+          : {}),
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -337,6 +461,15 @@ async function requestJson(path, { method = "GET", body } = {}) {
       "The local Guard returned an unreadable response. Nothing was submitted.",
     );
   }
+  if (
+    response.status === 401 &&
+    [
+      "SESSION_CAPABILITY_REQUIRED",
+      "SESSION_CAPABILITY_EXPIRED",
+    ].includes(payload?.error?.code)
+  ) {
+    state.sessionCapability = null;
+  }
   if (!response.ok) {
     throw new Error(
       safeProviderMessage(
@@ -349,6 +482,7 @@ async function requestJson(path, { method = "GET", body } = {}) {
 }
 
 async function requestSafetyJson(path, body) {
+  const capability = await openPageMemorySession();
   const controller = new AbortController();
   const timeout = window.setTimeout(
     () => controller.abort("TIMEOUT"),
@@ -357,18 +491,28 @@ async function requestSafetyJson(path, body) {
   try {
     const response = await fetch(path, {
       method: "POST",
-      credentials: "same-origin",
+      credentials: "omit",
       cache: "no-store",
       redirect: "error",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
         "X-Delta-Advisor": "1",
+        "X-Delta-Advisor-Session": capability,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
     const payload = await response.json();
+    if (
+      response.status === 401 &&
+      [
+        "SESSION_CAPABILITY_REQUIRED",
+        "SESSION_CAPABILITY_EXPIRED",
+      ].includes(payload?.error?.code)
+    ) {
+      state.sessionCapability = null;
+    }
     if (!response.ok) {
       throw new Error(
         safeProviderMessage(
@@ -1482,7 +1626,61 @@ function liveReadinessConditionLabel(preview) {
   return `${reference} ${operator} ${plainNumber(condition.value)} ${condition.asset}`;
 }
 
+function clearLiveReadinessExpiryTimer() {
+  if (state.liveReadinessExpiryTimer != null) {
+    window.clearTimeout(state.liveReadinessExpiryTimer);
+    state.liveReadinessExpiryTimer = null;
+  }
+}
+
+function armLiveReadinessExpiry(preview, card) {
+  clearLiveReadinessExpiryTimer();
+  const expiresAt = Date.parse(preview.preview_expires_at);
+  const remaining = expiresAt - Date.now();
+  if (!Number.isFinite(expiresAt) || remaining <= 0) {
+    return false;
+  }
+  state.liveReadinessExpiryTimer = window.setTimeout(() => {
+    state.liveReadinessExpiryTimer = null;
+    if (!card.isConnected) return;
+    const expired = element("section", {
+      className:
+        "live-readiness-preview live-readiness-preview--expired",
+      attributes: {
+        role: "status",
+        "aria-label": "Expired View-only Preview",
+      },
+    });
+    expired.append(
+      element("p", {
+        className: "eyebrow",
+        text: "VIEW-ONLY PREVIEW EXPIRED",
+      }),
+      element("h3", {
+        text: "Start a fresh protected check",
+      }),
+      element("p", {
+        text:
+          "The locked design preview was demoted because its Coinbase Preview evidence expired. No authorization or order route exists.",
+      }),
+      element("p", {
+        className: "recovery-line",
+        text:
+          "Recovery · Return to the trade composer and run a fresh protected check.",
+      }),
+    );
+    card.replaceWith(expired);
+    setGuardStep("decision");
+    dom.guardState.textContent = "Preview expired · locked";
+    announce(
+      "The View-only Preview expired. Start a fresh protected check; no order was submitted.",
+    );
+  }, Math.min(remaining, 2_147_483_647));
+  return true;
+}
+
 function renderLiveReadinessPreview(preview) {
+  clearLiveReadinessExpiryTimer();
   if (
     preview?.schema_version !==
       "delta.coinbase.live_readiness_preview.v1" ||
@@ -1491,10 +1689,19 @@ function renderLiveReadinessPreview(preview) {
   ) {
     return null;
   }
+  const previewExpiresAt = Date.parse(
+    preview.preview_expires_at,
+  );
+  if (
+    !Number.isFinite(previewExpiresAt) ||
+    previewExpiresAt <= Date.now()
+  ) {
+    return null;
+  }
   const card = element("section", {
     className: "live-readiness-preview",
     attributes: {
-      "aria-label": "Locked future live confirmation design preview",
+      "aria-label": "Locked future live-readiness design preview",
     },
   });
   const header = element("div", {
@@ -1578,6 +1785,9 @@ function renderLiveReadinessPreview(preview) {
         "Orders remain off. There is no final-confirmation, grant, or order route.",
     }),
   );
+  if (!armLiveReadinessExpiry(preview, card)) {
+    return null;
+  }
   return card;
 }
 
@@ -1700,7 +1910,7 @@ function renderResult(resultPayload, target = dom.conversation) {
   setGuardStep(liveReadiness ? "confirmation" : "decision");
   dom.guardState.textContent =
     liveReadiness
-      ? "Future confirmation · locked"
+      ? "Future preview · locked"
       : outcome === "PASS"
         ? "Passed · locked"
         : `${titleCase(outcome)} · locked`;
@@ -3938,6 +4148,17 @@ async function loadStatus() {
   }
 }
 
+async function initializeAdvisor() {
+  await loadStatus();
+  if (state.capabilities?.view_only_connection === true) {
+    await loadConnection();
+    return;
+  }
+  state.connectionLoaded = true;
+  state.connection = { connected: false };
+  applyConnectionStatus(state.connection);
+}
+
 for (const tab of dom.navTabs) {
   tab.addEventListener("click", () => {
     navigate(tab.dataset.viewTarget);
@@ -4026,4 +4247,4 @@ dom.conditionalSide.addEventListener(
 setConditionalDefaults();
 setPlanWorkspace("conditional", { focus: false });
 applyCapabilities(null);
-void Promise.all([loadStatus(), loadConnection()]);
+void initializeAdvisor();

@@ -62,20 +62,40 @@ function request(
   });
 }
 
-function cookieFrom(response) {
-  const values = response.headers["set-cookie"];
-  assert.ok(Array.isArray(values) && values.length === 1);
-  return values[0].split(";", 1)[0];
+function capabilityFrom(response) {
+  assert.equal(response.headers["set-cookie"], undefined);
+  const session = response.json().session;
+  assert.equal(session.storage, "PAGE_MEMORY_ONLY");
+  assert.match(session.capability, /^[A-Za-z0-9_-]{43}$/);
+  return session.capability;
 }
 
-function mutationHeaders(baseUrl, cookie = null) {
+function mutationHeaders(
+  baseUrl,
+  capability = null,
+  mode = null,
+) {
   return {
     "Content-Type": "application/json",
     Origin: baseUrl,
     "Sec-Fetch-Site": "same-origin",
     "X-Delta-Advisor": "1",
-    ...(cookie ? { Cookie: cookie } : {}),
+    ...(capability
+      ? { "X-Delta-Advisor-Session": capability }
+      : {}),
+    ...(mode ? { "X-Delta-Advisor-Mode": mode } : {}),
   };
+}
+
+async function openSession(baseUrl) {
+  const response = await request(baseUrl, {
+    pathname: "/api/session",
+    method: "POST",
+    headers: mutationHeaders(baseUrl),
+    body: "{}",
+  });
+  assert.equal(response.status, 200);
+  return capabilityFrom(response);
 }
 
 function verifiedCredential(material) {
@@ -235,7 +255,7 @@ test("public status allocates neither a browser session nor a credential provide
   assert.equal(providerFactories, 0);
 });
 
-test("connection status without a cookie allocates no session, provider, or cookie", async (t) => {
+test("connection status without a page capability allocates no session or provider", async (t) => {
   let opens = 0;
   let providerFactories = 0;
   const sessionStore = {
@@ -262,8 +282,11 @@ test("connection status without a cookie allocates no session, provider, or cook
     pathname: "/api/connection",
   });
 
-  assert.equal(response.status, 200);
-  assert.equal(response.json().connection.connected, false);
+  assert.equal(response.status, 401);
+  assert.equal(
+    response.json().error.code,
+    "SESSION_CAPABILITY_REQUIRED",
+  );
   assert.equal(response.headers["set-cookie"], undefined);
   assert.equal(opens, 0);
   assert.equal(providerFactories, 0);
@@ -320,8 +343,12 @@ test("session-only connection drives a real View-only-shaped preflight with reda
     },
   });
 
+  const capability = await openSession(running.url);
   const initial = await request(running.url, {
     pathname: "/api/connection",
+    headers: {
+      "X-Delta-Advisor-Session": capability,
+    },
   });
   assert.equal(initial.status, 200);
   assert.equal(initial.json().connection.connected, false);
@@ -331,11 +358,11 @@ test("session-only connection drives a real View-only-shaped preflight with reda
   const connected = await request(running.url, {
     pathname: "/api/connection/connect",
     method: "POST",
-    headers: mutationHeaders(running.url),
+    headers: mutationHeaders(running.url, capability),
     body: JSON.stringify(key),
   });
   assert.equal(connected.status, 200);
-  const cookie = cookieFrom(connected);
+  assert.equal(connected.headers["set-cookie"], undefined);
   assert.equal(connected.json().connection.connected, true);
   assert.equal(
     connected.json().connection.permissions.can_trade,
@@ -353,7 +380,7 @@ test("session-only connection drives a real View-only-shaped preflight with reda
   const planned = await request(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: mutationHeaders(running.url, cookie),
+    headers: mutationHeaders(running.url, capability),
     body: JSON.stringify({ intent: INTENT }),
   });
   assert.equal(planned.status, 200);
@@ -361,7 +388,11 @@ test("session-only connection drives a real View-only-shaped preflight with reda
   const checked = await request(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers: mutationHeaders(running.url, cookie),
+    headers: mutationHeaders(
+      running.url,
+      capability,
+      "view_only_preflight",
+    ),
     body: JSON.stringify({
       plan_id: planId,
       mode: "view_only_preflight",
@@ -469,7 +500,7 @@ test("session-only connection drives a real View-only-shaped preflight with reda
   const disconnected = await request(running.url, {
     pathname: "/api/connection/disconnect",
     method: "POST",
-    headers: mutationHeaders(running.url, cookie),
+    headers: mutationHeaders(running.url, capability),
     body: "{}",
   });
   assert.equal(disconnected.status, 200);
@@ -482,21 +513,21 @@ test("session-only connection drives a real View-only-shaped preflight with reda
 
 test("requesting View-only without a connection returns a verified REVIEW, never simulated PASS", async (t) => {
   const running = await advisor(t);
-  const opened = await request(running.url, {
-    pathname: "/api/connection",
-  });
-  assert.equal(opened.headers["set-cookie"], undefined);
+  const capability = await openSession(running.url);
   const planned = await request(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: mutationHeaders(running.url),
+    headers: mutationHeaders(running.url, capability),
     body: JSON.stringify({ intent: INTENT }),
   });
-  const cookie = cookieFrom(planned);
   const checked = await request(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers: mutationHeaders(running.url, cookie),
+    headers: mutationHeaders(
+      running.url,
+      capability,
+      "view_only_preflight",
+    ),
     body: JSON.stringify({
       plan_id: planned.json().plan.plan_id,
       mode: "view_only_preflight",

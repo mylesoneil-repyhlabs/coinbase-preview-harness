@@ -37,7 +37,7 @@
 }
 
 html {
-  min-width: 320px;
+  min-width: 0;
   background: var(--paper);
   scroll-behavior: smooth;
 }

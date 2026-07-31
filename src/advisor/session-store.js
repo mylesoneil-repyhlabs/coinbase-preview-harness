@@ -174,6 +174,21 @@ export class AdvisorSessionStore {
     return this.#sessions.get(candidateToken) ?? null;
   }
 
+  touch(candidateToken = null) {
+    const current = this.#currentTime();
+    this.#prune(current);
+    if (
+      typeof candidateToken !== "string" ||
+      !TOKEN_PATTERN.test(candidateToken)
+    ) {
+      return null;
+    }
+    const existing = this.#sessions.get(candidateToken);
+    if (!existing) return null;
+    existing.last_seen_at = current;
+    return existing;
+  }
+
   destroy(token, reason = "DISCONNECTED") {
     if (!isSessionToken(token)) return false;
     const session = this.#sessions.get(token);

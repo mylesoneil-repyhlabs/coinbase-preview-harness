@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { listenAdvisorServer } from "../src/advisor/server.js";
+import { createExecutionPlan } from "../src/plan.js";
 import { runGuardPreflight } from "../src/preflight.js";
 
 const COMPLETE_INTENT =
@@ -53,31 +54,40 @@ function httpRequest(
   });
 }
 
-function cookieFrom(response) {
-  const header = response.headers["set-cookie"];
-  assert.ok(Array.isArray(header) && header.length === 1);
-  return header[0].split(";", 1)[0];
+function capabilityFrom(response) {
+  assert.equal(response.headers["set-cookie"], undefined);
+  const { session } = response.json();
+  assert.equal(session.storage, "PAGE_MEMORY_ONLY");
+  assert.match(session.capability, /^[A-Za-z0-9_-]{43}$/);
+  return session.capability;
 }
 
 async function openSession(baseUrl) {
   const response = await httpRequest(baseUrl, {
-    pathname: "/api/advisor/plan",
+    pathname: "/api/session",
     method: "POST",
     headers: sameOriginHeaders(baseUrl),
-    body: JSON.stringify({ intent: "Buy ETH" }),
+    body: "{}",
   });
   assert.equal(response.status, 200);
-  return cookieFrom(response);
+  return capabilityFrom(response);
 }
 
-function sameOriginHeaders(url, cookie = null) {
+function sameOriginHeaders(
+  url,
+  capability = null,
+  mode = null,
+) {
   const headers = {
     "Content-Type": "application/json",
     Origin: url,
     "Sec-Fetch-Site": "same-origin",
     "X-Delta-Advisor": "1",
   };
-  if (cookie) headers.Cookie = cookie;
+  if (capability) {
+    headers["X-Delta-Advisor-Session"] = capability;
+  }
+  if (mode) headers["X-Delta-Advisor-Mode"] = mode;
   return headers;
 }
 
@@ -128,7 +138,7 @@ test("loopback status is truthful, session-only, and protected by browser header
 
   const status = response.json();
   assert.equal(status.ready, true);
-  assert.equal(status.session.storage, "SERVER_MEMORY_ONLY");
+  assert.equal(status.session.storage, "PAGE_MEMORY_ONLY");
   assert.equal(status.session.created, false);
   assert.equal(status.session.idle_expires_after_seconds, 900);
   assert.equal(status.session.absolute_expires_after_seconds, 3600);
@@ -166,11 +176,11 @@ test("static UI is same-origin, non-cacheable, and HEAD-safe", async (t) => {
 
 test("advisor asks for missing material constraints without authorizing a plan", async (t) => {
   const running = await advisor(t);
-  const cookie = await openSession(running.url);
+  const capability = await openSession(running.url);
   const response = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: sameOriginHeaders(running.url, cookie),
+    headers: sameOriginHeaders(running.url, capability),
     body: JSON.stringify({ intent: "Buy ETH" }),
   });
 
@@ -191,8 +201,8 @@ test("advisor asks for missing material constraints without authorizing a plan",
 test("one explicit authorization runs a real credential-free dry run and cannot be replayed", async (t) => {
   const directory = await temporaryHistory(t);
   const running = await advisor(t, { history: { directory } });
-  const cookie = await openSession(running.url);
-  const headers = sameOriginHeaders(running.url, cookie);
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
 
   const planned = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
@@ -216,8 +226,14 @@ test("one explicit authorization runs a real credential-free dry run and cannot 
   const authorized = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers,
-    body: JSON.stringify({ plan_id: plan.plan_id }),
+    headers: {
+      ...headers,
+      "X-Delta-Advisor-Mode": "dry_run",
+    },
+    body: JSON.stringify({
+      plan_id: plan.plan_id,
+      mode: "dry_run",
+    }),
   });
   assert.equal(authorized.status, 200);
   const { result } = authorized.json();
@@ -241,8 +257,14 @@ test("one explicit authorization runs a real credential-free dry run and cannot 
   const repeated = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers,
-    body: JSON.stringify({ plan_id: plan.plan_id }),
+    headers: {
+      ...headers,
+      "X-Delta-Advisor-Mode": "dry_run",
+    },
+    body: JSON.stringify({
+      plan_id: plan.plan_id,
+      mode: "dry_run",
+    }),
   });
   assert.equal(repeated.status, 409);
   assert.equal(
@@ -263,8 +285,8 @@ test("server view downgrades a claimed PASS when its exact receipt does not veri
       return { ...result, record };
     },
   });
-  const cookie = await openSession(running.url);
-  const headers = sameOriginHeaders(running.url, cookie);
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
   const planned = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
@@ -276,8 +298,14 @@ test("server view downgrades a claimed PASS when its exact receipt does not veri
   const authorized = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers,
-    body: JSON.stringify({ plan_id: plan.plan_id }),
+    headers: {
+      ...headers,
+      "X-Delta-Advisor-Mode": "dry_run",
+    },
+    body: JSON.stringify({
+      plan_id: plan.plan_id,
+      mode: "dry_run",
+    }),
   });
 
   assert.equal(authorized.status, 200);
@@ -297,8 +325,8 @@ test("server view downgrades a claimed PASS when its exact receipt does not veri
 
 test("showcase and safe-review endpoints expose honest simulated outcomes", async (t) => {
   const running = await advisor(t);
-  const cookie = await openSession(running.url);
-  const headers = sameOriginHeaders(running.url, cookie);
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
 
   const showcaseResponse = await httpRequest(running.url, {
     pathname: "/api/demo/showcase",
@@ -335,8 +363,8 @@ test("showcase and safe-review endpoints expose honest simulated outcomes", asyn
 
 test("there is no Create, execution, order, credential, or generic proxy API", async (t) => {
   const running = await advisor(t);
-  const cookie = await openSession(running.url);
-  const headers = sameOriginHeaders(running.url, cookie);
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
   const forbiddenRoutes = [
     "/api/orders",
     "/api/orders/preview",
@@ -381,12 +409,12 @@ test("mutations enforce loopback Host, same Origin, JSON, strict fields, and bod
   assert.equal(hostileHost.json().error.code, "LOOPBACK_HOST_REQUIRED");
   assertLockedBoundary(hostileHost.json().boundary);
 
-  const cookie = await openSession(running.url);
+  const capability = await openSession(running.url);
   const wrongOrigin = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
     headers: {
-      ...sameOriginHeaders("https://evil.example", cookie),
+      ...sameOriginHeaders("https://evil.example", capability),
       Host: new URL(running.url).host,
     },
     body: JSON.stringify({ intent: COMPLETE_INTENT }),
@@ -399,9 +427,9 @@ test("mutations enforce loopback Host, same Origin, JSON, strict fields, and bod
     method: "POST",
     headers: {
       Origin: running.url,
-      Cookie: cookie,
       "Content-Type": "text/plain",
       "X-Delta-Advisor": "1",
+      "X-Delta-Advisor-Session": capability,
     },
     body: "{}",
   });
@@ -411,7 +439,7 @@ test("mutations enforce loopback Host, same Origin, JSON, strict fields, and bod
   const unknownField = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: sameOriginHeaders(running.url, cookie),
+    headers: sameOriginHeaders(running.url, capability),
     body: JSON.stringify({
       intent: COMPLETE_INTENT,
       endpoint: "https://evil.example",
@@ -424,7 +452,7 @@ test("mutations enforce loopback Host, same Origin, JSON, strict fields, and bod
   const oversized = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: sameOriginHeaders(running.url, cookie),
+    headers: sameOriginHeaders(running.url, capability),
     body: JSON.stringify({ intent: "x".repeat(17 * 1024) }),
   });
   assert.equal(oversized.status, 413);
@@ -438,7 +466,7 @@ test("mutations enforce loopback Host, same Origin, JSON, strict fields, and bod
 
 test("mutation header is mandatory and fixed", async (t) => {
   const running = await advisor(t);
-  const cookie = await openSession(running.url);
+  const capability = await openSession(running.url);
   const response = await httpRequest(running.url, {
     pathname: "/api/demo/review",
     method: "POST",
@@ -446,7 +474,7 @@ test("mutation header is mandatory and fixed", async (t) => {
       Origin: running.url,
       "Sec-Fetch-Site": "same-origin",
       "Content-Type": "application/json",
-      Cookie: cookie,
+      "X-Delta-Advisor-Session": capability,
     },
     body: "{}",
   });
@@ -460,22 +488,29 @@ test("mutation header is mandatory and fixed", async (t) => {
 
 test("plans remain scoped to their in-memory browser session", async (t) => {
   const running = await advisor(t);
-  const firstCookie = await openSession(running.url);
+  const firstCapability = await openSession(running.url);
   const planned = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: sameOriginHeaders(running.url, firstCookie),
+    headers: sameOriginHeaders(running.url, firstCapability),
     body: JSON.stringify({ intent: COMPLETE_INTENT }),
   });
   const planId = planned.json().plan.plan_id;
 
-  const secondCookie = await openSession(running.url);
-  assert.notEqual(secondCookie, firstCookie);
+  const secondCapability = await openSession(running.url);
+  assert.notEqual(secondCapability, firstCapability);
   const foreignAuthorization = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers: sameOriginHeaders(running.url, secondCookie),
-    body: JSON.stringify({ plan_id: planId }),
+    headers: sameOriginHeaders(
+      running.url,
+      secondCapability,
+      "dry_run",
+    ),
+    body: JSON.stringify({
+      plan_id: planId,
+      mode: "dry_run",
+    }),
   });
   assert.equal(foreignAuthorization.status, 404);
   assert.equal(
@@ -553,12 +588,12 @@ test("static serving rejects an intermediate symlink escape", async (t) => {
 
 test("malformed, compressed, cross-site, and method-confused requests stop safely", async (t) => {
   const running = await advisor(t);
-  const cookie = await openSession(running.url);
+  const capability = await openSession(running.url);
 
   const malformed = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
     method: "POST",
-    headers: sameOriginHeaders(running.url, cookie),
+    headers: sameOriginHeaders(running.url, capability),
     body: "{",
   });
   assert.equal(malformed.status, 400);
@@ -569,7 +604,7 @@ test("malformed, compressed, cross-site, and method-confused requests stop safel
     pathname: "/api/advisor/plan",
     method: "POST",
     headers: {
-      ...sameOriginHeaders(running.url, cookie),
+      ...sameOriginHeaders(running.url, capability),
       "Content-Encoding": "gzip",
     },
     body: "{}",
@@ -584,7 +619,7 @@ test("malformed, compressed, cross-site, and method-confused requests stop safel
     pathname: "/api/advisor/plan",
     method: "POST",
     headers: {
-      ...sameOriginHeaders(running.url, cookie),
+      ...sameOriginHeaders(running.url, capability),
       "Sec-Fetch-Site": "cross-site",
     },
     body: JSON.stringify({ intent: COMPLETE_INTENT }),
@@ -596,8 +631,8 @@ test("malformed, compressed, cross-site, and method-confused requests stop safel
     pathname: "/api/demo/review",
     method: "POST",
     headers: {
-      Cookie: cookie,
       "Content-Type": "application/json",
+      "X-Delta-Advisor-Session": capability,
     },
     body: "{}",
   });
@@ -607,7 +642,7 @@ test("malformed, compressed, cross-site, and method-confused requests stop safel
   const confused = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "GET",
-    headers: { Cookie: cookie },
+    headers: { "X-Delta-Advisor-Session": capability },
   });
   assert.equal(confused.status, 404);
   assert.equal(confused.json().error.code, "API_ROUTE_NOT_FOUND");
@@ -636,7 +671,7 @@ test("cross-site API traffic is rejected before opening a session", async (t) =>
   assert.equal(opens, 0);
 });
 
-test("bounded concurrency fails fast without opening another session", async (t) => {
+test("a slow GET never starves public status or the static product", async (t) => {
   let releaseHistory;
   let historyStarted;
   const started = new Promise((resolve) => {
@@ -652,25 +687,237 @@ test("bounded concurrency fails fast without opening another session", async (t)
       return [];
     },
   });
+  const capability = await openSession(running.url);
   const first = httpRequest(running.url, {
     pathname: "/api/activity",
+    headers: {
+      "X-Delta-Advisor-Session": capability,
+    },
   });
   await started;
-  const second = await httpRequest(running.url, {
-    pathname: "/api/status",
-  });
-  assert.equal(second.status, 503);
-  assert.equal(second.json().error.code, "ADVISOR_BUSY");
-  assertLockedBoundary(second.json().boundary);
+  const [status, page] = await Promise.all([
+    httpRequest(running.url, {
+      pathname: "/api/status",
+    }),
+    httpRequest(running.url),
+  ]);
+  assert.equal(status.status, 200);
+  assert.equal(page.status, 200);
   releaseHistory();
   assert.equal((await first).status, 200);
+});
+
+test("bounded POST concurrency fails fast while status and static remain available", async (t) => {
+  let releasePlan;
+  let planStarted;
+  const started = new Promise((resolve) => {
+    planStarted = resolve;
+  });
+  const running = await advisor(t, {
+    maxConcurrentRequests: 1,
+    createPlan: async (...args) => {
+      planStarted();
+      await new Promise((resolve) => {
+        releasePlan = resolve;
+      });
+      return createExecutionPlan(...args);
+    },
+  });
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
+  const first = httpRequest(running.url, {
+    pathname: "/api/advisor/plan",
+    method: "POST",
+    headers,
+    body: JSON.stringify({ intent: COMPLETE_INTENT }),
+  });
+  await started;
+
+  const busy = await httpRequest(running.url, {
+    pathname: "/api/demo/review",
+    method: "POST",
+    headers,
+    body: "{}",
+  });
+  assert.equal(busy.status, 503);
+  assert.equal(busy.json().error.code, "ADVISOR_BUSY");
+  assertLockedBoundary(busy.json().boundary);
+
+  const [status, page] = await Promise.all([
+    httpRequest(running.url, {
+      pathname: "/api/status",
+    }),
+    httpRequest(running.url),
+  ]);
+  assert.equal(status.status, 200);
+  assert.equal(page.status, 200);
+  releasePlan();
+  assert.equal((await first).status, 200);
+});
+
+test("server pins finite header, request, keep-alive, and socket reuse limits", async (t) => {
+  const running = await advisor(t);
+  assert.equal(running.server.headersTimeout, 5_000);
+  assert.equal(running.server.requestTimeout, 15_000);
+  assert.equal(running.server.keepAliveTimeout, 5_000);
+  assert.equal(running.server.maxRequestsPerSocket, 100);
+});
+
+test("an oversized chunked body is rejected before the client finishes sending it", async (t) => {
+  const running = await advisor(t);
+  const capability = await openSession(running.url);
+  let outgoing;
+  const responsePromise = new Promise((resolve, reject) => {
+    outgoing = http.request(
+      new URL("/api/advisor/plan", running.url),
+      {
+        method: "POST",
+        headers: {
+          ...sameOriginHeaders(running.url, capability),
+          "Transfer-Encoding": "chunked",
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({
+            status: response.statusCode,
+            headers: response.headers,
+            json: JSON.parse(text),
+          });
+        });
+      },
+    );
+    outgoing.on("error", reject);
+  });
+  t.after(() => outgoing?.destroy());
+  outgoing.write(
+    JSON.stringify({ intent: "x".repeat(17 * 1024) }),
+  );
+
+  const response = await Promise.race([
+    responsePromise,
+    new Promise((_, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              "oversized chunked request was drained instead of rejected",
+            ),
+          ),
+        2_000,
+      );
+      timer.unref();
+    }),
+  ]);
+  assert.equal(response.status, 413);
+  assert.equal(response.json.error.code, "REQUEST_TOO_LARGE");
+  assert.equal(response.headers.connection, "close");
+  outgoing.destroy();
+});
+
+test("32 incomplete POST bodies cannot starve status or static assets and all sockets close", async (t) => {
+  const running = await advisor(t);
+  const capability = await openSession(running.url);
+  const sockets = [];
+  const clientSockets = [];
+  const connected = [];
+  for (let index = 0; index < 32; index += 1) {
+    connected.push(
+      new Promise((resolve, reject) => {
+        const outgoing = http.request(
+          new URL("/api/advisor/plan", running.url),
+          {
+            method: "POST",
+            headers: sameOriginHeaders(
+              running.url,
+              capability,
+            ),
+          },
+        );
+        outgoing.on("socket", (socket) => {
+          clientSockets.push(socket);
+          if (socket.connecting) {
+            socket.once("connect", resolve);
+          } else {
+            resolve();
+          }
+        });
+        outgoing.on("error", () => {});
+        outgoing.on("response", (response) => {
+          response.resume();
+        });
+        outgoing.once("close", resolve);
+        outgoing.write('{"intent":"');
+        sockets.push(outgoing);
+      }),
+    );
+  }
+  t.after(() => {
+    for (const outgoing of sockets) outgoing.destroy();
+  });
+  await Promise.all(connected);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const startedAt = Date.now();
+  const [status, page] = await Promise.race([
+    Promise.all([
+      httpRequest(running.url, {
+        pathname: "/api/status",
+      }),
+      httpRequest(running.url),
+    ]),
+    new Promise((_, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              "slow POST bodies starved public advisor reads",
+            ),
+          ),
+        2_000,
+      );
+      timer.unref();
+    }),
+  ]);
+  assert.equal(status.status, 200);
+  assert.equal(page.status, 200);
+  assert.ok(Date.now() - startedAt < 2_000);
+
+  const closed = clientSockets.map(
+    (socket) =>
+      socket.destroyed
+        ? Promise.resolve()
+        : new Promise((resolve) =>
+            socket.once("close", resolve),
+          ),
+  );
+  for (const outgoing of sockets) outgoing.destroy();
+  await Promise.all(closed);
+  running.server.closeIdleConnections();
+  let openConnections = null;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    openConnections = await new Promise(
+      (resolve, reject) => {
+        running.server.getConnections((error, count) => {
+          if (error) reject(error);
+          else resolve(count);
+        });
+      },
+    );
+    if (openConnections === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(openConnections, 0);
 });
 
 test("activity is redacted, local, and explicit about the locked boundary", async (t) => {
   const directory = await temporaryHistory(t);
   const running = await advisor(t, { history: { directory } });
-  const cookie = await openSession(running.url);
-  const headers = sameOriginHeaders(running.url, cookie);
+  const capability = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, capability);
 
   const planned = await httpRequest(running.url, {
     pathname: "/api/advisor/plan",
@@ -682,14 +929,20 @@ test("activity is redacted, local, and explicit about the locked boundary", asyn
   const checked = await httpRequest(running.url, {
     pathname: "/api/advisor/authorize",
     method: "POST",
-    headers,
-    body: JSON.stringify({ plan_id: planId }),
+    headers: {
+      ...headers,
+      "X-Delta-Advisor-Mode": "dry_run",
+    },
+    body: JSON.stringify({
+      plan_id: planId,
+      mode: "dry_run",
+    }),
   });
   assert.equal(checked.status, 200);
 
   const response = await httpRequest(running.url, {
     pathname: "/api/activity",
-    headers: { Cookie: cookie },
+    headers: { "X-Delta-Advisor-Session": capability },
   });
   assert.equal(response.status, 200);
   const activity = response.json();

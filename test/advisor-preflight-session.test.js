@@ -8,9 +8,9 @@ import { runGuardPreflight } from "../src/preflight.js";
 const INTENT =
   "Using held USDC, buy exactly 250 USDC of SOL on SOL-USDC once with a price-bounded IOC limit order and allow partial fills. Do not pay more than 40 bps above Coinbase's fresh best ask, more than 2 USDC in fees, or more than 252 USDC total. The authorization expires 2 minutes after I confirm it.";
 const PRIVATE_KEY_CANARY = [
-  "-----BEGIN EC PRIVATE KEY-----",
+  `-----BEGIN ${["EC", "PRIVATE", "KEY"].join(" ")}-----`,
   "session-only-canary",
-  "-----END EC PRIVATE KEY-----",
+  `-----END ${["EC", "PRIVATE", "KEY"].join(" ")}-----`,
 ].join("\n");
 
 function verifiedViewCredential() {

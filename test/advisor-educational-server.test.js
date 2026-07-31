@@ -57,7 +57,7 @@ function request(
   {
     pathname,
     method = "POST",
-    cookie = null,
+    capability = null,
     body = null,
   },
 ) {
@@ -68,7 +68,15 @@ function request(
     "Sec-Fetch-Site": "same-origin",
     "X-Delta-Advisor": "1",
   };
-  if (cookie) headers.Cookie = cookie;
+  if (capability) {
+    headers["X-Delta-Advisor-Session"] = capability;
+  }
+  if (
+    pathname === "/api/advisor/authorize" &&
+    typeof body?.mode === "string"
+  ) {
+    headers["X-Delta-Advisor-Mode"] = body.mode;
+  }
   return new Promise((resolve, reject) => {
     const outgoing = http.request(
       target,
@@ -93,10 +101,23 @@ function request(
   });
 }
 
-function cookieFrom(response) {
-  const values = response.headers["set-cookie"];
-  assert.ok(Array.isArray(values) && values.length === 1);
-  return values[0].split(";", 1)[0];
+function capabilityFrom(response) {
+  assert.equal(response.headers["set-cookie"], undefined);
+  assert.equal(response.json.session.storage, "PAGE_MEMORY_ONLY");
+  assert.match(
+    response.json.session.capability,
+    /^[A-Za-z0-9_-]{43}$/,
+  );
+  return response.json.session.capability;
+}
+
+async function openSession(running) {
+  const response = await request(running.url, {
+    pathname: "/api/session",
+    body: {},
+  });
+  assert.equal(response.status, 200);
+  return capabilityFrom(response);
 }
 
 function planningInput(overrides = {}) {
@@ -175,30 +196,34 @@ async function runningAdvisor(t, options = {}) {
 async function createPlan(
   running,
   overrides = {},
-  cookie = null,
+  suppliedCapability = null,
 ) {
+  const capability =
+    suppliedCapability ?? (await openSession(running));
   const response = await request(running.url, {
     pathname: "/api/education/plan",
-    cookie,
+    capability,
     body: planningInput(overrides),
   });
   assert.equal(response.status, 200);
   return {
-    cookie: cookie ?? cookieFrom(response),
+    capability,
     saved: response.json.saved_plan,
   };
 }
 
 async function connect(running) {
+  const capability = await openSession(running);
   const response = await request(running.url, {
     pathname: "/api/connection/connect",
+    capability,
     body: {
       name: "organizations/test/apiKeys/view",
       privateKey: "test-only-private-key",
     },
   });
   assert.equal(response.status, 200);
-  return cookieFrom(response);
+  return capability;
 }
 
 test("fixture educational plan uses no provider and returns a redacted neutral DTO", async (t) => {
@@ -244,6 +269,7 @@ test("fixture educational plan uses no provider and returns a redacted neutral D
 
 test("scenario acknowledgement must be the literal true and rejected revisions do not mutate state", async (t) => {
   const running = await runningAdvisor(t);
+  const capability = await openSession(running);
   const { scenario_acknowledged: _ack, ...withoutAck } =
     planningInput();
   for (const body of [
@@ -253,6 +279,7 @@ test("scenario acknowledgement must be the literal true and rejected revisions d
   ]) {
     const rejected = await request(running.url, {
       pathname: "/api/education/plan",
+      capability,
       body,
     });
     assert.equal(rejected.status, 400);
@@ -262,7 +289,11 @@ test("scenario acknowledgement must be the literal true and rejected revisions d
     );
   }
 
-  const current = await createPlan(running);
+  const current = await createPlan(
+    running,
+    {},
+    capability,
+  );
   const revisionBase = {
     plan_id: current.saved.plan.plan_id,
     revision: current.saved.plan.revision,
@@ -277,7 +308,7 @@ test("scenario acknowledgement must be the literal true and rejected revisions d
   ]) {
     const rejected = await request(running.url, {
       pathname: "/api/education/revise",
-      cookie: current.cookie,
+      capability: current.capability,
       body,
     });
     assert.equal(rejected.status, 400);
@@ -289,7 +320,7 @@ test("scenario acknowledgement must be the literal true and rejected revisions d
 
   const revised = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie: current.cookie,
+    capability: current.capability,
     body: {
       ...revisionBase,
       scenario_acknowledged: true,
@@ -315,6 +346,7 @@ test("scenario acknowledgement must be the literal true and rejected revisions d
 
 test("API rejects forged trusted fields and an education ID cannot authorize", async (t) => {
   const running = await runningAdvisor(t);
+  const capability = await openSession(running);
   const normalizedMarket = normalizeCoinbaseMarketData(
     product("BTC-USDC"),
     bbo("BTC-USDC"),
@@ -339,6 +371,7 @@ test("API rejects forged trusted fields and an education ID cannot authorize", a
   ]) {
     const response = await request(running.url, {
       pathname: "/api/education/plan",
+      capability,
       body: { ...planningInput(), ...forged },
     });
     assert.equal(response.status, 400);
@@ -349,11 +382,16 @@ test("API rejects forged trusted fields and an education ID cannot authorize", a
   }
   const invalidSource = await request(running.url, {
     pathname: "/api/education/plan",
+    capability,
     body: planningInput({ source: "coinbase_observed" }),
   });
   assert.equal(invalidSource.status, 400);
 
-  const { cookie, saved } = await createPlan(running);
+  const { saved } = await createPlan(
+    running,
+    {},
+    capability,
+  );
   for (const body of [
     {
       plan_id: saved.plan.plan_id,
@@ -369,14 +407,14 @@ test("API rejects forged trusted fields and an education ID cannot authorize", a
   ]) {
     const invalidSide = await request(running.url, {
       pathname: "/api/education/handoff",
-      cookie,
+      capability,
       body,
     });
     assert.equal(invalidSide.status, 400);
   }
   const forgedRevision = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie,
+    capability,
     body: {
       plan_id: saved.plan.plan_id,
       revision: saved.plan.revision,
@@ -391,7 +429,7 @@ test("API rejects forged trusted fields and an education ID cannot authorize", a
 
   const forgedHandoff = await request(running.url, {
     pathname: "/api/education/handoff",
-    cookie,
+    capability,
     body: {
       plan_id: saved.plan.plan_id,
       revision: saved.plan.revision,
@@ -404,7 +442,7 @@ test("API rejects forged trusted fields and an education ID cannot authorize", a
 
   const authorize = await request(running.url, {
     pathname: "/api/advisor/authorize",
-    cookie,
+    capability,
     body: {
       plan_id: saved.plan.plan_id,
       mode: "dry_run",
@@ -430,11 +468,11 @@ test("View-only market snapshot uses product and BBO only", async (t) => {
       },
     }),
   });
-  const cookie = await connect(running);
+  const capability = await connect(running);
   const { saved } = await createPlan(
     running,
     { source: "view_only" },
-    cookie,
+    capability,
   );
   assert.equal(saved.session_state, "PLAN_VALID_FOR_EDITING");
   assert.deepEqual(calls.sort(), [
@@ -470,11 +508,11 @@ test("View-only outage or partial response becomes REVIEW with no fixture fallba
       },
     }),
   });
-  const cookie = await connect(running);
+  const capability = await connect(running);
   const { saved } = await createPlan(
     running,
     { source: "view_only" },
-    cookie,
+    capability,
   );
   assert.equal(saved.session_state, "REVIEW");
   assert.equal(saved.plan.decision.outcome, "REVIEW");
@@ -517,7 +555,7 @@ test("revising the selected assets refreshes the exact fixture snapshot", async 
 
   const revised = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie: initial.cookie,
+    capability: initial.capability,
     body: {
       plan_id: initial.saved.plan.plan_id,
       revision: initial.saved.plan.revision,
@@ -564,7 +602,7 @@ test("a stale fixture revision gets a fresh current snapshot", async (t) => {
 
   const revised = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie: initial.cookie,
+    capability: initial.capability,
     body: {
       plan_id: initial.saved.plan.plan_id,
       revision: initial.saved.plan.revision,
@@ -609,7 +647,7 @@ test("a View-only REVIEW can recover only through a fresh View-only snapshot", a
       },
     }),
   });
-  const cookie = await connect(running);
+  const capability = await connect(running);
   const allocations = [
     {
       product_id: "BTC-USDC",
@@ -623,7 +661,7 @@ test("a View-only REVIEW can recover only through a fresh View-only snapshot", a
       source: "view_only",
       allocations,
     },
-    cookie,
+    capability,
   );
   assert.equal(initial.saved.session_state, "REVIEW");
   assert.equal(
@@ -633,7 +671,7 @@ test("a View-only REVIEW can recover only through a fresh View-only snapshot", a
 
   const revised = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie,
+    capability,
     body: {
       plan_id: initial.saved.plan.plan_id,
       revision: initial.saved.plan.revision,
@@ -679,7 +717,7 @@ test("revision, cross-session, and second-handoff attempts fail closed without a
   const second = await createPlan(running);
   const crossSession = await request(running.url, {
     pathname: "/api/education/handoff",
-    cookie: second.cookie,
+    capability: second.capability,
     body: {
       plan_id: first.saved.plan.plan_id,
       revision: 1,
@@ -692,7 +730,7 @@ test("revision, cross-session, and second-handoff attempts fail closed without a
 
   const revised = await request(running.url, {
     pathname: "/api/education/revise",
-    cookie: first.cookie,
+    capability: first.capability,
     body: {
       plan_id: first.saved.plan.plan_id,
       revision: 1,
@@ -711,7 +749,7 @@ test("revision, cross-session, and second-handoff attempts fail closed without a
   const current = revised.json.saved_plan;
   const stale = await request(running.url, {
     pathname: "/api/education/handoff",
-    cookie: first.cookie,
+    capability: first.capability,
     body: {
       plan_id: current.plan.plan_id,
       revision: 1,
@@ -730,7 +768,7 @@ test("revision, cross-session, and second-handoff attempts fail closed without a
   };
   const handoff = await request(running.url, {
     pathname: "/api/education/handoff",
-    cookie: first.cookie,
+    capability: first.capability,
     body: identity,
   });
   assert.equal(handoff.status, 200);
@@ -756,7 +794,7 @@ test("revision, cross-session, and second-handoff attempts fail closed without a
 
   const secondHandoff = await request(running.url, {
     pathname: "/api/education/handoff",
-    cookie: first.cookie,
+    capability: first.capability,
     body: identity,
   });
   assert.equal(secondHandoff.status, 409);

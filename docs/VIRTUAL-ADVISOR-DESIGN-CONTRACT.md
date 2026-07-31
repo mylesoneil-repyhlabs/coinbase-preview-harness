@@ -67,7 +67,9 @@ Before input, the user sees:
 
 - reads: permissions, balances, exact product, best market quote, and Preview;
 - cannot do: Trade, Transfer, Create, submit, or move money;
-- retention: no secret persistence; server-process memory only;
+- transit: the key exists briefly in the form, page JavaScript, and one
+  same-origin loopback request;
+- retention: no browser persistence; after receipt, server-process memory only;
 - clearing: disconnect, expiry, process exit, or failed connection;
 - limitation: Preview is point-in-time evidence, not execution or a price
   guarantee.
@@ -75,6 +77,10 @@ Before input, the user sees:
 Local entry may use an external key file or an advanced paste flow. The paste
 flow must disclose that browser and server memory cannot be cryptographically
 zeroized, even though no storage API or persistence is used.
+
+The open page receives a separate high-entropy session capability. It is held
+only in page memory and sent as a header on stateful requests. No cookie is
+issued or accepted as authority, and a page reload starts a fresh session.
 
 ## Conditional plans
 

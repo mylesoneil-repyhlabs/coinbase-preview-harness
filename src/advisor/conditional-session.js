@@ -7,6 +7,8 @@ import {
 } from "./conditional-plan.js";
 
 const MAX_CONDITIONAL_PLANS_PER_SESSION = 12;
+const MAX_CONDITIONAL_REVISIONS_PER_PLAN = 8;
+const MAX_CONDITIONAL_REVISION_TOMBSTONES_PER_PLAN = 16;
 
 export class ConditionalSessionError extends Error {
   constructor(code, message) {
@@ -40,6 +42,14 @@ function requireEntry(session, planId) {
 function requireRevision(entry, revision) {
   const record = entry.revisions.get(revision);
   if (!record) {
+    const tombstone =
+      entry.revision_tombstones?.get(revision);
+    if (tombstone) {
+      throw new ConditionalSessionError(
+        `CONDITIONAL_PLAN_${tombstone.terminal_state}`,
+        `This saved-plan revision is ${tombstone.terminal_state.toLowerCase()}.`,
+      );
+    }
     throw new ConditionalSessionError(
       "CONDITIONAL_REVISION_NOT_FOUND",
       "This saved-plan revision is not available.",
@@ -91,6 +101,58 @@ function newRevisionRecord(plan) {
   };
 }
 
+function revisionTombstone(record) {
+  const terminalState = [
+    "EXPIRED",
+    "REVOKED",
+    "SUPERSEDED",
+  ].includes(record.state)
+    ? record.state
+    : "SUPERSEDED";
+  return Object.freeze({
+    schema_version:
+      "delta.coinbase.conditional_revision_tombstone.v1",
+    revision: record.plan.revision,
+    terminal_state: terminalState,
+    retired_at: record.plan.updated_at,
+  });
+}
+
+function compactConditionalRevisions(entry) {
+  while (
+    entry.revisions.size >
+    MAX_CONDITIONAL_REVISIONS_PER_PLAN
+  ) {
+    const retiredRevision = [...entry.revisions.keys()]
+      .sort((left, right) => left - right)
+      .find(
+        (revision) =>
+          revision !== entry.current_revision,
+      );
+    if (retiredRevision === undefined) break;
+    const record = entry.revisions.get(retiredRevision);
+    if (!record) break;
+    record.inFlight?.controller.abort(
+      "REVISION_RETENTION_LIMIT",
+    );
+    entry.revision_tombstones.set(
+      retiredRevision,
+      revisionTombstone(record),
+    );
+    entry.revisions.delete(retiredRevision);
+  }
+  while (
+    entry.revision_tombstones.size >
+    MAX_CONDITIONAL_REVISION_TOMBSTONES_PER_PLAN
+  ) {
+    const oldestRevision = [
+      ...entry.revision_tombstones.keys(),
+    ].sort((left, right) => left - right)[0];
+    if (oldestRevision === undefined) break;
+    entry.revision_tombstones.delete(oldestRevision);
+  }
+}
+
 function safeRecordView(entry, record) {
   return Object.freeze({
     plan: record.plan,
@@ -123,6 +185,12 @@ function safeRecordView(entry, record) {
 
 export function rememberConditionalPlan(session, plan) {
   const store = requireStore(session);
+  if (store.has(plan.plan_id)) {
+    throw new ConditionalSessionError(
+      "CONDITIONAL_PLAN_ALREADY_EXISTS",
+      "This saved plan already exists in the current local session.",
+    );
+  }
   while (store.size >= MAX_CONDITIONAL_PLANS_PER_SESSION) {
     const oldestPlanId = store.keys().next().value;
     if (oldestPlanId === undefined) break;
@@ -138,6 +206,7 @@ export function rememberConditionalPlan(session, plan) {
     revisions: new Map([
       [plan.revision, newRevisionRecord(plan)],
     ]),
+    revision_tombstones: new Map(),
   };
   store.set(plan.plan_id, entry);
   return safeRecordView(entry, entry.revisions.get(plan.revision));
@@ -196,6 +265,7 @@ export function reviseConditionalSessionPlan(
   const nextRecord = newRevisionRecord(nextPlan);
   entry.revisions.set(nextPlan.revision, nextRecord);
   entry.current_revision = nextPlan.revision;
+  compactConditionalRevisions(entry);
   return Object.freeze({
     superseded: safeRecordView(entry, record),
     current: safeRecordView(entry, nextRecord),

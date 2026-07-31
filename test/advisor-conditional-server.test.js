@@ -59,7 +59,7 @@ function request(
   {
     pathname,
     method = "POST",
-    cookie = null,
+    capability = null,
     body = null,
   },
 ) {
@@ -70,7 +70,9 @@ function request(
     "Sec-Fetch-Site": "same-origin",
     "X-Delta-Advisor": "1",
   };
-  if (cookie) headers.Cookie = cookie;
+  if (capability) {
+    headers["X-Delta-Advisor-Session"] = capability;
+  }
   return new Promise((resolve, reject) => {
     const outgoing = http.request(
       target,
@@ -96,10 +98,23 @@ function request(
   });
 }
 
-function cookieFrom(response) {
-  const values = response.headers["set-cookie"];
-  assert.ok(Array.isArray(values) && values.length === 1);
-  return values[0].split(";", 1)[0];
+function capabilityFrom(response) {
+  assert.equal(response.headers["set-cookie"], undefined);
+  assert.equal(response.json.session.storage, "PAGE_MEMORY_ONLY");
+  assert.match(
+    response.json.session.capability,
+    /^[A-Za-z0-9_-]{43}$/,
+  );
+  return response.json.session.capability;
+}
+
+async function openSession(running) {
+  const response = await request(running.url, {
+    pathname: "/api/session",
+    body: {},
+  });
+  assert.equal(response.status, 200);
+  return capabilityFrom(response);
 }
 
 function planInput(overrides = {}) {
@@ -125,27 +140,34 @@ async function runningAdvisor(t, options = {}) {
   return running;
 }
 
-async function createPlan(running, overrides = {}) {
+async function createPlan(
+  running,
+  overrides = {},
+  suppliedCapability = null,
+) {
+  const capability =
+    suppliedCapability ?? (await openSession(running));
   const response = await request(running.url, {
     pathname: "/api/conditional/plan",
+    capability,
     body: planInput(overrides),
   });
   assert.equal(response.status, 200);
   return {
-    cookie: cookieFrom(response),
+    capability,
     saved: response.json.saved_plan,
   };
 }
 
 async function authorize(
   running,
-  cookie,
+  capability,
   saved,
   source = "fixture",
 ) {
   const response = await request(running.url, {
     pathname: "/api/conditional/authorize",
-    cookie,
+    capability,
     body: {
       plan_id: saved.plan.plan_id,
       revision: saved.plan.revision,
@@ -159,10 +181,10 @@ async function authorize(
 
 test("conditional fixture lifecycle is one-check, repeatable only with fresh authorization, and locked", async (t) => {
   const running = await runningAdvisor(t);
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
   );
   const identity = {
@@ -174,7 +196,7 @@ test("conditional fixture lifecycle is one-check, repeatable only with fresh aut
 
   const blocked = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...identity, scenario: "block" },
   });
   assert.equal(blocked.status, 200);
@@ -192,7 +214,7 @@ test("conditional fixture lifecycle is one-check, repeatable only with fresh aut
 
   const replay = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...identity, scenario: "pass" },
   });
   assert.equal(replay.status, 409);
@@ -204,7 +226,7 @@ test("conditional fixture lifecycle is one-check, repeatable only with fresh aut
 
   const reauthorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
   );
   assert.notEqual(
@@ -213,7 +235,7 @@ test("conditional fixture lifecycle is one-check, repeatable only with fresh aut
   );
   const passed = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: {
       plan_id: saved.plan.plan_id,
       revision: saved.plan.revision,
@@ -236,10 +258,10 @@ test("conditional fixture lifecycle is one-check, repeatable only with fresh aut
 
 test("concurrent double-submit yields one result and one safe conflict", async (t) => {
   const running = await runningAdvisor(t);
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
   );
   const body = {
@@ -253,12 +275,12 @@ test("concurrent double-submit yields one result and one safe conflict", async (
   const responses = await Promise.all([
     request(running.url, {
       pathname: "/api/conditional/simulate",
-      cookie,
+      capability,
       body,
     }),
     request(running.url, {
       pathname: "/api/conditional/simulate",
-      cookie,
+      capability,
       body,
     }),
   ]);
@@ -285,10 +307,10 @@ test("concurrent double-submit yields one result and one safe conflict", async (
 
 test("invalid View-only fixture scenario is rejected before one-use consumption", async (t) => {
   const running = await runningAdvisor(t);
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
     "view_only",
   );
@@ -301,7 +323,7 @@ test("invalid View-only fixture scenario is rejected before one-use consumption"
 
   const malformed = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...identity, scenario: "block" },
   });
   assert.equal(malformed.status, 400);
@@ -312,7 +334,7 @@ test("invalid View-only fixture scenario is rejected before one-use consumption"
 
   const accepted = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...identity, scenario: "pass" },
   });
   assert.equal(accepted.status, 200);
@@ -334,10 +356,10 @@ test("invalid View-only fixture scenario is rejected before one-use consumption"
 
 test("cancel before CHECKING consumes the grant, is idempotent, and records one cancellation", async (t) => {
   const running = await runningAdvisor(t);
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
   );
   const body = {
@@ -349,7 +371,7 @@ test("cancel before CHECKING consumes the grant, is idempotent, and records one 
 
   const cancelled = await request(running.url, {
     pathname: "/api/conditional/cancel",
-    cookie,
+    capability,
     body,
   });
   assert.equal(cancelled.status, 200);
@@ -369,7 +391,7 @@ test("cancel before CHECKING consumes the grant, is idempotent, and records one 
 
   const delayedStart = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...body, scenario: "pass" },
   });
   assert.equal(delayedStart.status, 409);
@@ -380,7 +402,7 @@ test("cancel before CHECKING consumes the grant, is idempotent, and records one 
 
   const repeated = await request(running.url, {
     pathname: "/api/conditional/cancel",
-    cookie,
+    capability,
     body,
   });
   assert.equal(repeated.status, 200);
@@ -393,7 +415,7 @@ test("cancel before CHECKING consumes the grant, is idempotent, and records one 
   const activity = await request(running.url, {
     pathname: "/api/activity",
     method: "GET",
-    cookie,
+    capability,
   });
   assert.equal(activity.status, 200);
   assert.equal(
@@ -449,10 +471,10 @@ test("server cancellation aborts a delayed View-only provider and discards its l
       };
     },
   });
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const connected = await request(running.url, {
     pathname: "/api/connection/connect",
-    cookie,
+    capability,
     body: {
       name: "test-view-only",
       privateKey: "test-only-injected-provider",
@@ -461,7 +483,7 @@ test("server cancellation aborts a delayed View-only provider and discards its l
   assert.equal(connected.status, 200);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
     "view_only",
   );
@@ -473,14 +495,14 @@ test("server cancellation aborts a delayed View-only provider and discards its l
   };
   const pending = request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...body, scenario: "pass" },
   });
   await started;
 
   const cancelled = await request(running.url, {
     pathname: "/api/conditional/cancel",
-    cookie,
+    capability,
     body,
   });
   assert.equal(cancelled.status, 200);
@@ -502,10 +524,10 @@ test("server cancellation aborts a delayed View-only provider and discards its l
 
 test("completed result wins the cancel race and is returned for truthful UI recovery", async (t) => {
   const running = await runningAdvisor(t);
-  const { cookie, saved } = await createPlan(running);
+  const { capability, saved } = await createPlan(running);
   const authorized = await authorize(
     running,
-    cookie,
+    capability,
     saved,
   );
   const body = {
@@ -516,14 +538,14 @@ test("completed result wins the cancel race and is returned for truthful UI reco
   };
   const completed = await request(running.url, {
     pathname: "/api/conditional/simulate",
-    cookie,
+    capability,
     body: { ...body, scenario: "pass" },
   });
   assert.equal(completed.status, 200);
 
   const cancellation = await request(running.url, {
     pathname: "/api/conditional/cancel",
-    cookie,
+    capability,
     body,
   });
   assert.equal(cancellation.status, 200);
@@ -539,9 +561,10 @@ test("completed result wins the cancel race and is returned for truthful UI reco
   );
 });
 
-test("conditional mutation routes require an existing session and never allocate one", async (t) => {
+test("conditional routes require an explicit page-memory capability and never allocate implicitly", async (t) => {
   const running = await runningAdvisor(t);
   for (const pathname of [
+    "/api/conditional/plan",
     "/api/conditional/revise",
     "/api/conditional/authorize",
     "/api/conditional/cancel",
@@ -552,7 +575,11 @@ test("conditional mutation routes require an existing session and never allocate
       pathname,
       body: {},
     });
-    assert.equal(response.status, 404);
+    assert.equal(response.status, 401);
+    assert.equal(
+      response.json.error.code,
+      "SESSION_CAPABILITY_REQUIRED",
+    );
     assert.equal(response.headers["set-cookie"], undefined);
   }
 });

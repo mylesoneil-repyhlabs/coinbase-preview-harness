@@ -117,3 +117,24 @@ test("peek never allocates or extends a session", () => {
   const replacement = store.open().session;
   assert.notEqual(replacement.token, session.token);
 });
+
+test("touch resolves and extends only an existing unexpired capability", () => {
+  const time = clock();
+  const store = new AdvisorSessionStore({
+    idleTtlMs: 60_000,
+    absoluteTtlMs: 180_000,
+    now: time.now,
+  });
+  const session = store.open().session;
+
+  time.advance(59_999);
+  assert.equal(store.touch(session.token), session);
+  time.advance(59_999);
+  assert.equal(store.touch(session.token), session);
+  time.advance(60_000);
+  assert.equal(store.touch(session.token), null);
+  assert.equal(store.peek(session.token), null);
+
+  const replacement = store.open().session;
+  assert.notEqual(replacement.token, session.token);
+});

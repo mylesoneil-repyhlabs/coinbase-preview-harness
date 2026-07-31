@@ -173,10 +173,11 @@ permissions on connect and before every borrow, permits one concurrent
 preflight, binds the borrow to the current generation/scope, exposes an abort
 signal, and revalidates immediately before the result can be accepted.
 
-Public status, connection status, and activity reads use a non-touching
-session lookup. A missing cookie returns a fixed disconnected DTO without
-opening a session, creating a provider, or setting a cookie. Only an accepted
-same-origin plan or connect POST creates one.
+At the Sprint 2 checkpoint, public status and missing-cookie connection reads
+used a non-touching lookup. Sprint 6 supersedes that ambient-cookie authority:
+one explicit same-origin bootstrap creates a high-entropy page-memory
+capability, and every stateful read or mutation now requires its header. No
+cookie is issued or accepted as authority.
 
 ### Senior full-stack implementation
 
@@ -229,7 +230,7 @@ Connection failure always leaves the useful no-key path available.
 ### QA
 
 The focused integration and adversarial suite passed **104/104**. It covers:
-no allocation/cookie/provider on status reads; cross-site rejection before
+no allocation/provider on public status reads; cross-site rejection before
 allocation; session isolation; connect/disconnect; redacted end-to-end
 account/product/BBO/Preview; no silent fallback; missing connection;
 reconnect/disconnect/expiry/clock/scope races; bounded concurrency; revoked,
@@ -740,3 +741,152 @@ after a qualified View-only PASS while remaining non-actionable. It does not
 issue authorization, eligibility, a challenge, grant, Trade credential,
 production Delta proof, Create request, order, or money movement. Orders
 remain off.
+
+## Sprint 6 — authority, abuse, accessibility, and packaged-app hardening
+
+### Product Manager requirements
+
+Make the credential-capable local Advisor releasable without turning safety
+into visible friction: useful dry run first, optional View-only connection,
+one compact Orders-off boundary, responsive recovery, and no credentialed
+release while ambient loopback authority, feature-disable gaps, unbounded
+session data, or a source-only frontend package remains.
+
+### Engineering-lead architecture
+
+Replaced the loopback cookie with an explicit 256-bit random capability
+returned by `POST /api/session` and held only in the open page’s JavaScript
+memory. Cookies are neither issued nor accepted. Every stateful read and
+mutation requires the custom capability header plus the existing exact
+Host/Origin/Fetch-Metadata contract. A new atomic session-store `touch`
+operation resolves and extends only an existing unexpired token; it cannot
+fall through to allocation.
+
+Capability flags are now server-enforced operator stops before body parsing,
+session resolution, provider construction, or network access. The View-only,
+conditional, research, and portfolio paths fail closed when disabled. The
+Advisor entrypoint dispatches directly to `src/advisor-server.js`, avoiding
+the execution-capable CLI dependency graph.
+
+### Senior full-stack implementation
+
+The browser bootstraps one private page session, sends the capability only as
+a same-origin header, clears it on expiry, and never silently replays a failed
+state-changing request. The UI preserves the default dry run and disables
+controls whose server capability is off.
+
+A fresh View-only PASS can still show only the static locked future-readiness
+explanation. At Preview expiry the card demotes itself to an expired,
+non-focusable recovery message and the rail returns to
+`Preview expired · locked`; no confirmation or order control appears. The
+fourth rail state is named **Future preview**, not final action.
+
+The hard-coded 320-pixel document minimum was removed after constrained
+browser testing exposed horizontal overflow below that width. The existing
+single-column responsive rules now operate at the controller’s 240-pixel
+minimum while the normal 320-pixel experience remains intact.
+
+### Backend and data
+
+Conditional and educational plans now retain at most eight full revisions and
+sixteen minimal terminal tombstones per plan. The current revision is always
+retained. Conditional compaction aborts old in-flight work; a late signed
+result cannot revive revision 1 after 100 edits. Educational invalidated-
+handoff metadata is capped, redacted, and non-replayable. Same-session plans
+compact independently.
+
+Oversized request bodies fail immediately and close rather than continuing to
+drain. Header, request, keep-alive, and connection-check timeouts are explicit;
+POST concurrency is bounded while public status and static assets remain
+available for recovery. No remote telemetry or sensitive request logging was
+added.
+
+### DevOps and release review
+
+`./run advisor` now dispatches directly before the CLI can import Coinbase
+REST, Create adapters, Trade credential loaders, or the live pipeline. The
+release allowlist and managed installer require `web/index.html`,
+`web/app.js`, `web/styles.css`, `src/advisor-server.js`, and every
+README-linked Advisor design/security document. Archive scanning includes the
+frontend, and credential-canary tests construct their markers at runtime so
+test coverage does not place credential-shaped source in the artifact.
+
+The cold validator installs under restricted `PATH`, deletes the extracted
+source, launches the managed Advisor, fetches HTML/JavaScript/CSS/status,
+checks security headers, no cookies, no external assets, and locked status,
+then probes GET and POST on execution, Create, order, proxy,
+live-readiness, final-review, grant, and claim routes for `404`.
+
+The first committed-candidate build passed this complete cold gate under Node
+24: **157** allowlisted text files, **1,766,162** bytes, deterministic archive
+and content scan, managed install under restricted `PATH`, extracted-source
+deletion, direct Advisor launch, UI/JavaScript/CSS/status fetches, and absent
+execution routes. It intentionally retained the public v1.5.3 package metadata;
+Sprint 7 owns the coordinated v1.6.0 metadata, tag, and release.
+
+### Designer and frontend critique
+
+Synthetic internal review—not customer proof—found three concrete trust
+issues: a cookie could be replayed across loopback ports; the terminal banner
+said “no credentials” even though an optional View-only connection exists;
+and an expired locked card added a focusable recovery button that violated the
+non-actionable S5 contract. The shipped revision removes cookie authority,
+says **Dry run default · optional View-only connection**, and keeps expired
+recovery static.
+
+Credential copy now says exactly where a key exists: briefly in the form,
+page JavaScript, and one same-origin loopback request, then in server-process
+memory after receipt. It does not claim that the browser never sees the key.
+
+### QA
+
+The focused Sprint 6 session/security/UI/revision/credential/direct-launch gate
+passed **72/72**. The adjacent conditional and education core/API/session gate
+passed **85/85**. The complete repository suite passed **640/640**.
+
+Coverage includes missing/cookie/cross-server/cross-port capability attempts;
+the exact idle-expiry allocator race; feature stops before body/session/
+provider work; no `Set-Cookie`; secret-canary redaction; 32 slow loopback
+bodies; early oversized-body close; explicit timeouts; 100 conditional edits;
+400 educational handoff/revise cycles; minimal tombstones; late PASS and stale
+handoff replay; static locked-readiness expiry; direct Advisor dependency
+closure; and all absent Create/execution routes.
+
+An independent read-only security recheck initially found the atomic-expiry
+race and release-scanner canary conflict. After correction it reported GO
+with no remaining P0/P1: **157/157** focused tests, **64/64** authority probes,
+**65/65** reachability probes, and the same **640/640** full suite. This is
+internal synthetic assurance, not third-party certification.
+
+Real Chrome interaction at 320×900 completed example fill, Tab from the
+composer to **Prepare mandate**, Enter activation, Tab through **Edit intent**
+to **Authorize for one check**, and Enter to a locked PASS. Document width and
+scroll width remained 320 pixels, the safety bar remained present, `No order
+submitted` was visible, and no interactive order control existed. The app
+console had no warning or error from the loopback origin.
+
+The browser controller did not expose a working browser-zoom setting: two
+supported zoom-key attempts left the reported viewport and device pixel ratio
+unchanged. That limitation is not counted as a 200% browser-zoom pass.
+Replacement constrained evidence used the controller’s 240-pixel minimum,
+where client and scroll width both remained 240 with no horizontal overflow,
+plus the genuine 320-pixel keyboard path above. The previous 320-pixel CSS
+minimum was removed specifically to make zoom/reflow safer.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: the private page session is invisible in
+the ordinary flow, so stronger authority does not add onboarding work.
+“Optional View-only connection” is more credible than “no credentials,” and
+static expiry recovery feels safer than a button inside a future-order design
+card. The persistent safety bar and keyboard-operable one-check path keep
+Delta protection understandable without exposing hashes or session details.
+
+### Shipped impact
+
+Sprint 6 turns the development Advisor into a bounded, packageable,
+operator-stoppable local product while preserving the dry-run-first
+experience. It adds no Coinbase Create, Trade credential, final-confirmation
+challenge, execution grant, durable executor, order, money movement, or
+production Delta integration. Sprint 7 still owns final UX consolidation,
+version metadata, public archive/checksum, CI evidence, and release.

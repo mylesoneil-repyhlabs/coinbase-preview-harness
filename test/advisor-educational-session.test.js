@@ -19,10 +19,10 @@ function session() {
   return { educationalPlans: new Map() };
 }
 
-function snapshot() {
+function snapshot(at = NOW) {
   return createGeneratedEducationalMarketSnapshot({
-    snapshot_id: "snapshot-education-session",
-    evaluated_at: NOW,
+    snapshot_id: `snapshot-education-session-${at}`,
+    evaluated_at: at,
     market_max_age_seconds: 60,
     education_max_age_seconds: 31_536_000,
     requested_product_ids: ["BTC-USDC", "ETH-USDC"],
@@ -35,7 +35,7 @@ function snapshot() {
         available: true,
         best_bid: "118500.20",
         best_ask: "118500.30",
-        observed_at: NOW,
+        observed_at: at,
       },
       {
         product_id: "ETH-USDC",
@@ -45,7 +45,7 @@ function snapshot() {
         available: true,
         best_bid: "3820.05",
         best_ask: "3820.15",
-        observed_at: NOW,
+        observed_at: at,
       },
     ],
   });
@@ -339,4 +339,198 @@ test("the exact snapshot expiry boundary fails closed without a draft", () => {
   );
   assert.equal(result.saved_plan.draft, null);
   assert.equal(result.saved_plan.boundary.trade_authorized, false);
+});
+
+test("100 handoff revisions stay bounded, redacted, isolated, and non-replayable across sessions", () => {
+  for (let sessionIndex = 0; sessionIndex < 4; sessionIndex += 1) {
+    const { target, saved } = createPlan();
+    let current = saved;
+    for (let edit = 1; edit <= 100; edit += 1) {
+      const legId =
+        current.plan.analysis.allocations[0].leg_id;
+      const handoff = createEducationalSessionHandoff(
+        target,
+        {
+          planId: current.plan.plan_id,
+          revision: current.plan.revision,
+          legId,
+          side: edit % 2 === 0 ? "SELL" : "BUY",
+        },
+        {
+          now: () =>
+            new Date(
+              Date.parse(NOW) + edit * 100 - 1,
+            ),
+          idFactory: () =>
+            `retired-draft-${sessionIndex}-${edit}`,
+        },
+      );
+      assert.equal(
+        handoff.saved_plan.session_state,
+        "DRAFT_CREATED_NOT_AUTHORIZED",
+      );
+      assert.equal(
+        handoff.saved_plan.boundary.trade_authorized,
+        false,
+      );
+
+      const editedAt = new Date(
+        Date.parse(NOW) + edit * 100,
+      ).toISOString();
+      const revised = reviseEducationalSessionPlan(
+        target,
+        {
+          planId: current.plan.plan_id,
+          revision: current.plan.revision,
+          ...inputs(),
+          snapshot: snapshot(editedAt),
+        },
+        {
+          now: () => new Date(editedAt),
+        },
+      );
+      current = revised.current;
+    }
+    const entry = target.educationalPlans.get(
+      current.plan.plan_id,
+    );
+    assert.equal(entry.revisions.size, 8);
+    assert.equal(entry.revision_tombstones.size, 16);
+    assert.equal(entry.current_revision, 101);
+    assert.equal(current.plan.revision, 101);
+    assert.equal(current.draft, null);
+    assert.equal(current.boundary.trade_authorized, false);
+    assert.equal(
+      current.plan.invalidated_handoffs.length,
+      16,
+    );
+    assert.equal(
+      current.plan.invalidated_handoffs[0].draft_id,
+      `retired-draft-${sessionIndex}-85`,
+    );
+    assert.equal(
+      current.plan.invalidated_handoffs.at(-1).draft_id,
+      `retired-draft-${sessionIndex}-100`,
+    );
+    for (const tombstone of entry.revision_tombstones.values()) {
+      assert.deepEqual(Object.keys(tombstone).sort(), [
+        "retired_at",
+        "revision",
+        "schema_version",
+        "terminal_state",
+      ]);
+      assert.equal(tombstone.terminal_state, "SUPERSEDED");
+      assert.equal(tombstone.plan, undefined);
+      assert.equal(tombstone.snapshot, undefined);
+      assert.equal(tombstone.draft, undefined);
+      assert.equal(tombstone.result, undefined);
+    }
+    assert.throws(
+      () =>
+        createEducationalSessionHandoff(target, {
+          planId: current.plan.plan_id,
+          revision: 1,
+          legId: `${current.plan.plan_id}:r1:BTC-USDC`,
+          side: "BUY",
+        }),
+      (error) =>
+        error?.code === "EDUCATIONAL_PLAN_REVISION_STALE",
+    );
+    assert.throws(
+      () =>
+        createEducationalSessionHandoff(target, {
+          planId: current.plan.plan_id,
+          revision: 101,
+          legId: `${current.plan.plan_id}:r1:BTC-USDC`,
+          side: "BUY",
+        }),
+      (error) =>
+        error?.code === "EDUCATIONAL_LEG_NOT_FOUND",
+    );
+
+    const currentLegId =
+      current.plan.analysis.allocations[0].leg_id;
+    const currentHandoff = createEducationalSessionHandoff(
+      target,
+      {
+        planId: current.plan.plan_id,
+        revision: 101,
+        legId: currentLegId,
+        side: "BUY",
+      },
+      {
+        now: () =>
+          new Date(Date.parse(NOW) + 10_100),
+        idFactory: () =>
+          `current-draft-${sessionIndex}`,
+      },
+    );
+    assert.equal(
+      currentHandoff.saved_plan.session_state,
+      "DRAFT_CREATED_NOT_AUTHORIZED",
+    );
+    assert.equal(
+      currentHandoff.saved_plan.boundary.trade_authorized,
+      false,
+    );
+    assert.throws(
+      () =>
+        createEducationalSessionHandoff(target, {
+          planId: current.plan.plan_id,
+          revision: 101,
+          legId: currentLegId,
+          side: "BUY",
+        }),
+      (error) =>
+        error?.code ===
+        "EDUCATIONAL_HANDOFF_ALREADY_CREATED",
+    );
+
+    if (sessionIndex === 0) {
+      const secondIds = [
+        "education-second-plan",
+        "education-second-session-binding",
+      ];
+      let secondCurrent = createEducationalSessionPlan(
+        target,
+        inputs(),
+        {
+          now: () => new Date(NOW),
+          idFactory: () => secondIds.shift(),
+        },
+      );
+      for (let edit = 1; edit <= 20; edit += 1) {
+        const editedAt = new Date(
+          Date.parse(NOW) + edit * 100,
+        ).toISOString();
+        secondCurrent = reviseEducationalSessionPlan(
+          target,
+          {
+            planId: secondCurrent.plan.plan_id,
+            revision: secondCurrent.plan.revision,
+            ...inputs(),
+            snapshot: snapshot(editedAt),
+          },
+          {
+            now: () => new Date(editedAt),
+          },
+        ).current;
+      }
+      const secondEntry = target.educationalPlans.get(
+        secondCurrent.plan.plan_id,
+      );
+      assert.equal(target.educationalPlans.size, 2);
+      assert.equal(secondEntry.current_revision, 21);
+      assert.equal(secondEntry.revisions.size, 8);
+      assert.equal(
+        secondEntry.revision_tombstones.size,
+        13,
+      );
+      assert.equal(entry.current_revision, 101);
+      assert.equal(
+        entry.revisions.get(101).draft.draft_id,
+        "current-draft-0",
+      );
+    }
+  }
 });

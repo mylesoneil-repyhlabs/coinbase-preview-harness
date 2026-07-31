@@ -39,6 +39,7 @@ const PRODUCT = /^[A-Z0-9]{2,15}-[A-Z0-9]{2,15}$/;
 const MAX_CLOCK_SKEW_MS = 5_000;
 const MAX_ALLOCATIONS = 20;
 const MAX_SCENARIOS = 8;
+const MAX_INVALIDATED_HANDOFF_TOMBSTONES = 16;
 const TRUSTED_MARKET_SOURCES = new Set([
   "fixture",
   "view_only",
@@ -1164,9 +1165,12 @@ export function editEducationalPortfolioPlan(
     scenarios: scenarios ?? rawScenarios(current),
     scenario_acknowledged,
   });
+  const priorInvalidated = [
+    ...(current.invalidated_handoffs ?? []),
+  ].slice(-MAX_INVALIDATED_HANDOFF_TOMBSTONES);
   const invalidated = current.handoff
     ? [
-        ...(current.invalidated_handoffs ?? []),
+        ...priorInvalidated,
         {
           draft_id: current.handoff.draft_id,
           plan_revision: current.revision,
@@ -1174,8 +1178,8 @@ export function editEducationalPortfolioPlan(
           reason:
             "The educational plan changed. This prior one-leg draft cannot be reused.",
         },
-      ]
-    : [...(current.invalidated_handoffs ?? [])];
+      ].slice(-MAX_INVALIDATED_HANDOFF_TOMBSTONES)
+    : priorInvalidated;
   const { model_integrity: _nextIntegrity, ...nextModel } = next;
   return sealPlan({
     ...nextModel,

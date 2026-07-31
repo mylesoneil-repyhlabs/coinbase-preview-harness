@@ -71,10 +71,14 @@ import {
 const SOURCE_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_WEB_ROOT = path.resolve(SOURCE_DIR, "../../web");
 export const DEFAULT_ADVISOR_HOST = "127.0.0.1";
-const SESSION_COOKIE = "delta_advisor_session";
+const SESSION_CAPABILITY_HEADER = "x-delta-advisor-session";
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_STATIC_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
+const DEFAULT_HEADERS_TIMEOUT_MS = 5_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 5_000;
+const DEFAULT_CONNECTIONS_CHECKING_INTERVAL_MS = 500;
 const EDUCATIONAL_MARKET_MAX_AGE_SECONDS = 60;
 const EDUCATIONAL_SOURCE_MAX_AGE_SECONDS = 31_536_000;
 const EDUCATIONAL_PRODUCT_FIXTURES = Object.freeze({
@@ -107,6 +111,7 @@ const EDUCATIONAL_PRODUCT_FIXTURES = Object.freeze({
   }),
 });
 const ADVISOR_POST_ROUTES = new Set([
+  "/api/session",
   "/api/advisor/plan",
   "/api/advisor/authorize",
   "/api/connection/connect",
@@ -159,6 +164,16 @@ class HttpError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+function requestTooLargeError() {
+  const error = new HttpError(
+    413,
+    "REQUEST_TOO_LARGE",
+    "The request is too large.",
+  );
+  error.closeConnection = true;
+  return error;
 }
 
 function safeJson(response, status, value, headers = {}) {
@@ -516,29 +531,16 @@ async function readJson(request, { allowEmpty = false } = {}) {
     Number.isFinite(declaredLength) &&
     declaredLength > MAX_BODY_BYTES
   ) {
-    throw new HttpError(
-      413,
-      "REQUEST_TOO_LARGE",
-      "The request is too large.",
-    );
+    throw requestTooLargeError();
   }
   const chunks = [];
   let total = 0;
-  let exceeded = false;
   for await (const chunk of request) {
     total += chunk.length;
     if (total > MAX_BODY_BYTES) {
-      exceeded = true;
-      continue;
+      throw requestTooLargeError();
     }
     chunks.push(chunk);
-  }
-  if (exceeded) {
-    throw new HttpError(
-      413,
-      "REQUEST_TOO_LARGE",
-      "The request is too large.",
-    );
   }
   if (total === 0 && allowEmpty) return {};
   const contentType = request.headers["content-type"] ?? "";
@@ -560,27 +562,9 @@ async function readJson(request, { allowEmpty = false } = {}) {
   }
 }
 
-function parseSessionCookie(header) {
-  if (typeof header !== "string" || header.length > 8_192) return null;
-  for (const segment of header.split(";")) {
-    const [name, ...rest] = segment.trim().split("=");
-    if (name !== SESSION_COOKIE) continue;
-    const value = rest.join("=");
-    return isSessionToken(value) ? value : null;
-  }
-  return null;
-}
-
-function sessionCookie(session, store, secureCookies) {
-  const parts = [
-    `${SESSION_COOKIE}=${session.token}`,
-    "HttpOnly",
-    "Path=/",
-    "SameSite=Strict",
-    `Max-Age=${store.ttlSeconds}`,
-  ];
-  if (secureCookies) parts.push("Secure");
-  return parts.join("; ");
+function sessionCapability(request) {
+  const value = request.headers[SESSION_CAPABILITY_HEADER];
+  return isSessionToken(value) ? value : null;
 }
 
 function assertLoopbackRequest(request) {
@@ -598,9 +582,9 @@ function assertLoopbackRequest(request) {
   return host;
 }
 
-function assertSameOriginMutation(request, host, secureCookies) {
+function assertSameOriginMutation(request, host) {
   const origin = request.headers.origin;
-  const expectedOrigin = `${secureCookies ? "https" : "http"}://${host}`;
+  const expectedOrigin = `http://${host}`;
   if (origin !== expectedOrigin) {
     throw new HttpError(
       403,
@@ -626,6 +610,84 @@ function assertSameOriginMutation(request, host, secureCookies) {
       "Reload the local advisor and try again.",
     );
   }
+}
+
+function assertRouteFeatureEnabled(
+  pathname,
+  capabilityProfile,
+) {
+  const featureUnavailable = (label) => {
+    throw new HttpError(
+      404,
+      "ADVISOR_FEATURE_DISABLED",
+      `${label} is disabled in this local build.`,
+    );
+  };
+  if (pathname.startsWith("/api/connection")) {
+    if (
+      capabilityProfile.modes.view_only_preflight?.enabled !==
+      true
+    ) {
+      featureUnavailable("View-only preflight");
+    }
+    return;
+  }
+  if (pathname.startsWith("/api/conditional/")) {
+    if (
+      capabilityProfile.features
+        .conditional_plan_simulation !== true
+    ) {
+      featureUnavailable("Conditional plan simulation");
+    }
+    return;
+  }
+  if (pathname.startsWith("/api/education/")) {
+    if (
+      capabilityProfile.features.educational_research !==
+        true ||
+      capabilityProfile.features.portfolio_planning !== true
+    ) {
+      featureUnavailable("Educational planning");
+    }
+    return;
+  }
+  if (
+    pathname.startsWith("/api/advisor/") ||
+    pathname.startsWith("/api/demo/")
+  ) {
+    if (
+      capabilityProfile.features.advisor !== true ||
+      capabilityProfile.modes.dry_run?.enabled !== true
+    ) {
+      featureUnavailable("Protected trade planning");
+    }
+  }
+}
+
+function assertAuthorizeModeEnabled(
+  request,
+  capabilityProfile,
+) {
+  const mode = request.headers["x-delta-advisor-mode"];
+  if (!["dry_run", "view_only_preflight"].includes(mode)) {
+    throw new HttpError(
+      400,
+      "PREFLIGHT_MODE_HEADER_REQUIRED",
+      "Reload the local advisor and choose a protected check mode.",
+    );
+  }
+  if (
+    mode === "view_only_preflight" &&
+    capabilityProfile.modes.view_only_preflight?.enabled !==
+      true
+  ) {
+    throw new HttpError(
+      404,
+      "ADVISOR_FEATURE_DISABLED",
+      "View-only preflight is disabled in this local build.",
+    );
+  }
+  return mode;
 }
 
 function assertApiRequestContext(request) {
@@ -740,7 +802,6 @@ export function createAdvisorRequestHandler({
   webRoot = DEFAULT_WEB_ROOT,
   sessionStore = new AdvisorSessionStore(),
   history = {},
-  secureCookies = false,
   now = () => new Date(),
   createPlan = createExecutionPlan,
   runPreflight = runGuardPreflight,
@@ -891,10 +952,14 @@ export function createAdvisorRequestHandler({
         );
   }
 
-  let activeRequests = 0;
+  let activeMutations = 0;
   return async function advisorRequestHandler(request, response) {
-    let cookieHeader = {};
-    if (activeRequests >= maxConcurrentRequests) {
+    const countsTowardMutationLimit =
+      request.method === "POST";
+    if (
+      countsTowardMutationLimit &&
+      activeMutations >= maxConcurrentRequests
+    ) {
       safeError(
         response,
         new HttpError(
@@ -905,7 +970,7 @@ export function createAdvisorRequestHandler({
       );
       return;
     }
-    activeRequests += 1;
+    if (countsTowardMutationLimit) activeMutations += 1;
     try {
       const host = assertLoopbackRequest(request);
       const url = new URL(request.url ?? "/", `http://${host}`);
@@ -928,7 +993,7 @@ export function createAdvisorRequestHandler({
 
       assertApiRequestContext(request);
       if ((request.method ?? "") === "POST") {
-        assertSameOriginMutation(request, host, secureCookies);
+        assertSameOriginMutation(request, host);
       }
 
       if (request.method === "GET" && pathname === "/api/status") {
@@ -938,7 +1003,11 @@ export function createAdvisorRequestHandler({
           service: "Delta Guard Advisor",
           ready: true,
           session: {
-            storage: "SERVER_MEMORY_ONLY",
+            storage: "PAGE_MEMORY_ONLY",
+            browser_authority:
+              "PAGE_MEMORY_CAPABILITY_HEADER",
+            credential_storage:
+              "SERVER_PROCESS_MEMORY_ONLY_AFTER_CONNECT",
             created: false,
             idle_expires_after_seconds:
               sessionStore.idleTtlSeconds,
@@ -958,78 +1027,46 @@ export function createAdvisorRequestHandler({
       }
 
       if (
-        request.method === "GET" &&
-        pathname === "/api/connection"
+        request.method === "POST" &&
+        pathname === "/api/session"
       ) {
-        const token = parseSessionCookie(
-          request.headers.cookie,
+        strictFields(
+          await readJson(request, { allowEmpty: true }),
+          [],
+          "Advisor session request",
         );
-        const session =
-          typeof sessionStore.peek === "function"
-            ? sessionStore.peek(token)
-            : null;
-        const provider =
-          session == null
-            ? null
-            : credentialProviderFor(session, {
-                create: false,
-              });
-        safeJson(
-          response,
-          200,
-          connectionResponse(
-            provider?.status() ??
-              disconnectedConnectionStatus(),
-          ),
-        );
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        pathname === "/api/activity"
-      ) {
-        const token = parseSessionCookie(
-          request.headers.cookie,
-        );
-        const session =
-          typeof sessionStore.peek === "function"
-            ? sessionStore.peek(token)
-            : null;
-        let entries;
-        try {
-          entries = await readGuardHistory({
-            limit: 20,
-            ...history,
-          });
-        } catch {
-          throw new HttpError(
-            503,
-            "HISTORY_UNAVAILABLE",
-            "Local Guard history is temporarily unavailable.",
-          );
-        }
+        const { session } = sessionStore.open(null);
         safeJson(response, 200, {
           schema_version:
-            "delta.coinbase.advisor_activity.v1",
-          session_activity: advisorActivityView(
-            session?.activity ?? [],
-          ),
-          guard_history: advisorHistoryView(entries),
+            "delta.coinbase.advisor_session.v1",
+          session: {
+            capability: session.token,
+            storage: "PAGE_MEMORY_ONLY",
+            idle_expires_after_seconds:
+              sessionStore.idleTtlSeconds,
+            absolute_expires_after_seconds:
+              sessionStore.absoluteTtlSeconds,
+          },
           boundary: {
-            local_only: true,
+            cookie_authority: false,
+            browser_persistence: false,
             create_available: false,
             order_submitted: false,
-            money_moved: false,
           },
         });
         return;
       }
 
-      if (
-        request.method !== "POST" ||
-        !ADVISOR_POST_ROUTES.has(pathname)
-      ) {
+      const isStatefulGet =
+        request.method === "GET" &&
+        ["/api/connection", "/api/activity"].includes(
+          pathname,
+        );
+      const isStatefulPost =
+        request.method === "POST" &&
+        ADVISOR_POST_ROUTES.has(pathname) &&
+        pathname !== "/api/session";
+      if (!isStatefulGet && !isStatefulPost) {
         if (
           request.method === "POST" ||
           request.method === "GET"
@@ -1047,90 +1084,84 @@ export function createAdvisorRequestHandler({
         );
       }
 
-      const suppliedToken = parseSessionCookie(
-        request.headers.cookie,
+      assertRouteFeatureEnabled(
+        pathname,
+        capabilityProfile,
       );
-      const existingSession =
-        typeof sessionStore.peek === "function"
-          ? sessionStore.peek(suppliedToken)
+      const declaredAuthorizeMode =
+        pathname === "/api/advisor/authorize"
+          ? assertAuthorizeModeEnabled(
+              request,
+              capabilityProfile,
+            )
           : null;
-      if (
-        pathname === "/api/connection/disconnect" &&
-        existingSession == null
-      ) {
-        strictFields(
-          await readJson(request, { allowEmpty: true }),
-          [],
-          "View-only disconnect request",
+      const suppliedToken = sessionCapability(request);
+      if (suppliedToken == null) {
+        throw new HttpError(
+          401,
+          "SESSION_CAPABILITY_REQUIRED",
+          "Reload the local advisor to start a fresh private session.",
         );
+      }
+      const session = sessionStore.touch(suppliedToken);
+      if (session == null) {
+        throw new HttpError(
+          401,
+          "SESSION_CAPABILITY_EXPIRED",
+          "This private page session expired. Reload the local advisor and try again.",
+        );
+      }
+
+      if (
+        request.method === "GET" &&
+        pathname === "/api/connection"
+      ) {
+        const provider = credentialProviderFor(session, {
+          create: false,
+        });
         safeJson(
           response,
           200,
           connectionResponse(
-            disconnectedConnectionStatus(),
+            provider?.status() ??
+              disconnectedConnectionStatus(),
           ),
         );
         return;
       }
-      if (
-        pathname === "/api/advisor/authorize" &&
-        existingSession == null
-      ) {
-        throw new HttpError(
-          404,
-          "PLAN_NOT_FOUND",
-          "This mandate is not available in the current local session.",
-        );
-      }
-      if (
-        pathname.startsWith("/api/conditional/") &&
-        pathname !== "/api/conditional/plan" &&
-        existingSession == null
-      ) {
-        throw new HttpError(
-          404,
-          "CONDITIONAL_PLAN_NOT_FOUND",
-          "This saved plan is not available in the current local session.",
-        );
-      }
-      if (
-        pathname.startsWith("/api/education/") &&
-        pathname !== "/api/education/plan" &&
-        existingSession == null
-      ) {
-        throw new HttpError(
-          404,
-          "EDUCATIONAL_PLAN_NOT_FOUND",
-          "This educational plan is not available in the current local session.",
-        );
-      }
 
-      let session = existingSession;
-      if (session != null) {
-        session = sessionStore.open(suppliedToken).session;
-      } else if (
-        pathname === "/api/advisor/plan" ||
-        pathname === "/api/conditional/plan" ||
-        pathname === "/api/education/plan" ||
-        pathname === "/api/connection/connect"
+      if (
+        request.method === "GET" &&
+        pathname === "/api/activity"
       ) {
-        session = sessionStore.open(null).session;
-      } else {
-        session = {
-          plans: new Map(),
-          conditionalPlans: new Map(),
-          educationalPlans: new Map(),
-          activity: [],
-        };
-      }
-      if (isSessionToken(session.token)) {
-        cookieHeader = {
-          "Set-Cookie": sessionCookie(
-            session,
-            sessionStore,
-            secureCookies,
+        let entries;
+        try {
+          entries = await readGuardHistory({
+            limit: 20,
+            ...history,
+          });
+        } catch {
+          throw new HttpError(
+            503,
+            "HISTORY_UNAVAILABLE",
+            "Local Guard history is temporarily unavailable.",
+          );
+        }
+        safeJson(response, 200, {
+          schema_version:
+            "delta.coinbase.advisor_activity.v1",
+          session_activity: advisorActivityView(
+            session.activity ?? [],
           ),
-        };
+          guard_history: advisorHistoryView(entries),
+          boundary: {
+            local_only: true,
+            create_available: false,
+            order_submitted: false,
+            money_moved: false,
+          },
+        });
+        return;
       }
 
       if (
@@ -1176,7 +1207,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           connectionResponse(connection),
-          cookieHeader,
         );
         return;
       }
@@ -1210,7 +1240,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           connectionResponse(connection),
-          cookieHeader,
         );
         return;
       }
@@ -1252,7 +1281,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: saved },
-          cookieHeader,
         );
         return;
       }
@@ -1304,7 +1332,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: revised.current },
-          cookieHeader,
         );
         return;
       }
@@ -1351,7 +1378,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: authorized },
-          cookieHeader,
         );
         return;
       }
@@ -1388,7 +1414,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: revoked },
-          cookieHeader,
         );
         return;
       }
@@ -1452,7 +1477,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           cancellation,
-          cookieHeader,
         );
         return;
       }
@@ -1675,7 +1699,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: completed, result },
-          cookieHeader,
         );
         return;
       }
@@ -1737,7 +1760,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: savedPlan },
-          cookieHeader,
         );
         return;
       }
@@ -1843,7 +1865,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: revised.current },
-          cookieHeader,
         );
         return;
       }
@@ -1889,7 +1910,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           handoff,
-          cookieHeader,
         );
         return;
       }
@@ -1931,7 +1951,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { plan: advisorPlanView(plan) },
-          cookieHeader,
         );
         return;
       }
@@ -1965,6 +1984,24 @@ export function createAdvisorRequestHandler({
             400,
             "INVALID_PREFLIGHT_MODE",
             "Choose either a protected dry run or View-only preflight.",
+          );
+        }
+        if (requestedMode !== declaredAuthorizeMode) {
+          throw new HttpError(
+            400,
+            "PREFLIGHT_MODE_MISMATCH",
+            "The protected check mode changed in transit. Start a fresh check.",
+          );
+        }
+        if (
+          requestedMode === "view_only_preflight" &&
+          capabilityProfile.modes.view_only_preflight
+            ?.enabled !== true
+        ) {
+          throw new HttpError(
+            404,
+            "ADVISOR_FEATURE_DISABLED",
+            "View-only preflight is disabled in this local build.",
           );
         }
         const stored = session.plans.get(input.plan_id);
@@ -2090,7 +2127,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { result: view },
-          cookieHeader,
         );
         return;
       }
@@ -2118,7 +2154,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { showcase },
-          cookieHeader,
         );
         return;
       }
@@ -2147,7 +2182,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { review },
-          cookieHeader,
         );
         return;
       }
@@ -2165,12 +2199,21 @@ export function createAdvisorRequestHandler({
       throw new HttpError(405, "METHOD_NOT_ALLOWED", "Method not allowed.");
     } catch (error) {
       if (!response.headersSent) {
-        safeError(response, error, cookieHeader);
+        if (error?.closeConnection === true) {
+          response.once("finish", () => {
+            request.destroy();
+          });
+          safeError(response, error, {
+            Connection: "close",
+          });
+        } else {
+          safeError(response, error);
+        }
       } else {
         response.end();
       }
     } finally {
-      activeRequests -= 1;
+      if (countsTowardMutationLimit) activeMutations -= 1;
     }
   };
 }
@@ -2178,9 +2221,40 @@ export function createAdvisorRequestHandler({
 export function createAdvisorServer(options = {}) {
   const sessionStore =
     options.sessionStore ?? new AdvisorSessionStore();
+  const headersTimeoutMs =
+    options.headersTimeoutMs ?? DEFAULT_HEADERS_TIMEOUT_MS;
+  const requestTimeoutMs =
+    options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const keepAliveTimeoutMs =
+    options.keepAliveTimeoutMs ??
+    DEFAULT_KEEP_ALIVE_TIMEOUT_MS;
+  const connectionsCheckingIntervalMs =
+    options.connectionsCheckingIntervalMs ??
+    DEFAULT_CONNECTIONS_CHECKING_INTERVAL_MS;
+  for (const [label, value] of [
+    ["headers", headersTimeoutMs],
+    ["request", requestTimeoutMs],
+    ["keep-alive", keepAliveTimeoutMs],
+    ["connection-check", connectionsCheckingIntervalMs],
+  ]) {
+    if (!Number.isInteger(value) || value < 100) {
+      throw new Error(
+        `Advisor ${label} timeout must be an integer of at least 100ms`,
+      );
+    }
+  }
   const server = createServer(
+    {
+      connectionsCheckingInterval:
+        connectionsCheckingIntervalMs,
+    },
     createAdvisorRequestHandler({ ...options, sessionStore }),
   );
+  server.headersTimeout = headersTimeoutMs;
+  server.requestTimeout = requestTimeoutMs;
+  server.keepAliveTimeout = keepAliveTimeoutMs;
+  server.maxRequestsPerSocket =
+    options.maxRequestsPerSocket ?? 100;
   server.once("close", () => {
     sessionStore.clear("SERVER_STOPPED");
   });

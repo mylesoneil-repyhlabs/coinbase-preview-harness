@@ -115,15 +115,38 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
       "/api/education/handoff",
       "/api/education/plan",
       "/api/education/revise",
+      "/api/session",
       "/api/status",
     ],
   );
-  assert.equal((app.match(/\bfetch\(/g) ?? []).length, 2);
-  assert.match(app, /credentials:\s*["']same-origin["']/);
+  assert.equal((app.match(/\bfetch\(/g) ?? []).length, 3);
+  assert.match(app, /credentials:\s*["']omit["']/);
   assert.match(app, /cache:\s*["']no-store["']/);
   assert.match(app, /redirect:\s*["']error["']/);
   assert.match(app, /new AbortController\(\)/);
   assert.match(app, /["']X-Delta-Advisor["']:\s*["']1["']/);
+  assert.match(
+    app,
+    /["']X-Delta-Advisor-Session["']:\s*capability/,
+  );
+  assert.match(app, /storage\s*!==\s*["']PAGE_MEMORY_ONLY["']/);
+  assert.match(app, /state\.sessionCapability\s*=\s*capability/);
+  assert.match(
+    app,
+    /capabilities\?\.conditional_plan_simulation === true/,
+  );
+  assert.match(
+    app,
+    /capabilities\?\.view_only_connection === true/,
+  );
+  assert.match(
+    html,
+    /data-view-target=["']connection["'][^>]*data-view-only-capability|data-view-only-capability[^>]*data-view-target=["']connection["']/i,
+  );
+  assert.match(
+    html,
+    /data-start=["']condition["'][^>]*data-conditional-capability|data-conditional-capability[^>]*data-start=["']condition["']/i,
+  );
   assert.doesNotMatch(app, /\bconsole\.(?:log|debug|info|warn|error)\b/);
 });
 
@@ -208,7 +231,7 @@ test("locked live-readiness is projection-only, non-actionable, and mobile-safe"
     /DELTA_DEBUG_READINESS|console\.(?:debug|error|log)\s*\(/,
   );
   const previewStart = app.indexOf(
-    "function renderLiveReadinessPreview(preview)",
+    "function armLiveReadinessExpiry(preview, card)",
   );
   const previewEnd = app.indexOf(
     "function renderResult",
@@ -236,6 +259,8 @@ test("locked live-readiness is projection-only, non-actionable, and mobile-safe"
     /no final challenge or execution grant exists/i,
   );
   assert.match(previewSource, /· Missing/);
+  assert.match(previewSource, /preview_expires_at/);
+  assert.match(previewSource, /armLiveReadinessExpiry/);
   assert.match(
     previewSource,
     /There is no final-confirmation, grant, or order route/i,
@@ -269,7 +294,11 @@ test("locked live-readiness is projection-only, non-actionable, and mobile-safe"
   );
   assert.match(
     resultSource,
-    /Future confirmation · locked/,
+    /Future preview · locked/,
+  );
+  assert.match(
+    app,
+    /VIEW-ONLY PREVIEW EXPIRED[\s\S]*?Preview expired · locked[\s\S]*?Start a fresh protected check/,
   );
   assert.match(
     resultSource,
@@ -823,6 +852,10 @@ test("decision rendering fails closed without one exact verified outcome", () =>
 });
 
 test("mobile contract preserves the safety strip and compact composer", () => {
+  assert.doesNotMatch(
+    styles,
+    /html\s*\{[\s\S]*?min-width:\s*320px/,
+  );
   assert.match(styles, /@media\s*\(max-width:\s*360px\)/);
   assert.match(
     styles,

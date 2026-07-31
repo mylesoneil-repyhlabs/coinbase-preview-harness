@@ -32,10 +32,36 @@ trap cleanup EXIT HUP INT TERM
 git -C "$REPOSITORY_ROOT" show \
   "$RELEASE_COMMIT:package.json" > "$BUILD_DIRECTORY/package.json"
 
-if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+compatible_node() {
+  local candidate="$1"
+  local candidate_major
+  [[ -x "$candidate" ]] || return 1
+  candidate_major="$(
+    "$candidate" -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null
+  )" || return 1
+  [[ "$candidate_major" =~ ^[0-9]+$ ]] || return 1
+  (( candidate_major >= 22 ))
+}
+
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && \
+  compatible_node "$HARNESS_NODE_BINARY"; then
   NODE_BINARY="$HARNESS_NODE_BINARY"
-elif command -v node >/dev/null 2>&1; then
+elif command -v node >/dev/null 2>&1 && \
+  compatible_node "$(command -v node)"; then
   NODE_BINARY="$(command -v node)"
+elif [[ -n "${HOME:-}" ]]; then
+  NODE_BINARY=""
+  for codex_node_candidate in \
+    "$HOME"/.cache/codex-runtimes/*/dependencies/node/bin/node; do
+    if compatible_node "$codex_node_candidate"; then
+      NODE_BINARY="$codex_node_candidate"
+      break
+    fi
+  done
+  if [[ -z "$NODE_BINARY" ]]; then
+    echo "Node.js 22 or newer is required to build a release bundle." >&2
+    exit 1
+  fi
 else
   echo "Node.js 22 or newer is required to build a release bundle." >&2
   exit 1
@@ -81,6 +107,10 @@ REQUIRED_RELEASE_PATHS=(
   "docs/ENGINEERING-HANDOFF.md"
   "docs/MANDATE-ADAPTER-CONTRACT.md"
   "docs/SPRINT-LOG.md"
+  "docs/ADVISOR-SPRINT-LOG.md"
+  "docs/VIRTUAL-ADVISOR-DESIGN-CONTRACT.md"
+  "docs/VIRTUAL-ADVISOR-ROADMAP.md"
+  "docs/VIRTUAL-ADVISOR-THREAT-MODEL.md"
   "examples/conditional-buy-intent.txt"
   "examples/conditional-sell-intent.txt"
   "examples/first-live-intent.txt"
@@ -93,6 +123,7 @@ REQUIRED_RELEASE_PATHS=(
   "skills"
   "src"
   "test"
+  "web"
   "scripts/build-release-bundle.sh"
   "scripts/check-local-links.mjs"
   "scripts/generate-coinbase-demo-panels.mjs"
@@ -156,6 +187,7 @@ REQUIRED_FILES=(
   "config/preview-capability-profile.json"
   "config/execution-safety-profile.json"
   "src/cli.js"
+  "src/advisor-server.js"
   "src/preflight.js"
   "src/preflight-presentation.js"
   "src/guard-receipt.js"
@@ -167,6 +199,10 @@ REQUIRED_FILES=(
   "docs/COINBASE-CODEX-RECORDING-KIT.md"
   "docs/COINBASE-DEMO-ASSURANCE.md"
   "docs/SPRINT-LOG.md"
+  "docs/ADVISOR-SPRINT-LOG.md"
+  "docs/VIRTUAL-ADVISOR-DESIGN-CONTRACT.md"
+  "docs/VIRTUAL-ADVISOR-ROADMAP.md"
+  "docs/VIRTUAL-ADVISOR-THREAT-MODEL.md"
   "examples/generic-buy-intent.txt"
   "examples/generic-sell-intent.txt"
   "examples/conditional-buy-intent.txt"
@@ -184,6 +220,9 @@ REQUIRED_FILES=(
   "scripts/scan-release-content.mjs"
   "scripts/validate-release-metadata.mjs"
   "scripts/validate-skill.mjs"
+  "web/index.html"
+  "web/app.js"
+  "web/styles.css"
 )
 for required_file in "${REQUIRED_FILES[@]}"; do
   if ! grep -Fqx "$ARCHIVE_PREFIX$required_file" "$ARCHIVE_LIST"; then
@@ -212,6 +251,7 @@ while IFS= read -r archive_path; do
     .nvmrc|README.md|SECURITY.md|package.json|pnpm-lock.yaml|\
     pnpm-workspace.yaml|install|run|\
     config/*|docs/*|examples/*|skills/*|src/*|test/*|\
+    web/*|\
     output/coinbase-demo-panels/*|\
     output/coinbase-v1.5-trust-panels/*|\
     scripts/build-release-bundle.sh|\
@@ -314,6 +354,9 @@ printf '%s  %s\n' "$SHA256" "$STABLE_ARCHIVE_NAME" > "$STABLE_CHECKSUM_PATH"
     secret_content_scan_verified: true,
     content_scanner_sha256: process.argv[8],
     cold_install_verified: true,
+    advisor_cold_launch_verified: true,
+    advisor_static_assets_verified: true,
+    advisor_create_routes_absent: true,
   };
   fs.writeFileSync(process.argv[9], `${JSON.stringify(manifest, null, 2)}\n`, {
     mode: 0o644,

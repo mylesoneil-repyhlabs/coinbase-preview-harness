@@ -22,7 +22,7 @@ const running = await listenAdvisorServer({ port: configuredPort() });
 process.stdout.write(
   [
     `Delta Guard Advisor: ${running.url}`,
-    "LOCAL LOOPBACK · SIMULATION ONLY · NO CREDENTIALS",
+    "LOCAL LOOPBACK · DRY RUN DEFAULT · OPTIONAL VIEW-ONLY CONNECTION",
     "COINBASE CREATE UNAVAILABLE · NO ORDER OR MONEY MOVEMENT",
     "",
   ].join("\n"),

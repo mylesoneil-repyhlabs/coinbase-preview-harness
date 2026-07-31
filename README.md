@@ -24,7 +24,7 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-Sprints 1 through 5 now include an actual dependency-free local frontend,
+Sprints 1 through 6 now include an actual dependency-free local frontend,
 same-origin loopback service, and optional session-only Coinbase View
 connection. It is not a screenshot or a fake banking dashboard. A user can
 state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
@@ -32,6 +32,21 @@ credential-free dry run or connected View-only preflight, authorize one check,
 and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
 impact, checked facts, locally verified receipt, recovery action, and
 `NO ORDER SUBMITTED` boundary.
+
+Sprint 6 replaces ambient loopback cookies with a high-entropy capability
+created by one same-origin bootstrap request and retained only in the open
+page’s JavaScript memory. Every stateful API read or mutation must present
+that capability in a custom header; a reload loses it, and cookies have no
+authority. Public status and static assets remain capability-free.
+
+The same hardening pass makes feature flags real server-side operator stops
+before body/session/provider work, bounds conditional and education revision
+retention, rejects oversized/slow requests within explicit limits, and
+launches the Advisor directly without importing the execution-capable CLI.
+The managed-release gate now includes the real frontend and linked Advisor
+documents, then launches them after installation under restricted `PATH` and
+source deletion. Coinbase Create and every execution/final-confirmation/grant
+route remain absent.
 
 The **Plans** surface now adds a premium conditional simulator for one-shot
 spot BUY or SELL plans. A session-only saved revision is a non-executable
@@ -170,8 +185,11 @@ Open **Connection** only if you want real Coinbase account/product/Preview
 facts. Enter the full normal-user CDP API key name and its ECDSA P-256 private
 key directly in the local page, then choose **Connect and test View only**.
 This is not OAuth. The fields are cleared before the request is sent; the
-credential is held only by the loopback server process, never browser storage,
-Guard history, logs, the repository, or remote telemetry.
+key still exists transiently in the form, page JavaScript, and one same-origin
+loopback request during Connect. After that request is received, the accepted
+key reference is retained only in loopback server-process memory for the
+session. It is never written to browser storage, browser history, a URL, Guard
+history, logs, analytics, the repository, or remote telemetry.
 
 The server accepts only a key for which Coinbase reports View on and Trade and
 Transfer off. It rechecks that permission before every View-only preflight.
@@ -193,6 +211,8 @@ Current advisor-development capability status comes from
 - credential-free protected spot dry run: enabled;
 - optional local/session-only Coinbase View connection and exact View-only
   preflight: enabled;
+- page-memory-only session authority with no ambient cookie authority:
+  enabled;
 - meaningful simulated `BLOCK → retry → PASS` and unable-to-verify `REVIEW`:
   enabled;
 - one merged, newest-first Activity view over redacted session connection,

@@ -27,7 +27,9 @@ refer only to server-owned opaque plan IDs and exact revisions.
 ## Credential contract
 
 - Default: no credential.
-- View-only input is accepted only by the loopback server.
+- View-only input is accepted only through the same-origin loopback Connect
+  request. Before receipt it necessarily exists transiently in the form, page
+  JavaScript, and request bytes.
 - No localStorage, sessionStorage, IndexedDB, service worker, analytics,
   browser URL, query string, log, history record, screenshot, or release
   artifact may contain a credential.
@@ -52,11 +54,16 @@ refer only to server-owned opaque plan IDs and exact revisions.
 - Exact Host, Origin, Fetch Metadata, method, content type, and route checks.
 - No CORS, wildcard route, redirect, generic proxy, or user-controlled upstream
   URL.
-- High-entropy session token, same-origin custom header, inactivity expiry,
-  bounded concurrency, and request-size limits.
-- Public status, connection status, activity reads, hostile requests, and
-  unknown routes do not allocate a session, credential provider, or cookie.
-  Only an accepted same-origin plan or connection mutation creates a session.
+- A same-origin bootstrap returns a high-entropy capability held only in page
+  memory. Every stateful read and mutation requires its custom header; cookies
+  are never issued or accepted as authority. Missing, expired, cross-handler,
+  and cross-port reuse fails closed.
+- Public status, static assets, hostile requests, unknown routes, and disabled
+  feature routes do not allocate a session or credential provider. Only the
+  accepted same-origin bootstrap creates a session.
+- Inactivity and absolute expiry, bounded mutation concurrency, early body
+  rejection, and explicit header/request/keep-alive timeouts limit resource
+  retention while reserving public status and static recovery reads.
 - Strict CSP, `frame-ancestors 'none'`, `base-uri 'none'`,
   `form-action 'self'`, no-referrer, no-sniff, COOP, and CORP.
 - Fixed typed client errors; no raw provider text, stack, key field, path,

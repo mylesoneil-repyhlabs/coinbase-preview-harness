@@ -552,3 +552,241 @@ test("EXPIRED remains a sticky terminal tombstone after wall-clock rollback", ()
       error?.code === "CONDITIONAL_PLAN_EXPIRED",
   );
 });
+
+test("100 revisions preserve one current plan, bounded tombstones, and one-use behavior across sessions", () => {
+  for (let sessionIndex = 0; sessionIndex < 4; sessionIndex += 1) {
+    const localSession = session();
+    const planId = `bounded-plan-${sessionIndex}`;
+    let current = createConditionalPlan(planInput(), {
+      now,
+      planId,
+    });
+    rememberConditionalPlan(localSession, current);
+
+    authorizeConditionalSessionPlan(localSession, {
+      planId,
+      revision: 1,
+      source: "fixture",
+      ttlSeconds: 300,
+      now,
+      authorizationId: `retired-auth-${sessionIndex}`,
+    });
+    const retiredAttempt = beginConditionalSessionAttempt(
+      localSession,
+      {
+        planId,
+        revision: 1,
+        authorizationId: `retired-auth-${sessionIndex}`,
+        now,
+        attemptId: `retired-attempt-${sessionIndex}`,
+      },
+    );
+    const retiredPass = simulateConditionalPlan({
+      plan: retiredAttempt.plan,
+      authorization: retiredAttempt.authorization,
+      evidence: conditionalFixtureEvidence(
+        retiredAttempt.plan,
+        "pass",
+        { now },
+      ),
+      scenario: "pass",
+      now,
+    });
+
+    for (let edit = 1; edit <= 100; edit += 1) {
+      const edited = reviseConditionalSessionPlan(
+        localSession,
+        {
+          planId,
+          revision: current.revision,
+          patch: {
+            threshold_value:
+              edit % 2 === 0 ? "3000" : "2999",
+          },
+          now: () =>
+            new Date(CLOCK.getTime() + edit * 100),
+        },
+      );
+      current = edited.current.plan;
+    }
+    const entry = localSession.conditionalPlans.get(planId);
+    assert.equal(entry.revisions.size, 8);
+    assert.equal(entry.revision_tombstones.size, 16);
+    assert.equal(entry.current_revision, 101);
+    assert.equal(
+      conditionalPlanView(localSession, planId)
+        .plan.revision,
+      101,
+    );
+    for (const retiredRevision of [1, 90]) {
+      assert.throws(
+        () =>
+          conditionalPlanView(
+            localSession,
+            planId,
+            retiredRevision,
+          ),
+        (error) =>
+          [
+            "CONDITIONAL_REVISION_NOT_FOUND",
+            "CONDITIONAL_PLAN_SUPERSEDED",
+          ].includes(error?.code),
+      );
+    }
+    assert.equal(
+      conditionalPlanView(
+        localSession,
+        planId,
+        100,
+      ).session_state,
+      "SUPERSEDED",
+    );
+    assert.equal(retiredAttempt.signal.aborted, true);
+    assert.throws(
+      () =>
+        finishConditionalSessionAttempt(localSession, {
+          planId,
+          revision: 1,
+          attemptId: retiredAttempt.attempt_id,
+          result: retiredPass,
+          now: () =>
+            new Date(CLOCK.getTime() + 10_100),
+        }),
+      (error) =>
+        [
+          "CONDITIONAL_REVISION_NOT_FOUND",
+          "CONDITIONAL_PLAN_SUPERSEDED",
+        ].includes(error?.code),
+    );
+    assert.equal(
+      conditionalPlanView(localSession, planId).result,
+      null,
+    );
+    for (const tombstone of entry.revision_tombstones.values()) {
+      assert.deepEqual(Object.keys(tombstone).sort(), [
+        "retired_at",
+        "revision",
+        "schema_version",
+        "terminal_state",
+      ]);
+      assert.equal(tombstone.terminal_state, "SUPERSEDED");
+      assert.equal(tombstone.plan, undefined);
+      assert.equal(tombstone.authorization, undefined);
+      assert.equal(tombstone.result, undefined);
+      assert.equal(tombstone.evidence, undefined);
+    }
+
+    const currentAuthorization =
+      authorizeConditionalSessionPlan(localSession, {
+        planId,
+        revision: 101,
+        source: "fixture",
+        ttlSeconds: 300,
+        now: () =>
+          new Date(CLOCK.getTime() + 10_100),
+        authorizationId: `current-auth-${sessionIndex}`,
+      });
+    assert.equal(
+      currentAuthorization.authorization.consumed,
+      false,
+    );
+    const currentAttempt = beginConditionalSessionAttempt(
+      localSession,
+      {
+        planId,
+        revision: 101,
+        authorizationId: `current-auth-${sessionIndex}`,
+        now: () =>
+          new Date(CLOCK.getTime() + 10_100),
+        attemptId: `current-attempt-${sessionIndex}`,
+      },
+    );
+    assert.throws(
+      () =>
+        beginConditionalSessionAttempt(localSession, {
+          planId,
+          revision: 101,
+          authorizationId: `current-auth-${sessionIndex}`,
+          now: () =>
+            new Date(CLOCK.getTime() + 10_100),
+          attemptId: `replay-attempt-${sessionIndex}`,
+        }),
+      (error) =>
+        error?.code ===
+        "CONDITIONAL_AUTHORIZATION_CONSUMED",
+    );
+    const currentPass = simulateConditionalPlan({
+      plan: currentAttempt.plan,
+      authorization: currentAttempt.authorization,
+      evidence: conditionalFixtureEvidence(
+        currentAttempt.plan,
+        "pass",
+        {
+          now: () =>
+            new Date(CLOCK.getTime() + 10_100),
+        },
+      ),
+      scenario: "pass",
+      now: () =>
+        new Date(CLOCK.getTime() + 10_100),
+    });
+    assert.equal(
+      finishConditionalSessionAttempt(localSession, {
+        planId,
+        revision: 101,
+        attemptId: currentAttempt.attempt_id,
+        result: currentPass,
+        now: () =>
+          new Date(CLOCK.getTime() + 10_100),
+      }).session_state,
+      "WOULD_TRIGGER_SIMULATION",
+    );
+
+    if (sessionIndex === 0) {
+      const secondPlan = createConditionalPlan(
+        planInput({
+          product_id: "BTC-USDC",
+          size_value: "1000",
+          threshold_value: "120000",
+        }),
+        {
+          now,
+          planId: "bounded-second-plan",
+        },
+      );
+      rememberConditionalPlan(localSession, secondPlan);
+      let secondCurrent = secondPlan;
+      for (let edit = 1; edit <= 20; edit += 1) {
+        secondCurrent = reviseConditionalSessionPlan(
+          localSession,
+          {
+            planId: secondPlan.plan_id,
+            revision: secondCurrent.revision,
+            patch: {
+              threshold_value:
+                edit % 2 === 0 ? "120000" : "119999",
+            },
+            now: () =>
+              new Date(CLOCK.getTime() + edit * 100),
+          },
+        ).current.plan;
+      }
+      const secondEntry = localSession.conditionalPlans.get(
+        secondPlan.plan_id,
+      );
+      assert.equal(localSession.conditionalPlans.size, 2);
+      assert.equal(secondEntry.current_revision, 21);
+      assert.equal(secondEntry.revisions.size, 8);
+      assert.equal(
+        secondEntry.revision_tombstones.size,
+        13,
+      );
+      assert.equal(entry.current_revision, 101);
+      assert.equal(
+        conditionalPlanView(localSession, planId)
+          .session_state,
+        "WOULD_TRIGGER_SIMULATION",
+      );
+    }
+  }
+});
