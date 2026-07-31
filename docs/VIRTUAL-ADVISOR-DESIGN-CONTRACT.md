@@ -111,13 +111,46 @@ action must say that local work may still finish.
 
 ## Research and portfolio planning
 
-Research is educational and source/as-of labelled. It exposes assumptions,
-uncertainty, liquidity and volatility risk, concentration, and scenario
-inputs. It must not say “recommended for you,” calculate suitability, promise
-returns, or auto-optimize into a trade.
+The implemented surface is a neutral **market snapshot** and allocation
+canvas, not token research or a recommendation engine. It starts blank:
+no planning amount, asset, weight, scenario attribution, trade side, or
+handoff leg is selected for the user. An optional generated mechanical example
+is explicitly labeled not a recommendation and does nothing until the user
+reviews the inputs.
+
+Market source is an explicit choice between **Generated fixture** and one
+fresh connected View-only product/BBO check. There is no silent fallback.
+Every edit refreshes the entire selected product set from that same source;
+adding an asset, retrying after a provider failure, or editing after expiry
+never reuses the earlier incomplete or stale snapshot.
+Presentation keeps provenance separate:
+
+- `Generated fixture` or `Coinbase observed` for market facts;
+- `Locally curated summary of primary source` for the checked-in educational
+  paraphrase, publisher, catalog review date, content digest, and canonical
+  source link;
+- `Calculated locally` for concentration and scenario arithmetic;
+- `User supplied` for selected allocations and scenario assumptions only
+  after explicit acknowledgement, including any chosen zero values.
+
+It exposes assumptions, uncertainty, liquidity and volatility risk,
+concentration, and scenario inputs. It must not say “recommended for you,”
+calculate suitability, promise returns, rank assets, or auto-optimize into a
+trade.
 
 Portfolio plans are editable planning objects. Converting a selected leg
-creates a new, separately reviewed one-action mandate.
+requires an explicit choice of exactly one leg and `BUY` or `SELL`, then
+creates a new editable one-action draft. Fee, slippage, and expiry suggestions
+are visibly **Editable Guard defaults**, not inherited constraints. The draft
+is not authorized, preflighted, Delta-evaluated, or eligible for execution;
+the Advisor requires fresh mandate preparation, evidence, and separate human
+authorization.
+
+The visible terminal language is
+`PLAN VALID FOR EDITING · NO TRADE AUTHORIZED` followed, only after explicit
+handoff, by `DRAFT CREATED · NOT AUTHORIZED · ORDERS OFF`. There is no
+portfolio-wide authorization, batch/rebalance path, implicit first-leg
+selection, or automatic advisor mutation.
 
 ## Visual system
 

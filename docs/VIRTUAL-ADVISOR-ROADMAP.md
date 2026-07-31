@@ -88,9 +88,11 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
 | 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
 
-Current development checkpoint: Sprints 0–3 are implemented. Sprint 3 is a
-non-executable conditional template and one-check simulation only; Sprints
-4–7 remain behind disabled capability flags until their own gates pass.
+Current development checkpoint: Sprints 0–4 are implemented. Sprint 3 is a
+non-executable conditional template and one-check simulation only. Sprint 4
+is neutral educational planning with a fresh editable one-leg handoff; it
+does not create Guard evidence or authorize a trade. Sprints 5–7 remain
+behind disabled capability flags until their own gates pass.
 
 ## Feature modes
 
@@ -104,6 +106,8 @@ contract. A feature is not enabled merely because a card exists.
   explicitly authorized check; nothing is watching.
 - `educational_research`: neutral source-labelled market snapshot and planning
   content, not advice.
+- `portfolio_planning`: blank-start, user-directed allocation and scenario
+  canvas with one explicit leg-plus-side handoff to an unauthorized draft.
 - `live_readiness_preview`: a locked explanation of future prerequisites only.
 - `post_pass_final_confirmation_readiness`: disabled. No final challenge or
   durable grant exists.
@@ -147,18 +151,33 @@ if the wall clock later moves backward.
 
 ### Sprint 4 implementation contract
 
-Coinbase balances, product, and BBO are a **market snapshot**, not token
-research. Educational planning uses the exact provenance labels `Coinbase
-observed`, `Primary-source educational`, `Calculated locally`, and `User
-supplied`. Research never counts as Guard evidence and missing/stale facts do
-not silently fall back to fixtures.
+Coinbase product and BBO facts are a **market snapshot**, not token research.
+Educational planning uses the exact provenance labels `Coinbase
+observed`, `Generated fixture`, `Locally curated summary of primary source`,
+`Calculated locally`, and `User supplied`. Coinbase-observed provenance is
+issued only inside a handler-private authority from the allowlisted View-only
+adapter; public normalization is structural validation, not source
+attestation. Checked-in paraphrases carry publisher, canonical URL, catalog
+review date, and content digest. Research never counts as Guard evidence and
+missing/stale facts do not silently fall back to fixtures.
 
 An allocation plan is session-only and versioned. The user chooses assets and
 weights; the product may calculate concentration and neutral scenarios, but
-never ranks assets, says “best,” makes suitability claims, or auto-buys. A
-handoff selects exactly one leg and creates a fresh editable protected-trade
-mandate requiring separate authorization. Any plan edit invalidates that
-handoff. Portfolio-wide approval, batch trades, and rebalancing remain absent.
+never ranks assets, says “best,” makes suitability claims, or auto-buys. The
+canvas begins with no planning amount, selected asset, or weight; an optional
+generated mechanical example is explicitly labeled not a recommendation. The
+user must acknowledge scenario assumptions, including any zero values, before
+they can be labeled user-supplied. Every accepted revision obtains a new exact
+snapshot of the full selected product set through the same explicit source, so
+asset additions, source recovery, and expiry cannot reuse stale or incomplete
+facts.
+
+A handoff requires an explicit selection of exactly one leg and `BUY` or
+`SELL`. It creates only a fresh editable protected-trade draft with visibly
+editable Guard defaults for fee, slippage, and expiry. It does not authorize,
+preflight, or evaluate that draft. A new mandate, fresh evidence, and separate
+authorization remain required. Any plan edit invalidates that handoff.
+Portfolio-wide approval, batch trades, and rebalancing remain absent.
 
 ### Sprint 5 implementation contract
 

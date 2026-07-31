@@ -66,8 +66,8 @@ before continuing.
 
 ## Advisor v1.6 development boundary
 
-The advisor roadmap adds a loopback web interface, not a browser-side trading
-client. The planned credential-capable server binds to `127.0.0.1`; credential
+The advisor adds a loopback web interface, not a browser-side trading client.
+The implemented credential-capable server binds to `127.0.0.1`; credential
 material remains in server-process memory only and is cleared on disconnect,
 expiry, failure, or process exit. It must never enter browser storage, URLs,
 logs, history, screenshots, analytics, or release assets.
@@ -76,3 +76,43 @@ A hosted/static advisor is credential-free. Remote credential handling
 requires a separate reviewed service and threat model. A visible confirmation
 control does not add a Coinbase Create route: public Create, live orders,
 durable grants, and unattended execution remain unavailable.
+
+### Educational-planning boundary
+
+Educational planning is a session-only planning surface, not Guard evidence,
+investment advice, an authorization, or an execution path.
+
+- The browser may submit only the selected source mode, product identifiers,
+  user-selected weights, explicitly acknowledged scenario assumptions, and
+  later an opaque plan ID, exact revision, one leg ID, and explicit `BUY` or
+  `SELL` choice. It cannot submit trusted market facts, provenance, digests,
+  status, decisions, or receipts.
+- Coinbase-observed provenance can be created only inside the advisor
+  handler's private View-only authority from the injected allowlisted adapter.
+  The exported market normalizer validates structure only and is not a
+  provenance credential. Direct normalized objects, lookalikes, clones, and
+  cross-authority values fail closed.
+- A fixture request remains `Generated fixture`. A View-only request either
+  returns fresh, exact `Coinbase observed` product/BBO facts or `REVIEW —
+  unable to verify`; it never silently falls back to a fixture.
+- Every accepted revision refreshes the complete selected product set through
+  the plan's same explicit source before replacing the old revision. Asset-set
+  changes, expired facts, and recovery from a provider `REVIEW` cannot reuse
+  the prior snapshot.
+- Checked-in educational paraphrases are labeled
+  `Locally curated summary of primary source` and carry a publisher,
+  canonical URL, catalog review date, and content digest. They are not
+  represented as live retrievals or Coinbase observations.
+- Allocation and scenario calculations are local educational output. The
+  initial canvas has no planning amount, selected asset, weight, handoff leg,
+  or side.
+  Scenario values—including an untouched zero—are called `User supplied`
+  only after explicit acknowledgement.
+- A handoff consumes one current plan revision and creates only a new editable,
+  unauthorized one-action draft. Slippage, fee, and expiry values are visible
+  editable Guard defaults, not inherited user constraints. Fresh mandate
+  preparation, evidence, and separate authorization are still required.
+
+Education routes hold plans and handoff state only in the same bounded,
+expiring server session. They do not import an execution adapter, call
+Preview, create an order, or confer one-use execution eligibility.

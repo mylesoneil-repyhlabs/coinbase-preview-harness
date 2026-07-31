@@ -24,7 +24,7 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-Sprints 1 through 3 now include an actual dependency-free local frontend,
+Sprints 1 through 4 now include an actual dependency-free local frontend,
 same-origin loopback service, and optional session-only Coinbase View
 connection. It is not a screenshot or a fake banking dashboard. A user can
 state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
@@ -95,6 +95,46 @@ exact product plus one current BBO. It does **not** read balances or call
 Coinbase Preview. The direct protected-trade preflight described below is the
 separate flow that can use balances, product facts, BBO, and Preview.
 
+### Try educational planning
+
+Open **Plans → Educational planning** to build a neutral, editable allocation
+canvas. The canvas starts blank: no planning amount, asset, weight, scenario
+attribution, trade side, or handoff leg is selected for the user. An optional
+**Load mechanical example · not a recommendation** control can fill a 10,000
+USDC BTC/ETH sample for editing, but it never creates a plan, authorizes a
+mandate, or prepares a trade.
+
+Choose one fact source explicitly:
+
+- **Generated fixture** uses labeled local market facts and contacts no
+  provider.
+- **View-only snapshot** reads the exact Coinbase product and one BBO through
+  the existing session-only connection. Failure returns
+  `REVIEW — unable to verify`; it never falls back to fixtures.
+
+Every accepted edit refreshes the exact selected product set from the same
+chosen source. Adding an asset, retrying a View-only outage, or editing after
+snapshot expiry therefore cannot silently reuse missing or stale facts.
+
+The interface separates five provenance classes rather than blending them:
+`Generated fixture` or `Coinbase observed` for market facts;
+`Locally curated summary of primary source` for checked-in educational
+paraphrases with publisher, canonical link, review date, and content digest;
+`Calculated locally` for concentration and scenario math; and `User supplied`
+for selected weights and explicitly acknowledged scenario assumptions.
+Untouched `0%` scenario fields are not silently attributed to the user: plan
+creation requires the user to acknowledge the chosen assumptions, including
+any zero values.
+
+The result is `PLAN VALID FOR EDITING · NO TRADE AUTHORIZED`. To continue, the
+user must explicitly select exactly one allocation leg and **Buy** or **Sell**.
+That creates only a fresh editable protected-trade draft with clearly labeled
+Guard defaults for fee, slippage, and expiry. It does not prepare, authorize,
+Preview, evaluate, or submit the trade. The user must review the draft in the
+Advisor and separately prepare and authorize a new mandate with fresh Guard
+evidence. Portfolio-wide approval, batch trades, rebalancing, suitability
+claims, ranking, auto-buying, and individualized advice are absent.
+
 ### Optional View-only connection in the advisor
 
 Open **Connection** only if you want real Coinbase account/product/Preview
@@ -126,13 +166,18 @@ Current advisor-development capability status comes from
   preflight: enabled;
 - meaningful simulated `BLOCK → retry → PASS` and unable-to-verify `REVIEW`:
   enabled;
-- private redacted session activity and existing CLI Guard history: enabled;
+- one merged, newest-first Activity view over redacted session connection,
+  conditional, and education events plus existing CLI Guard history: enabled;
+- neutral educational market snapshots and editable allocation planning:
+  enabled;
+- explicit one-leg plus Buy/Sell handoff to a new editable, unauthorized
+  protected-trade draft: enabled;
 - browser credential storage, Coinbase Create, order submission, production
   Delta, and money movement: unavailable;
 - non-executable conditional-plan revisions and explicitly authorized
   one-check simulations: enabled;
-- saved monitoring, timers, unattended execution, research, portfolio
-  planning, and post-PASS live readiness: not enabled.
+- saved monitoring, timers, unattended execution, individualized advice,
+  automatic portfolio trading, and post-PASS live readiness: not enabled.
 
 The public release remains v1.5.3 until all eight advisor sprints, release
 archive checks, and CI gates are complete. The existing v1.5 CLI/skill

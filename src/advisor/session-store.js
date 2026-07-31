@@ -23,6 +23,7 @@ function createSession(token, now) {
     last_seen_at: now,
     plans: new Map(),
     conditionalPlans: new Map(),
+    educationalPlans: new Map(),
     activity: [],
     disposers: new Set(),
   };
@@ -45,6 +46,7 @@ function disposeSession(session, reason) {
     }
   }
   session.conditionalPlans?.clear();
+  session.educationalPlans?.clear();
   if (Array.isArray(session.activity)) session.activity.length = 0;
 }
 

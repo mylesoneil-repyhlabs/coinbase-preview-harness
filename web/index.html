@@ -136,15 +136,14 @@
                   class="quick-start"
                   type="button"
                   data-start="research"
+                  data-education-capability
                   data-action-control="guard"
-                  aria-disabled="true"
-                  disabled
                 >
                   <span class="quick-start__icon" aria-hidden="true">◎</span>
                   <span>
                     <span class="quick-start__title">
                       <strong>Explore a token</strong>
-                      <small class="feature-status">Coming soon</small>
+                      <small class="feature-status feature-status--preview">Educational</small>
                     </span>
                     <small>Educational research, never advice</small>
                   </span>
@@ -153,15 +152,14 @@
                   class="quick-start"
                   type="button"
                   data-start="portfolio"
+                  data-education-capability
                   data-action-control="guard"
-                  aria-disabled="true"
-                  disabled
                 >
                   <span class="quick-start__icon" aria-hidden="true">◫</span>
                   <span>
                     <span class="quick-start__title">
                       <strong>Build an allocation plan</strong>
-                      <small class="feature-status">Coming soon</small>
+                      <small class="feature-status feature-status--preview">Editable</small>
                     </span>
                     <small>Editable planning, never auto-buy</small>
                   </span>
@@ -348,6 +346,32 @@
             </p>
           </header>
 
+          <div
+            class="plan-workspace-switcher"
+            aria-label="Plan workspace"
+          >
+            <button
+              class="plan-workspace-button is-active"
+              type="button"
+              data-plan-workspace="conditional"
+              aria-pressed="true"
+              data-action-control="guard"
+            >
+              Condition simulator
+            </button>
+            <button
+              class="plan-workspace-button"
+              type="button"
+              data-plan-workspace="education"
+              data-education-capability
+              aria-pressed="false"
+              data-action-control="guard"
+            >
+              Educational planning
+            </button>
+          </div>
+
+          <div id="conditional-workspace">
           <div class="conditional-boundary" role="note">
             <span aria-hidden="true">◇</span>
             <strong>Simulation only</strong>
@@ -495,6 +519,270 @@
             class="demo-output conditional-output"
             aria-live="polite"
           ></div>
+          </div>
+
+          <section
+            id="educational-workspace"
+            class="educational-workspace"
+            aria-labelledby="educational-heading"
+            hidden
+          >
+            <div class="educational-boundary" role="note">
+              <strong>Educational planning</strong>
+              <span>Advice off</span>
+              <span>Orders off</span>
+            </div>
+
+            <header class="educational-heading">
+              <div>
+                <p class="eyebrow">NEUTRAL MARKET SNAPSHOT</p>
+                <h2 id="educational-heading">
+                  Choose the assets. Inspect the assumptions. Keep the plan editable.
+                </h2>
+                <p>
+                  This workspace compares only assets you select. It does not
+                  rank tokens, assess suitability, recommend a purchase, or
+                  authorize a trade.
+                </p>
+              </div>
+              <span class="truth-badge">No trade authorized</span>
+            </header>
+
+            <div class="education-risk-note" role="note">
+              <strong>Risk and uncertainty</strong>
+              <p>
+                Digital-asset prices can be volatile, and liquidity or market
+                availability can change. Scenarios are mechanical assumptions,
+                not forecasts. This tool does not assess suitability or provide
+                individualized financial advice.
+              </p>
+            </div>
+
+            <form
+              id="educational-form"
+              class="feature-card educational-composer"
+            >
+              <fieldset class="education-source-choice">
+                <legend>Market fact source</legend>
+                <label class="choice-card">
+                  <input
+                    type="radio"
+                    name="education_source"
+                    value="fixture"
+                    checked
+                  >
+                  <span>
+                    <strong>Generated fixture</strong>
+                    <small>Fast, credential-free, clearly simulated</small>
+                  </span>
+                </label>
+                <label class="choice-card">
+                  <input
+                    type="radio"
+                    name="education_source"
+                    value="view_only"
+                  >
+                  <span>
+                    <strong>Coinbase View only</strong>
+                    <small>Exact product + BBO; no balances or Preview</small>
+                  </span>
+                </label>
+              </fieldset>
+
+              <div class="education-amount">
+                <label for="education-amount">
+                  <span>Hypothetical planning amount</span>
+                  <span class="input-with-suffix">
+                    <input
+                      id="education-amount"
+                      name="planning_amount_value"
+                      placeholder="e.g. 10000"
+                      inputmode="decimal"
+                      required
+                    >
+                    <span>USDC</span>
+                  </span>
+                </label>
+                <p>
+                  Editable example only. The selected assets below are not a
+                  recommendation.
+                </p>
+              </div>
+
+              <fieldset class="allocation-canvas">
+                <legend>
+                  Your allocation canvas
+                  <button
+                    id="education-example-button"
+                    class="inline-example-button"
+                    type="button"
+                    data-action-control="guard"
+                  >
+                    Load mechanical example · not a recommendation
+                  </button>
+                </legend>
+                <div class="allocation-row" data-education-row="BTC-USDC">
+                  <label class="allocation-select">
+                    <input
+                      type="checkbox"
+                      data-education-selected
+                    >
+                    <span>
+                      <strong>BTC</strong>
+                      <small>BTC-USDC</small>
+                    </span>
+                  </label>
+                  <label>
+                    <span>BTC allocation weight</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-weight
+                        type="number"
+                        value="0"
+                        min="0"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                  <label>
+                    <span>BTC scenario assumption</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-scenario
+                        type="number"
+                        value="0"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                </div>
+                <div class="allocation-row" data-education-row="ETH-USDC">
+                  <label class="allocation-select">
+                    <input
+                      type="checkbox"
+                      data-education-selected
+                    >
+                    <span>
+                      <strong>ETH</strong>
+                      <small>ETH-USDC</small>
+                    </span>
+                  </label>
+                  <label>
+                    <span>ETH allocation weight</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-weight
+                        type="number"
+                        value="0"
+                        min="0"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                  <label>
+                    <span>ETH scenario assumption</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-scenario
+                        type="number"
+                        value="0"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                </div>
+                <div class="allocation-row" data-education-row="SOL-USDC">
+                  <label class="allocation-select">
+                    <input
+                      type="checkbox"
+                      data-education-selected
+                    >
+                    <span>
+                      <strong>SOL</strong>
+                      <small>SOL-USDC</small>
+                    </span>
+                  </label>
+                  <label>
+                    <span>SOL allocation weight</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-weight
+                        type="number"
+                        value="0"
+                        min="0"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                  <label>
+                    <span>SOL scenario assumption</span>
+                    <span class="input-with-suffix">
+                      <input
+                        data-education-scenario
+                        type="number"
+                        value="0"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                      >
+                      <span>%</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <label class="education-scenario-confirmation">
+                <input
+                  id="education-scenario-confirmed"
+                  type="checkbox"
+                  name="scenario_acknowledged"
+                >
+                <span>
+                  I chose these scenario assumptions, including any 0% values.
+                  They are not forecasts.
+                </span>
+              </label>
+
+              <div class="educational-composer__footer">
+                <p>
+                  Source facts, local calculations, and your assumptions stay
+                  visibly separate. Research never becomes Guard evidence.
+                </p>
+                <button
+                  id="education-build-button"
+                  class="button button--primary"
+                  type="submit"
+                  data-action-control="guard"
+                >
+                  Create editable plan
+                </button>
+              </div>
+            </form>
+
+            <div
+              id="educational-output"
+              class="demo-output educational-output"
+              aria-live="polite"
+            ></div>
+          </section>
         </section>
 
         <section

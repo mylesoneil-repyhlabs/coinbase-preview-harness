@@ -133,6 +133,8 @@ export function normalizeCoinbaseMarketData(product, bestBidAsk, productId) {
     );
   }
 
+  // This is a structural normalization result, not source provenance.
+  // A trusted caller must separately bind it to the exact adapter path.
   return {
     product_id: productId,
     product_type: product.product_type,

@@ -1,5 +1,5 @@
 const SAMPLE_INTENT =
-  "Using my isolated Coinbase Advanced portfolio, use up to 3000 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Only if Coinbase's fresh best ask is at or below 3000 USDC. Partial fill is acceptable. Do not pay more than 35 bps above Coinbase's fresh best ask, more than 15 USDC in commission, or more than 3015 USDC total. This authorization expires 10 minutes after I confirm it.";
+  "Use up to 3000 USDC to buy ETH on ETH-USDC once now with a price-bounded IOC limit order. Only if Coinbase's fresh best ask is at or below 3000 USDC. Partial fill is acceptable. Do not pay more than 35 bps above Coinbase's fresh best ask, more than 15 USDC in commission, or more than 3015 USDC total. This authorization expires 10 minutes after I confirm it.";
 
 const state = {
   activeView: "advisor",
@@ -17,6 +17,9 @@ const state = {
   pendingCancellation: null,
   authorizeButtons: new Map(),
   conditionalPlan: null,
+  planWorkspace: "conditional",
+  educationalPlan: null,
+  capabilities: null,
 };
 
 const actionControlState = new WeakMap();
@@ -60,6 +63,39 @@ const dom = {
   ),
   conditionalOutput: document.querySelector(
     "#conditional-output",
+  ),
+  planWorkspaceButtons: [
+    ...document.querySelectorAll("[data-plan-workspace]"),
+  ],
+  educationCapabilityControls: [
+    ...document.querySelectorAll("[data-education-capability]"),
+  ],
+  conditionalWorkspace: document.querySelector(
+    "#conditional-workspace",
+  ),
+  educationalWorkspace: document.querySelector(
+    "#educational-workspace",
+  ),
+  educationalForm: document.querySelector(
+    "#educational-form",
+  ),
+  educationAmount: document.querySelector(
+    "#education-amount",
+  ),
+  educationRows: [
+    ...document.querySelectorAll("[data-education-row]"),
+  ],
+  educationBuildButton: document.querySelector(
+    "#education-build-button",
+  ),
+  educationExampleButton: document.querySelector(
+    "#education-example-button",
+  ),
+  educationScenarioConfirmed: document.querySelector(
+    "#education-scenario-confirmed",
+  ),
+  educationalOutput: document.querySelector(
+    "#educational-output",
   ),
   activityList: document.querySelector("#activity-list"),
   refreshActivityButton: document.querySelector("#refresh-activity-button"),
@@ -136,6 +172,47 @@ function reveal(node, { focus = false } = {}) {
   }
 }
 
+function renderViewContext() {
+  if (
+    state.activeView === "plans" &&
+    state.planWorkspace === "education"
+  ) {
+    dom.modeStatus.textContent = "Educational planning";
+    dom.orderStatus.textContent = "Advice off · Orders off";
+    return;
+  }
+  if (state.activeView === "plans") {
+    dom.modeStatus.textContent = "Plan simulation";
+    dom.orderStatus.textContent = "Orders off";
+    return;
+  }
+  dom.modeStatus.textContent =
+    state.selectedMode === "view_only_preflight"
+      ? "View only"
+      : "Dry run";
+  dom.orderStatus.textContent = "Orders off";
+}
+
+function applyCapabilities(capabilities) {
+  state.capabilities = capabilities;
+  const educationEnabled =
+    capabilities?.educational_research === true &&
+    capabilities?.portfolio_planning === true;
+  for (const control of dom.educationCapabilityControls) {
+    control.disabled = !educationEnabled;
+    control.setAttribute(
+      "aria-disabled",
+      String(!educationEnabled),
+    );
+  }
+  if (
+    !educationEnabled &&
+    state.planWorkspace === "education"
+  ) {
+    setPlanWorkspace("conditional", { focus: false });
+  }
+}
+
 function navigate(viewName, { focus = true } = {}) {
   const nextView = dom.views.find((view) => view.dataset.view === viewName);
   if (!nextView) return;
@@ -164,6 +241,7 @@ function navigate(viewName, { focus = true } = {}) {
   if (viewName === "activity" && !state.activityLoaded) {
     void loadActivity();
   }
+  renderViewContext();
 }
 
 function safeProviderMessage(payload, fallback) {
@@ -580,6 +658,7 @@ function setSelectedMode(mode) {
   dom.modeStatus.textContent =
     nextMode === "view_only_preflight" ? "View only" : "Dry run";
   dom.advisorModeBadge.textContent = checkModeLabel(nextMode);
+  renderViewContext();
 }
 
 function formatConnectionTime(value) {
@@ -1505,6 +1584,9 @@ async function prepareMandate(event) {
     announce("Describe the trade you want to prepare.");
     dom.intentInput.focus();
     return;
+  }
+  if (reframeAdviceRequest(intent)) {
+    return null;
   }
 
   invalidateMandateAuthorizations("Superseded");
@@ -2713,19 +2795,640 @@ async function revokeConditional(saved, button) {
   }
 }
 
-function activityEntries(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.guard_history) && payload.guard_history.length) {
-    return payload.guard_history;
+function loadMechanicalEducationExample() {
+  dom.educationAmount.value = "10000";
+  const example = {
+    "BTC-USDC": { selected: true, weight: 60, scenario: -10 },
+    "ETH-USDC": { selected: true, weight: 40, scenario: -20 },
+    "SOL-USDC": { selected: false, weight: 0, scenario: 0 },
+  };
+  for (const row of dom.educationRows) {
+    const values = example[row.dataset.educationRow];
+    row.querySelector("[data-education-selected]").checked =
+      values.selected;
+    row.querySelector("[data-education-weight]").value =
+      String(values.weight);
+    row.querySelector("[data-education-scenario]").value =
+      String(values.scenario);
   }
-  const candidates = [
+  dom.educationScenarioConfirmed.checked = false;
+  dom.educationalOutput.replaceChildren();
+  announce(
+    "Mechanical BTC and ETH example loaded for editing. Review and confirm its scenario assumptions; it is not a recommendation and no trade is authorized.",
+  );
+}
+
+function educationalInput() {
+  const source = dom.educationalForm.querySelector(
+    'input[name="education_source"]:checked',
+  )?.value;
+  const allocations = [];
+  for (const row of dom.educationRows) {
+    const selected = row.querySelector(
+      "[data-education-selected]",
+    )?.checked;
+    if (!selected) continue;
+    const weightPercent = Number(
+      row.querySelector("[data-education-weight]")?.value,
+    );
+    const scenarioPercent = Number(
+      row.querySelector("[data-education-scenario]")?.value,
+    );
+    if (
+      !Number.isInteger(weightPercent) ||
+      weightPercent < 1 ||
+      weightPercent > 100 ||
+      !Number.isInteger(scenarioPercent) ||
+      scenarioPercent < -100 ||
+      scenarioPercent > 100
+    ) {
+      throw new Error(
+        "Each selected asset needs a whole-number weight from 1–100% and scenario from -100–100%.",
+      );
+    }
+    allocations.push({
+      product_id: row.dataset.educationRow,
+      weight_bps: weightPercent * 100,
+      scenario_change_bps: scenarioPercent * 100,
+    });
+  }
+  if (!allocations.length) {
+    throw new Error(
+      "Select at least one asset. The advisor will not choose one for you.",
+    );
+  }
+  const total = allocations.reduce(
+    (sum, allocation) => sum + allocation.weight_bps,
+    0,
+  );
+  if (total !== 10_000) {
+    throw new Error(
+      `Selected weights total ${plainNumber(total / 100)}%, not 100%. Edit them before planning.`,
+    );
+  }
+  if (dom.educationScenarioConfirmed.checked !== true) {
+    throw new Error(
+      "Confirm that you chose the scenario assumptions, including any 0% values. No default will be called user supplied.",
+    );
+  }
+  return {
+    source,
+    planning_amount_value:
+      dom.educationAmount.value.trim(),
+    quote_asset: "USDC",
+    scenario_acknowledged: true,
+    allocations,
+  };
+}
+
+function educationHeader(saved, title, description) {
+  const header = element("div", {
+    className: "artifact__header",
+  });
+  const copy = element("div");
+  copy.append(
+    element("p", {
+      className: "eyebrow",
+      text: "EDUCATIONAL PLAN",
+    }),
+    element("h2", { text: title }),
+    element("p", { text: description }),
+  );
+  header.append(
+    copy,
+    element("span", {
+      className: "truth-badge",
+      text: "No trade authorized",
+    }),
+  );
+  return header;
+}
+
+function educationIssueList(plan) {
+  const list = element("ul", {
+    className: "permission-list",
+  });
+  for (const problem of plan.issues ?? []) {
+    const row = element("li");
+    row.append(
+      element("span", { text: "!" }),
+      document.createTextNode(
+        `${problem.message} ${problem.recovery}`,
+      ),
+    );
+    list.append(row);
+  }
+  return list;
+}
+
+function educationalSnapshotCards(plan) {
+  const snapshot = plan.market_snapshot;
+  const grid = element("div", {
+    className: "education-snapshot-grid",
+  });
+  for (const product of snapshot?.facts?.products ?? []) {
+    const education = snapshot.facts.educational_sources?.find(
+      (source) => source.asset === product.base_asset,
+    );
+    const card = element("article", {
+      className: "education-snapshot-card",
+    });
+    card.append(
+      element("p", {
+        className: "eyebrow",
+        text: product.product_id,
+      }),
+      element("h3", {
+        text: `${plainNumber(product.best_bid?.value)} bid · ${plainNumber(product.best_ask?.value)} ask ${product.quote_asset}`,
+      }),
+      element("p", {
+        text: education?.summary ??
+          "Locally curated summary of primary source unavailable.",
+      }),
+      element("span", {
+        className: "education-provenance",
+        text: `Market fact · ${product.provenance?.label ?? "Source unavailable"} · ${formatConnectionTime(product.best_ask?.observed_at)}`,
+      }),
+      element("span", {
+        className:
+          "education-provenance education-provenance--catalog",
+        text:
+          education?.provenance?.label ??
+          "Locally curated summary of primary source unavailable.",
+      }),
+      element("p", {
+        className: "education-catalog-detail",
+        text: education
+          ? `Catalog reviewed ${formatConnectionTime(education.catalog_reviewed_at)} · content ${education.content_digest.slice(0, 12)}…`
+          : "No locally reviewed educational summary is available.",
+      }),
+    );
+    const reference =
+      education?.canonical_url;
+    if (
+      typeof reference === "string" &&
+      /^https:\/\//.test(reference)
+    ) {
+      card.append(
+        element("a", {
+          text: "Open canonical primary source",
+          attributes: {
+            href: reference,
+            target: "_blank",
+            rel: "noreferrer",
+          },
+        }),
+      );
+    }
+    grid.append(card);
+  }
+  return grid;
+}
+
+function educationalAnalysisCards(plan) {
+  const grid = element("div", {
+    className: "education-analysis-grid",
+  });
+  const concentration = plan.analysis?.concentration;
+  const scenario = plan.analysis?.scenarios?.[0];
+  const concentrationCard = element("article", {
+    className: "education-analysis-card",
+  });
+  concentrationCard.append(
+    element("p", {
+      className: "eyebrow",
+      text: "CALCULATED LOCALLY",
+    }),
+    element("h3", {
+      text: `Largest weight ${plainNumber((concentration?.largest_weight_bps ?? 0) / 100)}%`,
+    }),
+    element("p", {
+      text: `Concentration index ${plainNumber(concentration?.hhi_bps)}. This is a mechanical description, not a quality score or suitability assessment.`,
+    }),
+  );
+  const scenarioCard = element("article", {
+    className: "education-analysis-card",
+  });
+  scenarioCard.append(
+    element("p", {
+      className: "eyebrow",
+      text: "USER-SUPPLIED SCENARIO",
+    }),
+    element("h3", {
+      text: `${plainNumber(scenario?.calculated?.weighted_change_percent)}% weighted change`,
+    }),
+    element("p", {
+      text: "Calculated from your entered scenario assumptions. It is not a forecast, expected return, or recommendation.",
+    }),
+  );
+  grid.append(concentrationCard, scenarioCard);
+  return grid;
+}
+
+function educationLegSelector(saved) {
+  const section = element("fieldset", {
+    className: "education-leg-selector",
+  });
+  const legend = element("legend", {
+    text: "Optional handoff · select exactly one leg",
+  });
+  const grid = element("div", {
+    className: "education-leg-grid",
+  });
+  const name = `education-leg-${saved.plan.plan_id}-${saved.plan.revision}`;
+  const sideName =
+    `education-side-${saved.plan.plan_id}-${saved.plan.revision}`;
+  for (const allocation of (
+    saved.plan.analysis?.allocations ?? []
+  )) {
+    const label = element("label", {
+      className: "education-leg-card",
+    });
+    const radio = element("input", {
+      attributes: {
+        type: "radio",
+        name,
+        value: allocation.leg_id,
+      },
+    });
+    const copy = element("span");
+    copy.append(
+      element("h3", {
+        text: `${allocation.asset} · ${plainNumber(allocation.weight_bps / 100)}%`,
+      }),
+      element("p", {
+        text: `${plainNumber(allocation.target_quote_amount?.value)} ${allocation.target_quote_amount?.asset} hypothetical allocation`,
+      }),
+    );
+    label.append(radio, copy);
+    grid.append(label);
+  }
+  const sidePicker = element("div", {
+    className: "education-side-picker",
+    attributes: {
+      role: "radiogroup",
+      "aria-label": "Editable trade draft side",
+    },
+  });
+  for (const side of ["BUY", "SELL"]) {
+    const label = element("label", {
+      className: "education-side-choice",
+    });
+    label.append(
+      element("input", {
+        attributes: {
+          type: "radio",
+          name: sideName,
+          value: side,
+        },
+      }),
+      element("span", {
+        text:
+          side === "BUY"
+            ? "Buy · quote-sized editable draft"
+            : "Sell · base-sized editable draft",
+      }),
+    );
+    sidePicker.append(label);
+  }
+  section.append(
+    legend,
+    grid,
+    element("p", {
+      className: "education-side-heading",
+      text: "Choose the draft side · nothing is inferred",
+    }),
+    sidePicker,
+  );
+  const handoff = element("button", {
+    className: "button button--secondary",
+    text: "Create one editable trade draft",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  const feedback = element("p", {
+    className: "education-leg-feedback",
+    attributes: {
+      role: "status",
+      "aria-live": "polite",
+    },
+  });
+  handoff.addEventListener("click", () => {
+    const legId = section.querySelector(
+      `input[name="${name}"]:checked`,
+    )?.value;
+    const side = section.querySelector(
+      `input[name="${sideName}"]:checked`,
+    )?.value;
+    if (!legId || !side) {
+      feedback.textContent =
+        "Select exactly one allocation leg and choose Buy or Sell before creating a draft. No trade was authorized.";
+      reveal(feedback, { focus: true });
+      announce(feedback.textContent);
+      return;
+    }
+    feedback.textContent = "";
+    void createEducationHandoff(
+      saved,
+      legId,
+      side,
+      handoff,
+    );
+  });
+  section.append(
+    element("p", {
+      text: "This creates a new editable draft only. It does not authorize, Preview, evaluate, or submit anything.",
+    }),
+    feedback,
+    handoff,
+  );
+  return section;
+}
+
+function renderEducationalPlan(saved) {
+  state.educationalPlan = saved;
+  dom.educationalOutput.replaceChildren();
+  const artifact = element("section", {
+    className: "artifact educational-artifact",
+    attributes: {
+      "aria-label": "Educational allocation plan",
+    },
+  });
+  const outcome = saved.plan?.decision?.outcome;
+  const valid = outcome === "PLAN_VALID_FOR_EDITING";
+  artifact.append(
+    educationHeader(
+      saved,
+      valid
+        ? "Allocation plan stays editable"
+        : outcome === "BLOCK"
+          ? "Fix the allocation inputs"
+          : "Unable to verify the planning snapshot",
+      saved.plan?.decision?.reason ??
+        "Educational planning stopped safely.",
+    ),
+  );
+  if (!valid) {
+    artifact.append(
+      educationIssueList(saved.plan),
+      element("p", {
+        className: "education-no-trade",
+        text: "NO TRADE AUTHORIZED · RESEARCH IS NOT GUARD EVIDENCE · ORDERS OFF",
+      }),
+    );
+    dom.educationalOutput.append(artifact);
+    reveal(artifact, { focus: true });
+    announce(
+      `${outcome}. ${saved.plan?.decision?.reason} No trade was authorized.`,
+    );
+    return;
+  }
+  artifact.append(
+    educationalSnapshotCards(saved.plan),
+    educationalAnalysisCards(saved.plan),
+    educationLegSelector(saved),
+    element("p", {
+      className: "education-no-trade",
+      text: "PLAN VALID FOR EDITING · NO TRADE AUTHORIZED · ORDERS OFF",
+    }),
+  );
+  dom.educationalOutput.append(artifact);
+  reveal(artifact, { focus: true });
+  announce(
+    "Educational plan created. No asset was recommended and no trade was authorized.",
+  );
+}
+
+function renderEducationHandoff(saved) {
+  state.educationalPlan = saved;
+  const artifact = element("section", {
+    className: "artifact educational-artifact",
+    attributes: {
+      "aria-label": "Editable protected trade draft",
+    },
+  });
+  const draft = saved.draft;
+  artifact.append(
+    educationHeader(
+      saved,
+      "One editable protected-trade draft",
+      "This is a fresh draft from one selected leg. It remains outside authorization and Guard evidence.",
+    ),
+  );
+  const card = element("article", {
+    className: "education-analysis-card",
+  });
+  card.append(
+    element("p", {
+      className: "eyebrow",
+      text: "DRAFT CREATED · NOT AUTHORIZED",
+    }),
+    element("h3", {
+      text: `${draft.candidate_action.side} ${draft.candidate_action.product_id}`,
+    }),
+    element("p", {
+      text: `Up to ${plainNumber(draft.candidate_action.size.value)} ${draft.candidate_action.size.asset}. Every market, fee, expiry, and authorization boundary remains editable.`,
+    }),
+    element("p", {
+      className: "education-provenance",
+      text: `Editable Guard defaults · ${saved.advisor_prefill_defaults.max_slippage_bps} bps · ${plainNumber(saved.advisor_prefill_defaults.max_fee.value)} ${saved.advisor_prefill_defaults.max_fee.asset} fee cap · ${plainNumber(saved.advisor_prefill_defaults.authorization_ttl_seconds / 60)} minute expiry`,
+    }),
+    element("p", {
+      text: saved.advisor_prefill_defaults.explanation,
+    }),
+  );
+  const continueButton = element("button", {
+    className: "button button--primary",
+    text: "Edit in protected Advisor",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  continueButton.addEventListener("click", () => {
+    dom.intentInput.value = saved.advisor_prefill;
+    navigate("advisor", { focus: false });
+    dom.intentInput.focus();
+    dom.intentInput.select();
+    announce(
+      "Editable trade draft moved to the composer. Review it and prepare a new mandate; nothing is authorized.",
+    );
+  });
+  artifact.append(
+    card,
+    element("p", {
+      className: "education-no-trade",
+      text: "DRAFT CREATED · NOT AUTHORIZED · FRESH GUARD EVIDENCE REQUIRED · ORDERS OFF",
+    }),
+    continueButton,
+  );
+  dom.educationalOutput.replaceChildren(artifact);
+  reveal(artifact, { focus: true });
+  announce(
+    "One editable draft created. A separate protected mandate and human authorization are still required.",
+  );
+}
+
+async function saveEducational(event) {
+  event.preventDefault();
+  if (state.pending) {
+    announce(
+      "Another protected action is running. The educational plan was not changed.",
+    );
+    return;
+  }
+  let input;
+  try {
+    input = educationalInput();
+  } catch (error) {
+    addError(error.message, dom.educationalOutput);
+    return;
+  }
+  const current = state.educationalPlan;
+  const currentSource =
+    current?.plan?.market_snapshot?.market_source;
+  const revise =
+    current &&
+    !current.draft &&
+    currentSource === input.source;
+  await runPending(
+    dom.educationBuildButton,
+    revise ? "Updating plan…" : "Building plan…",
+    async () => {
+      try {
+        const path = revise
+          ? "/api/education/revise"
+          : "/api/education/plan";
+        const body = revise
+          ? {
+              plan_id: current.plan.plan_id,
+              revision: current.plan.revision,
+              planning_amount_value:
+                input.planning_amount_value,
+              quote_asset: input.quote_asset,
+              scenario_acknowledged:
+                input.scenario_acknowledged,
+              allocations: input.allocations,
+            }
+          : input;
+        const response = await requestJson(path, {
+          method: "POST",
+          body,
+        });
+        renderEducationalPlan(response.saved_plan);
+      } catch (error) {
+        addError(
+          error instanceof Error
+            ? error.message
+            : "Educational planning stopped safely. No trade was authorized.",
+          dom.educationalOutput,
+        );
+      }
+    },
+  );
+}
+
+async function createEducationHandoff(
+  saved,
+  legId,
+  side,
+  button,
+) {
+  if (
+    !legId ||
+    !["BUY", "SELL"].includes(side) ||
+    state.pending
+  ) {
+    announce(
+      "Select one current allocation leg and an explicit Buy or Sell side. No trade was authorized.",
+    );
+    return;
+  }
+  await runPending(
+    button,
+    "Creating editable draft…",
+    async () => {
+      try {
+        const response = await requestJson(
+          "/api/education/handoff",
+          {
+            method: "POST",
+            body: {
+              plan_id: saved.plan.plan_id,
+              revision: saved.plan.revision,
+              leg_id: legId,
+              side,
+            },
+          },
+        );
+        renderEducationHandoff(response.saved_plan);
+      } catch (error) {
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The one-leg handoff stopped safely. No trade was authorized.",
+          dom.educationalOutput,
+        );
+      }
+    },
+  );
+}
+
+function activityEntries(payload) {
+  const timestamp = (entry) =>
+    Date.parse(
+      entry?.recorded_at ??
+        entry?.occurred_at ??
+        entry?.created_at ??
+        entry?.generated_at ??
+        "",
+    );
+  if (Array.isArray(payload)) {
+    return [...payload].sort(
+      (left, right) =>
+        (Number.isFinite(timestamp(right))
+          ? timestamp(right)
+          : 0) -
+        (Number.isFinite(timestamp(left))
+          ? timestamp(left)
+          : 0),
+    );
+  }
+  const sessionActivity = Array.isArray(
     payload?.session_activity,
+  )
+    ? payload.session_activity.map((entry) => ({
+        ...entry,
+        activity_stream: "SESSION_ACTIVITY",
+      }))
+    : [];
+  const guardHistory = Array.isArray(payload?.guard_history)
+    ? payload.guard_history.map((entry) => ({
+        ...entry,
+        activity_stream: "GUARD_HISTORY",
+      }))
+    : [];
+  const fallback = [
     payload?.entries,
     payload?.activity,
     payload?.history,
     payload?.results,
-  ];
-  return candidates.find(Array.isArray) ?? [];
+  ].find(Array.isArray) ?? [];
+  const merged =
+    sessionActivity.length || guardHistory.length
+      ? [...sessionActivity, ...guardHistory]
+      : fallback;
+  return [...merged].sort(
+    (left, right) =>
+      (Number.isFinite(timestamp(right))
+        ? timestamp(right)
+        : 0) -
+      (Number.isFinite(timestamp(left))
+        ? timestamp(left)
+        : 0),
+  );
 }
 
 function activityMandate(entry) {
@@ -2776,10 +3479,24 @@ function renderActivity(payload) {
       entry?.occurred_at ??
       entry?.created_at ??
       entry?.generated_at;
+    const educational =
+      typeof entry?.kind === "string" &&
+      entry.kind.startsWith("EDUCATIONAL_");
+    const conditional =
+      typeof entry?.kind === "string" &&
+      entry.kind.startsWith("CONDITIONAL_");
     meta.append(
       element("p", {
         text:
-          entry?.mode === "view_only_preflight"
+          educational
+            ? "Educational planning"
+            : conditional
+              ? "Conditional simulation"
+              : entry?.activity_stream === "GUARD_HISTORY"
+                ? entry?.mode === "view_only_preflight"
+                  ? "Guard history · View-only preflight"
+                  : "Guard history · Simulated dry run"
+              : entry?.mode === "view_only_preflight"
             ? "View-only preflight"
             : "Simulated dry run",
       }),
@@ -2796,13 +3513,17 @@ function renderActivity(payload) {
       element("h2", { text: activityMandate(entry) }),
       element("p", {
         text:
-          entry?.reason ??
+          educational
+            ? "User-selected educational plan state"
+            : entry?.reason ??
           entry?.receipt?.decision?.reason ??
           "Redacted Guard decision",
       }),
       element("p", {
         text: viewOnly
           ? "Redacted normalized facts · credential never retained in history · no order submitted"
+          : educational
+            ? "Advice off · research never used as Guard evidence · no trade authorized"
           : "Labeled simulated facts · no credential used · no order submitted",
       }),
     );
@@ -2844,26 +3565,55 @@ async function loadActivity() {
   );
 }
 
-function explainFutureCapability(kind) {
-  const content = {
-    research: {
-      title: "Educational token research",
-      message:
-        "This surface will show sources, as-of times, assumptions, uncertainty, and risk without recommending a trade. It cannot create or authorize an order.",
-    },
-    portfolio: {
-      title: "Editable allocation planning",
-      message:
-        "This surface will let you adjust assumptions and allocations before choosing whether to create separately reviewed single-trade mandates. It will never auto-buy.",
-    },
-  }[kind];
-  if (!content) return;
-  navigate("advisor", { focus: false });
+function setPlanWorkspace(workspace, { focus = true } = {}) {
+  const next =
+    workspace === "education" ? "education" : "conditional";
+  state.planWorkspace = next;
+  dom.conditionalWorkspace.hidden = next !== "conditional";
+  dom.educationalWorkspace.hidden = next !== "education";
+  for (const button of dom.planWorkspaceButtons) {
+    const active = button.dataset.planWorkspace === next;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+  renderViewContext();
+  if (focus) {
+    const target =
+      next === "education"
+        ? dom.educationalWorkspace.querySelector("h2")
+        : dom.conditionalProduct;
+    if (next === "education" && target) {
+      reveal(target, { focus: true });
+    } else {
+      target?.focus({ preventScroll: true });
+    }
+  }
+}
+
+function adviceSeekingIntent(intent) {
+  return /\b(?:what should i buy|what token should i buy|recommend(?: me)? (?:a )?(?:token|coin|crypto)|best (?:token|coin|crypto)(?: for me)?|pick (?:a )?(?:token|coin|crypto) for me)\b/i.test(
+    intent,
+  );
+}
+
+function reframeAdviceRequest(intent) {
+  if (!adviceSeekingIntent(intent)) return false;
+  addMessage(
+    "user",
+    intent,
+    "Educational question · not a trade instruction",
+  );
   addMessage(
     "advisor",
-    `${content.title}: ${content.message}`,
-    "Planning preview only · no individualized advice · no order",
+    "I can’t choose an asset for you, rank tokens, or assess suitability. I can show a neutral, source-labelled snapshot for assets you select and calculate an editable allocation scenario.",
+    "Educational planning · advice off · no trade authorized",
   );
+  navigate("plans", { focus: false });
+  setPlanWorkspace("education");
+  announce(
+    "Choose the assets you want to compare. No recommendation or trade was created.",
+  );
+  return true;
 }
 
 function handleQuickStart(event) {
@@ -2876,12 +3626,19 @@ function handleQuickStart(event) {
     announce("Protected spot-trade example is ready to prepare.");
   } else if (start === "condition") {
     navigate("plans");
+    setPlanWorkspace("conditional", { focus: false });
     dom.conditionalProduct.focus();
     announce(
       "Conditional plan composer ready. Nothing is monitoring or trading.",
     );
-  } else {
-    explainFutureCapability(start);
+  } else if (start === "research" || start === "portfolio") {
+    navigate("plans", { focus: false });
+    setPlanWorkspace("education");
+    announce(
+      start === "research"
+        ? "Choose assets for a neutral market snapshot. Advice and orders remain off."
+        : "Edit the allocation canvas. No trade is authorized.",
+    );
   }
 }
 
@@ -3027,6 +3784,7 @@ async function loadStatus() {
   try {
     const payload = await requestJson("/api/status");
     const status = payload?.status ?? payload;
+    applyCapabilities(payload?.capabilities ?? null);
     setSelectedMode("dry_run");
     dom.orderStatus.textContent = "Orders off";
     dom.serviceStatus.textContent =
@@ -3034,6 +3792,7 @@ async function loadStatus() {
         ? "Local Guard status: limited"
         : "Local Guard status: ready";
   } catch {
+    applyCapabilities(null);
     setSelectedMode("dry_run");
     dom.orderStatus.textContent = "Orders off";
     dom.serviceStatus.textContent = "Local Guard status: unavailable";
@@ -3058,6 +3817,12 @@ document.addEventListener("click", (event) => {
 
 for (const quickStart of dom.quickStarts) {
   quickStart.addEventListener("click", handleQuickStart);
+}
+
+for (const button of dom.planWorkspaceButtons) {
+  button.addEventListener("click", () => {
+    setPlanWorkspace(button.dataset.planWorkspace);
+  });
 }
 
 dom.advisorForm.addEventListener("submit", (event) => {
@@ -3095,10 +3860,31 @@ dom.conditionalForm.addEventListener("submit", (event) => {
   void saveConditional(event);
 });
 
+dom.educationalForm.addEventListener("submit", (event) => {
+  void saveEducational(event);
+});
+
+dom.educationExampleButton.addEventListener(
+  "click",
+  loadMechanicalEducationExample,
+);
+
+for (const row of dom.educationRows) {
+  for (const control of row.querySelectorAll(
+    "[data-education-selected], [data-education-scenario]",
+  )) {
+    control.addEventListener("change", () => {
+      dom.educationScenarioConfirmed.checked = false;
+    });
+  }
+}
+
 dom.conditionalSide.addEventListener(
   "change",
   updateConditionalSideCopy,
 );
 
 setConditionalDefaults();
+setPlanWorkspace("conditional", { focus: false });
+applyCapabilities(null);
 void Promise.all([loadStatus(), loadConnection()]);

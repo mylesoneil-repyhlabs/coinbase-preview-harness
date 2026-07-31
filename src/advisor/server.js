@@ -39,6 +39,17 @@ import {
   revokeConditionalSessionPlan,
 } from "./conditional-session.js";
 import {
+  createEducationalViewOnlyAuthority,
+  createGeneratedEducationalMarketSnapshot,
+} from "./educational-planning.js";
+import {
+  EducationalSessionError,
+  createEducationalSessionHandoff,
+  createEducationalSessionPlan,
+  educationalSessionPlanView,
+  reviseEducationalSessionPlan,
+} from "./educational-session.js";
+import {
   AdvisorSessionStore,
   appendActivity,
   isSessionToken,
@@ -64,6 +75,37 @@ const SESSION_COOKIE = "delta_advisor_session";
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_STATIC_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
+const EDUCATIONAL_MARKET_MAX_AGE_SECONDS = 60;
+const EDUCATIONAL_SOURCE_MAX_AGE_SECONDS = 31_536_000;
+const EDUCATIONAL_PRODUCT_FIXTURES = Object.freeze({
+  "BTC-USDC": Object.freeze({
+    product_id: "BTC-USDC",
+    base_asset: "BTC",
+    quote_asset: "USDC",
+    product_type: "SPOT",
+    available: true,
+    best_bid: "118500.20",
+    best_ask: "118500.30",
+  }),
+  "ETH-USDC": Object.freeze({
+    product_id: "ETH-USDC",
+    base_asset: "ETH",
+    quote_asset: "USDC",
+    product_type: "SPOT",
+    available: true,
+    best_bid: "3820.05",
+    best_ask: "3820.15",
+  }),
+  "SOL-USDC": Object.freeze({
+    product_id: "SOL-USDC",
+    base_asset: "SOL",
+    quote_asset: "USDC",
+    product_type: "SPOT",
+    available: true,
+    best_bid: "185.10",
+    best_ask: "185.20",
+  }),
+});
 const ADVISOR_POST_ROUTES = new Set([
   "/api/advisor/plan",
   "/api/advisor/authorize",
@@ -75,6 +117,9 @@ const ADVISOR_POST_ROUTES = new Set([
   "/api/conditional/cancel",
   "/api/conditional/simulate",
   "/api/conditional/revoke",
+  "/api/education/plan",
+  "/api/education/revise",
+  "/api/education/handoff",
   "/api/demo/showcase",
   "/api/demo/review",
 ]);
@@ -253,6 +298,163 @@ function requireConditionalIdentity(input) {
       "Choose the current saved-plan revision.",
     );
   }
+}
+
+function educationalHttpError(error) {
+  if (error instanceof HttpError) return error;
+  const code =
+    error instanceof EducationalSessionError &&
+    typeof error.code === "string"
+      ? error.code
+      : "EDUCATIONAL_PLANNING_INVALID";
+  const notFound =
+    code === "EDUCATIONAL_PLAN_NOT_FOUND" ||
+    code === "EDUCATIONAL_LEG_NOT_FOUND";
+  const conflict =
+    code.includes("REVISION") ||
+    code.includes("HANDOFF_ALREADY");
+  return new HttpError(
+    notFound ? 404 : conflict ? 409 : 422,
+    code,
+    error instanceof Error
+      ? error.message
+      : "Educational planning stopped safely. No trade was authorized.",
+  );
+}
+
+function educationalPlanningInput(input, { sourceRequired }) {
+  const allowed = [
+    "planning_amount_value",
+    "quote_asset",
+    "scenario_acknowledged",
+    "allocations",
+  ];
+  if (sourceRequired) allowed.push("source");
+  strictFields(input, allowed, "Educational plan request");
+  if (
+    (sourceRequired &&
+      !["fixture", "view_only"].includes(input.source)) ||
+    typeof input.planning_amount_value !== "string" ||
+    input.planning_amount_value.length < 1 ||
+    input.planning_amount_value.length > 64 ||
+    input.quote_asset !== "USDC" ||
+    input.scenario_acknowledged !== true ||
+    !Array.isArray(input.allocations) ||
+    input.allocations.length < 1 ||
+    input.allocations.length > 3
+  ) {
+    throw new HttpError(
+      400,
+      "EDUCATIONAL_INPUT_INVALID",
+      "Choose a source, a positive USDC planning amount, one to three explicit allocation rows, and confirm the scenario assumptions.",
+    );
+  }
+  const seen = new Set();
+  const allocations = input.allocations.map(
+    (candidate, index) => {
+      const allocation = strictFields(
+        candidate,
+        [
+          "product_id",
+          "weight_bps",
+          "scenario_change_bps",
+        ],
+        `Educational allocation ${index + 1}`,
+      );
+      const fixture =
+        EDUCATIONAL_PRODUCT_FIXTURES[
+          allocation.product_id
+        ];
+      if (
+        !fixture ||
+        seen.has(allocation.product_id) ||
+        !Number.isInteger(allocation.weight_bps) ||
+        allocation.weight_bps < 1 ||
+        allocation.weight_bps > 10_000 ||
+        !Number.isInteger(
+          allocation.scenario_change_bps,
+        ) ||
+        allocation.scenario_change_bps < -10_000 ||
+        allocation.scenario_change_bps > 10_000
+      ) {
+        throw new HttpError(
+          400,
+          "EDUCATIONAL_ALLOCATION_INVALID",
+          "Each allocation must use one unique supported pair, a positive basis-point weight, and one scenario change from -10000 to 10000 bps.",
+        );
+      }
+      seen.add(allocation.product_id);
+      return {
+        asset: fixture.base_asset,
+        product_id: fixture.product_id,
+        weight_bps: allocation.weight_bps,
+        scenario_change_bps:
+          allocation.scenario_change_bps,
+      };
+    },
+  );
+  return {
+    source: sourceRequired ? input.source : null,
+    requestedProductIds: allocations.map(
+      ({ product_id }) => product_id,
+    ),
+    planningAmount: {
+      asset: input.quote_asset,
+      value: input.planning_amount_value,
+    },
+    scenarioAcknowledged:
+      input.scenario_acknowledged === true,
+    allocations: allocations.map(
+      ({ asset, product_id, weight_bps }) => ({
+        asset,
+        product_id,
+        weight_bps,
+      }),
+    ),
+    scenarios: [
+      {
+        name: "User-supplied stress scenario",
+        changes: allocations.map(
+          ({ asset, scenario_change_bps }) => ({
+            asset,
+            change_bps: scenario_change_bps,
+          }),
+        ),
+      },
+    ],
+  };
+}
+
+function requireEducationalIdentity(input, { leg = false } = {}) {
+  const identifier =
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+  if (
+    typeof input?.plan_id !== "string" ||
+    !identifier.test(input.plan_id) ||
+    !Number.isInteger(input.revision) ||
+    input.revision < 1 ||
+    (leg &&
+      (typeof input.leg_id !== "string" ||
+        !identifier.test(input.leg_id) ||
+        !["BUY", "SELL"].includes(input.side)))
+  ) {
+    throw new HttpError(
+      400,
+      "EDUCATIONAL_IDENTITY_INVALID",
+      leg
+        ? "Choose one current plan revision, one displayed allocation leg, and an explicit BUY or SELL side."
+        : "Choose the current educational plan revision.",
+    );
+  }
+}
+
+function generatedEducationalProducts(productIds, observedAt) {
+  return productIds.flatMap((productId) => {
+    const fixture = EDUCATIONAL_PRODUCT_FIXTURES[productId];
+    return fixture
+      ? [{ ...fixture, observed_at: observedAt }]
+      : [];
+  });
 }
 
 function verifiedCredentialEnvelope({
@@ -574,6 +776,10 @@ export function createAdvisorRequestHandler({
       "Advisor View-only adapter factory must be a function",
     );
   }
+  // This authority is handler-private. Browser input can never obtain its
+  // WeakSet membership or turn structural normalization into provenance.
+  const educationalViewOnlyAuthority =
+    createEducationalViewOnlyAuthority();
   const credentialProviders = new WeakMap();
   function credentialProviderFor(session, { create = true } = {}) {
     let provider = credentialProviders.get(session);
@@ -601,6 +807,90 @@ export function createAdvisorRequestHandler({
     });
     return provider;
   }
+
+  async function educationalSnapshotFor(
+    session,
+    planning,
+    evaluatedAt,
+  ) {
+    const evaluatedAtIso = evaluatedAt.toISOString();
+    let products = [];
+    if (planning.source === "fixture") {
+      products = generatedEducationalProducts(
+        planning.requestedProductIds,
+        evaluatedAtIso,
+      );
+    } else {
+      try {
+        const provider = credentialProviderFor(session, {
+          create: false,
+        });
+        if (
+          provider == null ||
+          provider.status().connected !== true
+        ) {
+          throw new Error(
+            "View-only connection unavailable",
+          );
+        }
+        products = await provider.withVerifiedCredential(
+          async ({
+            credentials,
+            signal,
+            assertCurrent,
+          }) => {
+            const adapter = createViewOnlyAdapter(
+              credentials,
+              {
+                timeoutMs: 5_000,
+                signal,
+              },
+            );
+            const observations = await Promise.all(
+              planning.requestedProductIds.map(
+                async (productId) => {
+                  const [product, bestBidAsk] =
+                    await Promise.all([
+                      adapter.getProduct(productId),
+                      adapter.getBestBidAsk(productId),
+                    ]);
+                  return educationalViewOnlyAuthority
+                    .normalizeAdapterResult(
+                      product,
+                      bestBidAsk,
+                      productId,
+                    );
+                },
+              ),
+            );
+            assertCurrent();
+            return observations;
+          },
+        );
+      } catch {
+        products = [];
+      }
+    }
+    const snapshotInput = {
+      snapshot_id: randomUUID(),
+      evaluated_at: evaluatedAtIso,
+      market_max_age_seconds:
+        EDUCATIONAL_MARKET_MAX_AGE_SECONDS,
+      education_max_age_seconds:
+        EDUCATIONAL_SOURCE_MAX_AGE_SECONDS,
+      requested_product_ids:
+        planning.requestedProductIds,
+      products,
+    };
+    return planning.source === "fixture"
+      ? createGeneratedEducationalMarketSnapshot(
+          snapshotInput,
+        )
+      : educationalViewOnlyAuthority.createSnapshot(
+          snapshotInput,
+        );
+  }
+
   let activeRequests = 0;
   return async function advisorRequestHandler(request, response) {
     let cookieHeader = {};
@@ -803,6 +1093,17 @@ export function createAdvisorRequestHandler({
           "This saved plan is not available in the current local session.",
         );
       }
+      if (
+        pathname.startsWith("/api/education/") &&
+        pathname !== "/api/education/plan" &&
+        existingSession == null
+      ) {
+        throw new HttpError(
+          404,
+          "EDUCATIONAL_PLAN_NOT_FOUND",
+          "This educational plan is not available in the current local session.",
+        );
+      }
 
       let session = existingSession;
       if (session != null) {
@@ -810,6 +1111,7 @@ export function createAdvisorRequestHandler({
       } else if (
         pathname === "/api/advisor/plan" ||
         pathname === "/api/conditional/plan" ||
+        pathname === "/api/education/plan" ||
         pathname === "/api/connection/connect"
       ) {
         session = sessionStore.open(null).session;
@@ -817,6 +1119,7 @@ export function createAdvisorRequestHandler({
         session = {
           plans: new Map(),
           conditionalPlans: new Map(),
+          educationalPlans: new Map(),
           activity: [],
         };
       }
@@ -1372,6 +1675,220 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { saved_plan: completed, result },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/education/plan"
+      ) {
+        const planning = educationalPlanningInput(
+          await readJson(request),
+          { sourceRequired: true },
+        );
+        const evaluatedAt = now();
+        if (
+          !(evaluatedAt instanceof Date) ||
+          !Number.isFinite(evaluatedAt.getTime())
+        ) {
+          throw new HttpError(
+            500,
+            "EDUCATIONAL_CLOCK_INVALID",
+            "Educational planning stopped safely because the local clock is unavailable.",
+          );
+        }
+        const snapshot = await educationalSnapshotFor(
+          session,
+          planning,
+          evaluatedAt,
+        );
+        let savedPlan;
+        try {
+          savedPlan = createEducationalSessionPlan(
+            session,
+            {
+              snapshot,
+              planning_amount:
+                planning.planningAmount,
+              allocations: planning.allocations,
+              scenarios: planning.scenarios,
+              scenario_acknowledged:
+                planning.scenarioAcknowledged,
+            },
+            { now: () => new Date(evaluatedAt) },
+          );
+        } catch (error) {
+          throw educationalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "EDUCATIONAL_PLAN",
+            savedPlan.session_state,
+            {
+              now: () => new Date(evaluatedAt),
+              decision: savedPlan.plan.decision.outcome,
+            },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: savedPlan },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/education/revise"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          [
+            "plan_id",
+            "revision",
+            "planning_amount_value",
+            "quote_asset",
+            "scenario_acknowledged",
+            "allocations",
+          ],
+          "Educational revision request",
+        );
+        requireEducationalIdentity(input);
+        const planning = educationalPlanningInput(
+          {
+            planning_amount_value:
+              input.planning_amount_value,
+            quote_asset: input.quote_asset,
+            scenario_acknowledged:
+              input.scenario_acknowledged,
+            allocations: input.allocations,
+          },
+          { sourceRequired: false },
+        );
+        let current;
+        try {
+          current = educationalSessionPlanView(session, {
+            planId: input.plan_id,
+            revision: input.revision,
+          });
+        } catch (error) {
+          throw educationalHttpError(error);
+        }
+        const source =
+          current.plan?.market_snapshot?.market_source;
+        if (!["fixture", "view_only"].includes(source)) {
+          throw new HttpError(
+            409,
+            "EDUCATIONAL_SOURCE_STALE",
+            "The educational source is unavailable. Create a fresh plan and choose its source again.",
+          );
+        }
+        const evaluatedAt = now();
+        if (
+          !(evaluatedAt instanceof Date) ||
+          !Number.isFinite(evaluatedAt.getTime())
+        ) {
+          throw new HttpError(
+            500,
+            "EDUCATIONAL_CLOCK_INVALID",
+            "Educational planning stopped safely because the local clock is unavailable.",
+          );
+        }
+        const snapshot = await educationalSnapshotFor(
+          session,
+          {
+            ...planning,
+            source,
+          },
+          evaluatedAt,
+        );
+        let revised;
+        try {
+          revised = reviseEducationalSessionPlan(
+            session,
+            {
+              planId: input.plan_id,
+              revision: input.revision,
+              planning_amount:
+                planning.planningAmount,
+              allocations: planning.allocations,
+              scenarios: planning.scenarios,
+              scenario_acknowledged:
+                planning.scenarioAcknowledged,
+              snapshot,
+            },
+            { now: () => new Date(evaluatedAt) },
+          );
+        } catch (error) {
+          throw educationalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "EDUCATIONAL_PLAN_REVISION",
+            revised.current.session_state,
+            {
+              now: () => new Date(evaluatedAt),
+              decision:
+                revised.current.plan.decision.outcome,
+            },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: revised.current },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/education/handoff"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          ["plan_id", "revision", "leg_id", "side"],
+          "Educational handoff request",
+        );
+        requireEducationalIdentity(input, { leg: true });
+        let handoff;
+        try {
+          handoff = createEducationalSessionHandoff(
+            session,
+            {
+              planId: input.plan_id,
+              revision: input.revision,
+              legId: input.leg_id,
+              side: input.side,
+            },
+            { now },
+          );
+        } catch (error) {
+          throw educationalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "EDUCATIONAL_HANDOFF",
+            handoff.saved_plan.session_state,
+            {
+              now,
+              decision:
+                handoff.result.decision.outcome,
+            },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          handoff,
           cookieHeader,
         );
         return;

@@ -285,7 +285,8 @@ and final-order confirmation remain disabled.
 Internal/synthetic reviews—not customer proof—set narrower release contracts:
 Sprint 3 is a non-executable revisioned template and one fresh authorized
 simulation check, never a watcher; Sprint 4 is neutral market-snapshot and
-user-directed educational planning with exactly one fresh mandate handoff;
+user-directed educational planning with exactly one fresh editable-draft
+handoff;
 Sprint 5 is only a locked live-readiness preview. It must not reuse
 `execution_confirmation.v2`, expose a Trade field or confirm control, import
 an executor, or claim “ready to trade.” A future final challenge and
@@ -416,10 +417,169 @@ false autonomous-trading promise.
 
 ### Shipped impact
 
-The development branch now supports a polished, revisioned conditional SPOT
+At the Sprint 3 checkpoint, the development branch supported a polished,
+revisioned conditional SPOT
 BUY/SELL template and one explicitly authorized simulation check. It can
 demonstrate condition-not-met, meaningful BLOCK, exact PASS, or unable-to-
 verify REVIEW with a locally verified receipt and server-owned replay/cancel
 protection. Saved monitoring, unattended execution, Coinbase Create, Trade
 credentials, production Delta, research, portfolio planning, and live-order
-readiness remain disabled.
+readiness were disabled at that checkpoint.
+
+## Sprint 4 — neutral educational planning and one editable-draft handoff
+
+### Product Manager requirements
+
+Make exploration useful without turning it into advice or an implicit
+purchase. The user must choose the assets, weights, scenario assumptions,
+source, one handoff leg, and trade side. The product may describe a market
+snapshot and calculate concentration or a mechanical scenario, but it must
+never rank assets, assess suitability, recommend a portfolio, authorize a
+batch, or auto-buy.
+
+The acceptance language is deliberately non-executable:
+`PLAN VALID FOR EDITING · NO TRADE AUTHORIZED`, followed only after an explicit
+handoff by `DRAFT CREATED · NOT AUTHORIZED · ORDERS OFF`.
+
+### Engineering-lead architecture
+
+Added a deterministic educational-planning core plus a separate session-owned
+plan layer. Browser requests carry only narrow user inputs or an opaque plan
+ID, exact revision, one leg ID, and explicit `BUY` or `SELL`. The server owns
+source selection, snapshot construction, versioning, digests, calculations,
+handoff state, and redacted view models.
+
+Coinbase provenance is a capability, not a shape. A handler-private authority
+brands only normalized results returned by the injected allowlisted View-only
+adapter. The public market normalizer performs structural validation only.
+Direct normalized objects, lookalikes, JSON clones, and values from another
+authority cannot become `Coinbase observed`.
+
+### Senior full-stack implementation
+
+Built the real **Plans → Educational planning** workspace. It starts blank:
+no planning amount, asset, weight, scenario attribution, handoff leg, or side
+is selected. An explicit **Load mechanical example · not a recommendation**
+control can fill a 10,000 USDC BTC/ETH example for editing without creating a
+plan. It also clears any stale input error so corrected values are not paired
+with obsolete recovery copy.
+
+The user chooses `Generated fixture` or one fresh connected View-only
+product/BBO snapshot. Cards render market and educational provenance
+separately, including the exact checked-in label
+`Locally curated summary of primary source`, publisher, catalog review date,
+content digest, and canonical source link. A compact risk disclosure says
+digital-asset prices can be volatile, liquidity and availability can change,
+scenarios are not forecasts, and the tool does not assess suitability.
+
+The allocation canvas uses asset-specific accessible labels. Scenario values,
+including zero, become `User supplied` only after explicit acknowledgement.
+One explicit leg plus `BUY` or `SELL` creates a new editable draft. The Advisor
+composer receives that text only when the user chooses to edit it; no implicit
+plan, authorization, preflight, Preview, or Delta request occurs.
+
+### Backend and data
+
+Educational snapshots, plans, revisions, handoffs, and activity are
+process/session-only. Fixture and View-only modes are exclusive; stale,
+missing, partial, malformed, or unavailable View-only facts return `REVIEW`
+without fixture fallback or observed provenance. Research remains ineligible
+as Guard evidence.
+
+Every accepted revision first resolves the current opaque plan/revision and
+then obtains a fresh snapshot for the complete newly selected product set from
+the same explicit source. Adding an asset, retrying a View-only outage, or
+editing after expiry therefore cannot reuse incomplete or stale facts.
+
+Checked-in educational summaries carry canonical publisher/URL,
+`catalog_reviewed_at`, and a content digest rather than pretending they were
+retrieved live. Local concentration and scenario calculations have their own
+provenance. A rejected or unacknowledged scenario is omitted from the returned
+artifact instead of being mislabeled as user supplied.
+
+The handoff consumes one current plan revision atomically. Fee, slippage, and
+expiry suggestions are labeled `Editable Guard defaults`; they are not
+inherited or authorized user constraints. BUY drafts are quote-sized. SELL
+drafts are base-sized from the hypothetical educational allocation and
+observed planning price, explicitly not a holding or execution fact.
+
+### DevOps and release review
+
+Education routes are explicit same-origin mutations and contain no Coinbase
+Create, execution, generic proxy, background monitor, balance, Preview, or
+Trade-key path. Provider calls are dependency-injected fakes in tests; no real
+credential or external network was used. Capability flags for educational
+research and portfolio planning were enabled only after the vertical UI/API
+path, redaction, provenance, and adversarial tests passed.
+
+README, security policy, roadmap, design contract, threat model, and this log
+were updated before the isolated Sprint 4 checkpoint. Sprint 5 work remains
+outside this commit.
+
+### Designer and frontend critique
+
+Synthetic internal review—not customer proof—found four important trust
+problems during the sprint: a preselected 60/40 allocation looked like a
+recommendation; the first leg and `BUY` side could be inferred; checked-in
+paraphrases could visually inherit a Coinbase badge; and untouched zero
+scenarios could be called user supplied. The shipped surface starts blank,
+requires explicit scenario acknowledgement, separates every provenance class,
+and requires both one leg and side.
+
+The Activity view now merges and sorts redacted CLI Guard history with newer
+session connection, conditional, and education events instead of silently
+hiding one stream. At 320 pixels, the compact safety strip and single-column
+education entry remained visible in the in-app browser.
+
+### QA
+
+The focused deterministic core/session/UI gate passed **49/49**. The focused
+education/advisor server gate passed **26/26**. The complete working-tree suite
+passed **611/611**.
+
+Coverage includes blank defaults; explicit example loading; scenario
+acknowledgement omitted, false, or string-forged; zero-value provenance;
+accessible asset-specific labels; explicit leg plus side; BUY and SELL draft
+shapes; forged facts, source labels, digests, IDs, and revisions; direct
+normalizer and cross-authority attacks; cross-session and second handoff;
+View-only outage/partial/stale data with no fallback; education IDs rejected by
+advisor authorization; asset-add refresh, expired-fixture refresh, and
+View-only `REVIEW` recovery; and proof that handoff performs no advisor
+authorization or preflight.
+
+Real in-app browser interaction completed the blank-input recovery, explicit
+mechanical-example load, acknowledged 60/40 scenario plan, separate provenance
+cards, missing leg/side recovery, explicit ETH `SELL` handoff, and editable
+Advisor prefill. The result remained `NOT AUTHORIZED` with Orders off. A
+320×800 screenshot confirmed the responsive safety context. The browser
+harness did not expose reliable script-evaluation width metrics; the supported
+screenshot and static responsive tests were used instead, and that limitation
+is recorded rather than treated as a pass.
+
+A final live recheck confirmed the visible risk disclosure, blank required
+planning amount, blank zero-value allocation inputs, unchecked scenario
+acknowledgement, and that loading the mechanical example alone fills 10,000
+USDC while keeping acknowledgement unchecked and clearing the prior
+blank-input error. The tab closed successfully; an attempted optional browser-runtime
+finalizer was unsupported by the harness and had no application or validation
+impact.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: starting with an empty canvas avoids the
+feeling that the advisor has already chosen a portfolio. Separate provenance
+badges and the short risk note make it clear which facts came from Coinbase,
+which explanation was curated locally, what was calculated, and what the user
+supplied. Requiring one leg and side feels like deliberate planning, while the
+draft-only handoff preserves a low-friction path back to the protected trade
+flow.
+
+### Shipped impact
+
+The development branch now supports a neutral market snapshot and editable
+allocation-planning experience with five explicit provenance classes, an
+honest risk boundary, and one fresh editable BUY/SELL draft handoff. No trade
+is authorized, no portfolio plan becomes Guard evidence, and no automatic or
+portfolio-wide transaction exists. Saved monitoring, unattended execution,
+Coinbase Create, Trade credentials, production Delta, and post-PASS
+live-order readiness remain disabled.

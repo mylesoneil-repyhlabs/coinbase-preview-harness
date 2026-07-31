@@ -108,6 +108,9 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
       "/api/connection/disconnect",
       "/api/demo/review",
       "/api/demo/showcase",
+      "/api/education/handoff",
+      "/api/education/plan",
+      "/api/education/revise",
       "/api/status",
     ],
   );
@@ -165,7 +168,6 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(html, /Plan a future condition/i);
   assert.match(html, />Preview</i);
   assert.match(html, /No monitoring or autonomous trade/i);
-  assert.ok((html.match(/Coming soon/gi) ?? []).length >= 2);
   assert.match(html, /Educational research,\s*never advice/i);
   assert.match(html, /Editable planning,\s*never auto-buy/i);
   assert.match(html, /Nothing is watching the market/i);
@@ -179,7 +181,8 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(html, /Not a Coinbase product, integration, or\s+endorsement/i);
   assert.match(app, /This authorizes evaluation only\s*·\s*not an order/i);
   assert.match(app, /Live order unavailable/i);
-  assert.match(app, /no individualized advice\s*·\s*no order/i);
+  assert.match(app, /Advice off · Orders off/);
+  assert.match(app, /No trade authorized/);
   assert.match(app, /PASS · Fits mandate/);
   assert.match(app, /BLOCK · Outside mandate/);
   assert.match(app, /REVIEW · Unable to verify/);
@@ -193,6 +196,228 @@ test("default copy makes the current and future safety boundaries unmistakable",
     app,
     /View-only point-in-time preflight plus local Delta simulation/i,
   );
+});
+
+test("educational planning begins neutral and requires an explicit one-leg handoff", () => {
+  const amountInput = html.match(
+    /<input\b(?=[^>]*\bid=["']education-amount["'])[^>]*>/i,
+  )?.[0];
+  assert.ok(amountInput);
+  assert.doesNotMatch(amountInput, /\bvalue=/i);
+  assert.match(amountInput, /\brequired\b/i);
+  assert.match(amountInput, /placeholder=["']e\.g\. 10000["']/i);
+  const selectedInputs = [
+    ...html.matchAll(
+      /<input\b(?=[^>]*\bdata-education-selected\b)[^>]*>/gi,
+    ),
+  ].map((match) => match[0]);
+  assert.equal(selectedInputs.length, 3);
+  for (const input of selectedInputs) {
+    assert.doesNotMatch(input, /\bchecked\b/i);
+  }
+  const weightInputs = [
+    ...html.matchAll(
+      /<input\b(?=[^>]*\bdata-education-weight\b)[^>]*>/gi,
+    ),
+  ].map((match) => match[0]);
+  const scenarioInputs = [
+    ...html.matchAll(
+      /<input\b(?=[^>]*\bdata-education-scenario\b)[^>]*>/gi,
+    ),
+  ].map((match) => match[0]);
+  assert.equal(weightInputs.length, 3);
+  assert.equal(scenarioInputs.length, 3);
+  for (const input of [...weightInputs, ...scenarioInputs]) {
+    assert.match(input, /\bvalue=["']0["']/i);
+  }
+  const scenarioConfirmation = html.match(
+    /<input\b(?=[^>]*\bid=["']education-scenario-confirmed["'])[^>]*>/i,
+  )?.[0];
+  assert.ok(scenarioConfirmation);
+  assert.doesNotMatch(scenarioConfirmation, /\bchecked\b/i);
+  assert.match(
+    html,
+    /I chose these scenario assumptions, including any 0% values/i,
+  );
+  assert.match(
+    html,
+    /Load mechanical example · not a recommendation/i,
+  );
+  assert.match(html, /Risk and uncertainty/i);
+  assert.match(html, /Digital-asset prices can be volatile/i);
+  assert.match(html, /liquidity or market\s+availability can change/i);
+  assert.match(html, /Scenarios are mechanical assumptions,\s+not forecasts/i);
+  assert.match(html, /does not assess suitability or provide\s+individualized financial advice/i);
+  assert.equal(
+    (app.match(/\bloadMechanicalEducationExample\b/g) ?? [])
+      .length,
+    2,
+    "the mechanical example must load only through its explicit button listener",
+  );
+  const exampleStart = app.indexOf(
+    "function loadMechanicalEducationExample()",
+  );
+  const exampleEnd = app.indexOf(
+    "function educationalInput()",
+    exampleStart,
+  );
+  const exampleSource = app.slice(exampleStart, exampleEnd);
+  assert.match(
+    exampleSource,
+    /dom\.educationAmount\.value = "10000"/,
+  );
+  assert.match(
+    exampleSource,
+    /dom\.educationalOutput\.replaceChildren\(\)/,
+  );
+  assert.match(
+    exampleSource,
+    /dom\.educationScenarioConfirmed\.checked = false/,
+  );
+  assert.match(
+    app,
+    /No default will be called user supplied/,
+  );
+  assert.match(
+    app,
+    /dom\.educationScenarioConfirmed\.checked = false/,
+  );
+  assert.match(app, /text:\s*"USER-SUPPLIED SCENARIO"/);
+  assert.match(
+    app,
+    /\[data-education-selected\], \[data-education-scenario\]/,
+  );
+
+  const selectorStart = app.indexOf(
+    "function educationLegSelector(saved)",
+  );
+  const selectorEnd = app.indexOf(
+    "function renderEducationalPlan",
+    selectorStart,
+  );
+  const selectorSource = app.slice(selectorStart, selectorEnd);
+  assert.doesNotMatch(selectorSource, /radio\.checked\s*=/);
+  assert.match(
+    selectorSource,
+    /Select exactly one allocation leg and choose Buy or Sell before creating a draft/,
+  );
+  assert.match(selectorSource, /for \(const side of \["BUY", "SELL"\]\)/);
+  assert.doesNotMatch(selectorSource, /\.checked\s*=\s*true/);
+  assert.match(selectorSource, /reveal\(feedback,\s*\{\s*focus:\s*true\s*\}\)/);
+  assert.ok(
+    selectorSource.indexOf("if (!legId || !side)") <
+      selectorSource.indexOf(
+        "void createEducationHandoff(",
+      ),
+  );
+
+  const handoffStart = app.indexOf(
+    "async function createEducationHandoff(",
+  );
+  const handoffEnd = app.indexOf(
+    "function activityEntries",
+    handoffStart,
+  );
+  const handoffSource = app.slice(handoffStart, handoffEnd);
+  assert.match(handoffSource, /["']\/api\/education\/handoff["']/);
+  assert.match(
+    handoffSource,
+    /body:\s*\{[\s\S]*?plan_id:[\s\S]*?revision:[\s\S]*?leg_id:\s*legId,[\s\S]*?side,/,
+  );
+  assert.doesNotMatch(
+    handoffSource,
+    /\/api\/advisor\/(?:plan|authorize)|\/api\/demo\/showcase/,
+  );
+
+  const renderStart = app.indexOf(
+    "function renderEducationHandoff(saved)",
+  );
+  const renderEnd = app.indexOf(
+    "async function saveEducational",
+    renderStart,
+  );
+  const renderSource = app.slice(renderStart, renderEnd);
+  assert.doesNotMatch(renderSource, /\brequestJson\(/);
+  assert.match(renderSource, /Edit in protected Advisor/);
+  assert.match(renderSource, /dom\.intentInput\.value = saved\.advisor_prefill/);
+  assert.match(renderSource, /Editable Guard defaults/);
+  assert.match(renderSource, /DRAFT CREATED · NOT AUTHORIZED/);
+
+  assert.match(
+    app,
+    /Locally curated summary of primary source unavailable\./,
+  );
+  assert.match(app, /Open canonical primary source/);
+  assert.match(app, /Market fact · \$\{product\.provenance/);
+  assert.match(
+    app,
+    /education\?\.provenance\?\.label/,
+  );
+  assert.match(app, /Catalog reviewed \$\{formatConnectionTime/);
+  assert.match(app, /content \$\{education\.content_digest\.slice/);
+  assert.doesNotMatch(
+    app,
+    /Locally curated primary-source summary unavailable/,
+  );
+  assert.match(
+    app,
+    /I can’t choose an asset for you, rank tokens, or assess suitability/,
+  );
+  assert.match(
+    app,
+    /capabilities\?\.educational_research === true[\s\S]*?capabilities\?\.portfolio_planning === true/,
+  );
+  assert.match(
+    html,
+    /data-start=["']research["'][^>]*data-education-capability|data-education-capability[^>]*data-start=["']research["']/i,
+  );
+  assert.match(
+    html,
+    /data-start=["']portfolio["'][^>]*data-education-capability|data-education-capability[^>]*data-start=["']portfolio["']/i,
+  );
+  assert.match(
+    styles,
+    /\.inline-example-button\s*\{[\s\S]*?min-height:\s*44px/,
+  );
+  for (const asset of ["BTC", "ETH", "SOL"]) {
+    assert.match(
+      html,
+      new RegExp(`${asset} allocation weight`, "i"),
+    );
+    assert.match(
+      html,
+      new RegExp(`${asset} scenario assumption`, "i"),
+    );
+  }
+  const educationStart = html.indexOf(
+    'id="educational-workspace"',
+  );
+  const educationEnd = html.indexOf(
+    'id="educational-output"',
+    educationStart,
+  );
+  const educationMarkup = html.slice(
+    educationStart,
+    educationEnd,
+  );
+  for (const asset of ["BTC", "ETH", "SOL"]) {
+    assert.ok(
+      educationMarkup.indexOf(asset) <
+        educationMarkup.indexOf(
+          `${asset} allocation weight`,
+        ),
+      `${asset} selection must precede its weight control in keyboard order`,
+    );
+    assert.ok(
+      educationMarkup.indexOf(
+        `${asset} allocation weight`,
+      ) <
+        educationMarkup.indexOf(
+          `${asset} scenario assumption`,
+        ),
+      `${asset} weight must precede its scenario control in keyboard order`,
+    );
+  }
 });
 
 test("credential onboarding is session-only, explicit, and clears both inputs before network use", () => {
@@ -279,6 +504,27 @@ test("frontend consumes normalized clarification and unsupported messages", () =
     normalizedMessageReads.length >= 2,
     "clarification and unsupported renderers must show the server DTO's precise message",
   );
+});
+
+test("activity merges and sorts session events with Guard history instead of hiding either stream", () => {
+  const start = app.indexOf("function activityEntries(payload)");
+  const end = app.indexOf("function activityMandate", start);
+  const source = app.slice(start, end);
+  assert.match(source, /payload\?\.session_activity/);
+  assert.match(source, /payload\?\.guard_history/);
+  assert.match(
+    source,
+    /\[\.\.\.sessionActivity,\s*\.\.\.guardHistory\]/,
+  );
+  assert.match(source, /activity_stream:\s*"SESSION_ACTIVITY"/);
+  assert.match(source, /activity_stream:\s*"GUARD_HISTORY"/);
+  assert.match(source, /\.sort\(/);
+  assert.doesNotMatch(
+    source,
+    /if \(Array\.isArray\(payload\?\.guard_history\)[\s\S]*?return payload\.guard_history/,
+  );
+  assert.match(app, /Guard history · View-only preflight/);
+  assert.match(app, /Guard history · Simulated dry run/);
 });
 
 test("mandate authorization is bound to the rendered plan and stale cards lock", () => {

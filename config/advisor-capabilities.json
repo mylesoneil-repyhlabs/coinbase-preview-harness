@@ -19,8 +19,8 @@
   "features": {
     "advisor": true,
     "conditional_plan_simulation": true,
-    "educational_research": false,
-    "portfolio_planning": false,
+    "educational_research": true,
+    "portfolio_planning": true,
     "post_pass_final_confirmation_readiness": false,
     "saved_plan_monitoring": false,
     "durable_executor": false,

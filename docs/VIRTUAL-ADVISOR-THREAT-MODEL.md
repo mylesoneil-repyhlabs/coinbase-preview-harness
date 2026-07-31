@@ -20,6 +20,9 @@
 The browser is not trusted to decide policy, arithmetic, evidence, or
 eligibility. The server never accepts a client-supplied decision, digest,
 permission attestation, Preview, receipt, or execution state as authoritative.
+It likewise rejects browser-supplied educational facts, provenance, source
+metadata, snapshots, plan status, and calculated results. Education mutations
+refer only to server-owned opaque plan IDs and exact revisions.
 
 ## Credential contract
 
@@ -63,6 +66,24 @@ permission attestation, Preview, receipt, or execution state as authoritative.
 - The advisor imports a dedicated View-only transport exposing only accounts,
   exact product, BBO, and `POST /orders/preview`. A dependency-closure test
   excludes the Coinbase execution adapter and any Create/order method.
+- Educational View-only facts are branded only inside a handler-private
+  authority from that injected transport. Public market normalization checks
+  shape but cannot establish Coinbase provenance. Direct normalized objects,
+  lookalikes, clones, or objects from another authority cannot become
+  `Coinbase observed`.
+- Education routes accept narrow allowlisted inputs only. Fixture and
+  View-only sources are explicit and exclusive; a missing, stale, partial, or
+  unavailable View-only response becomes `REVIEW` with no fixture fallback.
+  User-supplied scenario provenance requires explicit acknowledgement,
+  including for zero values.
+- Every revision resolves the current session-owned plan and source before
+  reading a complete fresh snapshot for the newly selected product set.
+  Provider recovery, asset additions, and expired evidence never reuse the
+  prior partial or stale snapshot.
+- Educational plans are session-owned and revisioned. A handoff accepts only
+  a current opaque plan ID, exact revision, exactly one leg, and an explicit
+  `BUY` or `SELL`. It atomically permits at most one editable draft and never
+  prepares, authorizes, preflights, or evaluates an advisor mandate.
 - Conditional-plan grants are server-owned and atomically consumed before an
   evidence request. Cancel, revoke, edit, and disconnect abort provider work;
   expiry is checked before result acceptance and discards a late result. None
@@ -135,6 +156,9 @@ Future execution requires all of:
 | Nonce replay or concurrent duplicate | Existing nonce claims and history | One current result or fail closed |
 | Conditional double-submit or cancel race | Atomic one-use consume; server cancel tombstone; late-result discard | One result, or `REVIEW`; never a second check |
 | Clock rollback after plan expiry | Sticky server-owned `EXPIRED` tombstone | Cannot revise, authorize, or restart |
+| Forged educational facts or provenance | Strict route DTOs plus handler-private View-only authority | Reject or `REVIEW`; never `Coinbase observed` |
+| Cross-session, stale, or forged education object | Opaque session-owned ID, exact revision and digest checks | Reject; no draft |
+| Implicit or repeated education handoff | Explicit one leg plus side; atomic one-handoff state | One editable unauthorized draft at most |
 | Forged PASS or confirmation | No final-confirmation route; future challenge requires pinned production proof | Remains `LOCKED` |
 | Double final confirmation | No final-confirmation route; future durable challenge must consume atomically | Remains `LOCKED` |
 | Kill-switch race or uncertain send | No send path; future executor requires epoch checks, durable journal, reconciliation | No order |
@@ -153,7 +177,13 @@ deletable.
 Advisor conditional plans are session-only non-executable planning objects in
 the current implementation. They are destroyed with the session or process
 and store no credential, account ID, provider body, or execution eligibility.
-Future portfolio persistence remains unimplemented.
+Educational plans, snapshots, editable draft handoffs, and redacted education
+activity are likewise session-only. They store allowlisted normalized facts,
+local IDs, revisions, and content digests—not raw provider bodies, account
+identifiers, credentials, or Guard authorization. Activity merges these
+session events with separately redacted CLI Guard history for display without
+changing either retention boundary. Portfolio persistence remains
+unimplemented.
 
 ## Deployment
 
