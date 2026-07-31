@@ -98,3 +98,22 @@ test("capacity eviction removes the least recently used session", () => {
   store.open();
   assert.deepEqual(evicted, ["second"]);
 });
+
+test("peek never allocates or extends a session", () => {
+  const time = clock();
+  const store = new AdvisorSessionStore({
+    idleTtlMs: 60_000,
+    absoluteTtlMs: 180_000,
+    now: time.now,
+  });
+
+  assert.equal(store.peek(), null);
+  assert.equal(store.peek("invalid"), null);
+  const session = store.open().session;
+  time.advance(59_999);
+  assert.equal(store.peek(session.token), session);
+  time.advance(1);
+  assert.equal(store.peek(session.token), null);
+  const replacement = store.open().session;
+  assert.notEqual(replacement.token, session.token);
+});

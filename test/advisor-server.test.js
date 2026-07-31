@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { listenAdvisorServer } from "../src/advisor/server.js";
+import { runGuardPreflight } from "../src/preflight.js";
 
 const COMPLETE_INTENT =
   "Using held USDC, buy up to 3,000 USDC of ETH on ETH-USDC once with a price-bounded IOC limit order and allow partial fills. Only if Coinbase's fresh best ask is at or below 3,000 USDC. Do not pay more than 35 bps above Coinbase's fresh best ask, more than 15 USDC in fees, or more than 3,015 USDC total. The authorization expires 10 minutes after I confirm it.";
@@ -60,7 +61,10 @@ function cookieFrom(response) {
 
 async function openSession(baseUrl) {
   const response = await httpRequest(baseUrl, {
-    pathname: "/api/activity",
+    pathname: "/api/advisor/plan",
+    method: "POST",
+    headers: sameOriginHeaders(baseUrl),
+    body: JSON.stringify({ intent: "Buy ETH" }),
   });
   assert.equal(response.status, 200);
   return cookieFrom(response);
@@ -129,7 +133,7 @@ test("loopback status is truthful, session-only, and protected by browser header
   assert.equal(status.session.idle_expires_after_seconds, 900);
   assert.equal(status.session.absolute_expires_after_seconds, 3600);
   assert.equal(status.capabilities.credential_free_dry_run, true);
-  assert.equal(status.capabilities.view_only_connection, false);
+  assert.equal(status.capabilities.view_only_connection, true);
   assert.equal(status.capabilities.conditional_plan_simulation, false);
   assert.equal(status.capabilities.conditional_plan_monitoring, false);
   assert.equal(status.capabilities.production_delta, false);
@@ -242,6 +246,48 @@ test("one explicit authorization runs a real credential-free dry run and cannot 
     "PLAN_NOT_AUTHORIZABLE",
   );
   assertLockedBoundary(repeated.json().boundary);
+});
+
+test("server view downgrades a claimed PASS when its exact receipt does not verify", async (t) => {
+  const directory = await temporaryHistory(t);
+  const running = await advisor(t, {
+    history: { directory },
+    async runPreflight(input) {
+      const result = await runGuardPreflight(input);
+      const record = structuredClone(result.record);
+      record.guard_receipt.receipt_digest = "0".repeat(64);
+      return { ...result, record };
+    },
+  });
+  const cookie = await openSession(running.url);
+  const headers = sameOriginHeaders(running.url, cookie);
+  const planned = await httpRequest(running.url, {
+    pathname: "/api/advisor/plan",
+    method: "POST",
+    headers,
+    body: JSON.stringify({ intent: COMPLETE_INTENT }),
+  });
+  const plan = planned.json().plan;
+
+  const authorized = await httpRequest(running.url, {
+    pathname: "/api/advisor/authorize",
+    method: "POST",
+    headers,
+    body: JSON.stringify({ plan_id: plan.plan_id }),
+  });
+
+  assert.equal(authorized.status, 200);
+  const { result } = authorized.json();
+  assert.equal(result.status, "REVIEW");
+  assert.equal(result.decision.outcome, "REVIEW");
+  assert.equal(
+    result.decision.code,
+    "ADVISOR_RECEIPT_UNVERIFIED",
+  );
+  assert.equal(result.delta.decision, "REVIEW");
+  assert.equal(result.delta.verifier_confirmed, false);
+  assert.equal(result.receipt.verified, false);
+  assertLockedBoundary(result.boundary);
 });
 
 test("showcase and safe-review endpoints expose honest simulated outcomes", async (t) => {

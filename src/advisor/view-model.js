@@ -164,10 +164,16 @@ function impactView(record) {
 function receiptView(record) {
   const receipt = record?.guard_receipt;
   if (!receipt) return null;
-  const verification = verifyGuardReceipt(receipt, record);
+  let verified = false;
+  try {
+    verified =
+      verifyGuardReceipt(receipt, record).verified === true;
+  } catch {
+    verified = false;
+  }
   return {
     receipt_digest: receipt.receipt_digest,
-    verified: verification.verified === true,
+    verified,
     issued_at: receipt.issued_at,
     expires_at: receipt.expires_at,
     mode: receipt.mode,
@@ -178,12 +184,40 @@ function receiptView(record) {
 }
 
 export function advisorGuardResultView(record) {
-  const decision = guardDecision(record, record?.guard_mode);
+  const rawDecision = guardDecision(record, record?.guard_mode);
+  const receipt = receiptView(record);
+  const decision =
+    rawDecision.outcome === "PASS" &&
+    receipt?.verified !== true
+      ? {
+          outcome: "REVIEW",
+          code: "ADVISOR_RECEIPT_UNVERIFIED",
+          reason:
+            "The protected result could not be verified against this exact check.",
+          recovery:
+            "Run a fresh protected check. No order was submitted.",
+        }
+      : rawDecision;
+  const viewOnly =
+    record?.guard_mode === "view_only_preflight";
+  const coinbaseContacted =
+    record?.boundary?.coinbase_contacted === true;
+  const completeCoinbasePreview =
+    coinbaseContacted && Boolean(record?.preview?.evidence);
   return {
     schema_version: "delta.coinbase.advisor_guard_result_view.v1",
     mode: record?.guard_mode ?? "dry_run",
-    source: SIMULATED_SOURCE,
-    status: record?.status ?? decision.outcome,
+    source: !viewOnly
+      ? SIMULATED_SOURCE
+      : completeCoinbasePreview
+        ? "COINBASE_VIEW_ONLY_READS_AND_PREVIEW"
+        : coinbaseContacted
+          ? "COINBASE_VIEW_ONLY_CHECK_INCOMPLETE"
+          : "VIEW_ONLY_NO_COINBASE_EVIDENCE",
+    status:
+      decision !== rawDecision
+        ? "REVIEW"
+        : record?.status ?? decision.outcome,
     mandate: mandateView(record?.policy, record?.action_descriptor),
     proposal: proposalView(record),
     decision: {
@@ -205,18 +239,24 @@ export function advisorGuardResultView(record) {
       preview_present: Boolean(record?.preview?.evidence),
     },
     delta: {
-      kind: "LOCAL_DELTA_SIMULATION",
+      kind: viewOnly
+        ? "LOCAL_DETERMINISTIC_PREFLIGHT"
+        : "LOCAL_DELTA_SIMULATION",
       production_delta_contacted: false,
-      decision: record?.delta?.decision ?? decision.outcome,
+      decision:
+        decision !== rawDecision
+          ? "REVIEW"
+          : record?.delta?.decision ?? decision.outcome,
       verifier_confirmed:
+        decision === rawDecision &&
         record?.delta?.verifier_confirmed === true,
     },
-    receipt: receiptView(record),
+    receipt,
     boundary: {
       create_available: false,
       order_submitted: false,
       money_moved: false,
-      coinbase_contacted: false,
+      coinbase_contacted: coinbaseContacted,
       one_use_status:
         record?.guard_receipt?.execution_boundary?.one_use_status ??
         "LOCKED",

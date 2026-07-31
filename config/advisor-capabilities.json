@@ -10,7 +10,7 @@
       "network_allowed": false
     },
     "view_only_preflight": {
-      "enabled": false,
+      "enabled": true,
       "credentials_required": true,
       "network_allowed": true,
       "local_loopback_only": true

@@ -6,6 +6,10 @@ const state = {
   currentPlan: null,
   currentResult: null,
   activityLoaded: false,
+  connectionLoaded: false,
+  connection: null,
+  selectedMode: "dry_run",
+  modeChoiceSequence: 0,
   pending: false,
   pendingRegion: null,
   pendingStatusNode: null,
@@ -20,6 +24,7 @@ const dom = {
   views: [...document.querySelectorAll("[data-view]")],
   quickStarts: [...document.querySelectorAll("[data-start]")],
   modeStatus: document.querySelector("#mode-status"),
+  advisorModeBadge: document.querySelector("#advisor-mode-badge"),
   connectionStatus: document.querySelector("#connection-status"),
   orderStatus: document.querySelector("#order-status"),
   serviceStatus: document.querySelector("#service-status"),
@@ -42,6 +47,23 @@ const dom = {
   ),
   decisionSnapshotReason: document.querySelector("#decision-snapshot-reason"),
   longRunningStatus: document.querySelector("#long-running-status"),
+  connectionState: document.querySelector("#connection-state"),
+  connectionStateIcon: document.querySelector("#connection-state-icon"),
+  connectionStateTitle: document.querySelector("#connection-state-title"),
+  connectionStateDescription: document.querySelector(
+    "#connection-state-description",
+  ),
+  connectionForm: document.querySelector("#connection-form"),
+  coinbaseKeyName: document.querySelector("#coinbase-key-name"),
+  coinbasePrivateKey: document.querySelector("#coinbase-private-key"),
+  connectButton: document.querySelector("#connect-button"),
+  connectedControls: document.querySelector("#connected-controls"),
+  connectionPermissions: document.querySelector("#connection-permissions"),
+  connectionVerifiedAt: document.querySelector("#connection-verified-at"),
+  connectionExpiresAt: document.querySelector("#connection-expires-at"),
+  disconnectButton: document.querySelector("#disconnect-button"),
+  connectionProgress: document.querySelector("#connection-progress"),
+  connectionFeedback: document.querySelector("#connection-feedback"),
 };
 
 function element(tagName, options = {}) {
@@ -131,7 +153,7 @@ function safeProviderMessage(payload, fallback) {
   if (!message) return fallback;
   const normalized = message.trim().slice(0, 260);
   if (
-    /private[\s_-]?key|bearer\s+|jwt|organizations\/[^/\s]+\/apiKeys\//i.test(
+    /private[\s_-]?key|begin[\s\S]*private key|bearer\s+|jwt|organizations\/[^/\s]+\/apiKeys\//i.test(
       normalized,
     )
   ) {
@@ -228,8 +250,10 @@ function setActionControlsDisabled(disabled) {
     }
     if (!actionControlState.has(control)) continue;
     const wasDisabled = actionControlState.get(control);
-    control.disabled = wasDisabled;
-    if (!wasDisabled) control.removeAttribute("aria-disabled");
+    const remainsLocked =
+      wasDisabled || control.dataset.guardLocked === "true";
+    control.disabled = remainsLocked;
+    if (!remainsLocked) control.removeAttribute("aria-disabled");
     actionControlState.delete(control);
   }
   dom.intentInput.readOnly = disabled;
@@ -367,6 +391,98 @@ function setGuardStep(stepName) {
     }[stepName] ?? "Ready";
 }
 
+function checkModeLabel(mode) {
+  return mode === "view_only_preflight"
+    ? "View-only preflight"
+    : "Dry-run simulation";
+}
+
+function setSelectedMode(mode) {
+  const nextMode =
+    mode === "view_only_preflight" && state.connection?.connected === true
+      ? "view_only_preflight"
+      : "dry_run";
+  state.selectedMode = nextMode;
+  dom.modeStatus.textContent =
+    nextMode === "view_only_preflight" ? "View only" : "Dry run";
+  dom.advisorModeBadge.textContent = checkModeLabel(nextMode);
+}
+
+function formatConnectionTime(value) {
+  if (typeof value !== "string" || !value) return "Time unavailable";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Time unavailable";
+  return date.toLocaleString();
+}
+
+function connectionStatusFrom(payload) {
+  const connection = payload?.connection ?? payload;
+  if (!connection || typeof connection !== "object") {
+    return { connected: false };
+  }
+  return connection;
+}
+
+function clearConnectionFeedback() {
+  dom.connectionFeedback.replaceChildren();
+}
+
+function showConnectionProgress(message) {
+  dom.connectionProgress.textContent = message;
+  dom.connectionProgress.hidden = false;
+}
+
+function hideConnectionProgress() {
+  dom.connectionProgress.hidden = true;
+  dom.connectionProgress.textContent = "";
+}
+
+function applyConnectionStatus(payload, { announceChange = false } = {}) {
+  const connection = connectionStatusFrom(payload);
+  const connected = connection.connected === true;
+  state.connectionLoaded = true;
+  state.connection = connected ? connection : { connected: false };
+  dom.connectionForm.hidden = connected;
+  dom.connectedControls.hidden = !connected;
+  dom.connectionState.classList.toggle("is-connected", connected);
+  dom.connectionStateIcon.textContent = connected ? "✓" : "○";
+  dom.connectionStateTitle.textContent = connected
+    ? "View only connected"
+    : "Not connected";
+  dom.connectionStateDescription.textContent = connected
+    ? "Coinbase accepted this session key with View permission and no Trade or Transfer permission. Each real preflight must still recheck that scope."
+    : "No Coinbase key is loaded. Credential-free dry runs stay fully available with labeled fixture data.";
+  dom.connectionStatus.textContent = connected
+    ? "Coinbase: View only"
+    : "Coinbase: off";
+
+  if (connected) {
+    const permissions = connection.permissions ?? {};
+    dom.connectionPermissions.textContent =
+      permissions.can_view === true &&
+      permissions.can_trade === false &&
+      permissions.can_transfer === false
+        ? "View yes · Trade no · Transfer no"
+        : "View-only scope verified";
+    dom.connectionVerifiedAt.textContent = formatConnectionTime(
+      connection.verified_at,
+    );
+    dom.connectionExpiresAt.textContent = formatConnectionTime(
+      connection.absolute_expires_at ?? connection.idle_expires_at,
+    );
+  } else if (state.selectedMode === "view_only_preflight") {
+    setSelectedMode("dry_run");
+  }
+
+  if (announceChange) {
+    announce(
+      connected
+        ? "View-only Coinbase data is connected for this local session. Dry run remains the default."
+        : "Coinbase disconnected and the in-memory key was erased. Dry run remains available.",
+    );
+  }
+}
+
 function plainNumber(value) {
   if (value === null || value === undefined || value === "") return "—";
   const text = String(value);
@@ -489,6 +605,13 @@ function invalidateMandateAuthorizations(label = "Superseded") {
     button.dataset.guardLocked = "true";
     button.setAttribute("aria-disabled", "true");
     button.textContent = label;
+    const artifact = button.closest(".artifact");
+    artifact?.classList.add("is-stale");
+    for (const input of artifact?.querySelectorAll("[data-mandate-mode]") ?? []) {
+      input.disabled = true;
+      input.dataset.guardLocked = "true";
+      input.setAttribute("aria-disabled", "true");
+    }
   }
   state.authorizeButtons.clear();
 }
@@ -619,6 +742,7 @@ function renderUnsupported(plan) {
 
 function renderMandate(plan) {
   const planId = plan?.plan_id;
+  setSelectedMode("dry_run");
   const policy = policyFromPlan(plan);
   const size = policy.size ?? {};
   const amountPrefix = size.operator === "MAX" ? "up to" : "exactly";
@@ -649,11 +773,84 @@ function renderMandate(plan) {
   artifact.append(header, definitionGrid(mandateRows(plan)));
 
   const footer = element("div", { className: "artifact__footer" });
-  footer.append(
-    element("p", {
-      text: "Authorization permits one dry-run check only. It does not authorize an order.",
-    }),
-  );
+  let selectedMode = () => "dry_run";
+  if (state.connection?.connected === true) {
+    const modePicker = element("fieldset", {
+      className: "check-mode-picker",
+    });
+    modePicker.append(
+      element("legend", {
+        text: "Choose one protected check",
+      }),
+    );
+    const choiceName = `check-mode-${++state.modeChoiceSequence}`;
+    const dryRunRadio = element("input", {
+      attributes: {
+        type: "radio",
+        name: choiceName,
+        value: "dry_run",
+        checked: "",
+        "data-mandate-mode": "dry_run",
+        "data-action-control": "guard",
+      },
+    });
+    const viewOnlyRadio = element("input", {
+      attributes: {
+        type: "radio",
+        name: choiceName,
+        value: "view_only_preflight",
+        "data-mandate-mode": "view_only_preflight",
+        "data-action-control": "guard",
+      },
+    });
+    const dryRunChoice = element("label", {
+      className: "check-mode-choice",
+    });
+    const dryRunCopy = element("span");
+    dryRunCopy.append(
+      element("strong", { text: "Dry run" }),
+      element("small", {
+        text: "Use labeled simulated facts; Coinbase is not contacted.",
+      }),
+    );
+    dryRunChoice.append(dryRunRadio, dryRunCopy);
+    const viewOnlyChoice = element("label", {
+      className: "check-mode-choice",
+    });
+    const viewOnlyCopy = element("span");
+    viewOnlyCopy.append(
+      element("strong", { text: "View-only preflight" }),
+      element("small", {
+        text: "Read fresh Coinbase balance, product, market, and one exact Preview. Preview is not an execution or price guarantee.",
+      }),
+    );
+    viewOnlyChoice.append(viewOnlyRadio, viewOnlyCopy);
+    modePicker.append(dryRunChoice, viewOnlyChoice);
+    selectedMode = () =>
+      viewOnlyRadio.checked ? "view_only_preflight" : "dry_run";
+    for (const radio of [dryRunRadio, viewOnlyRadio]) {
+      radio.addEventListener("change", () => {
+        const mode = selectedMode();
+        setSelectedMode(mode);
+        authorizeButton.textContent =
+          mode === "view_only_preflight"
+            ? "Authorize View-only preflight"
+            : "Authorize dry-run check";
+        announce(
+          mode === "view_only_preflight"
+            ? "View-only preflight selected for this mandate. Coinbase Preview is point in time; no order can be sent."
+            : "Credential-free dry run selected for this mandate. Coinbase will not be contacted.",
+        );
+      });
+    }
+    footer.append(modePicker);
+  } else {
+    footer.append(
+      element("p", {
+        text: "Authorization permits one credential-free dry-run check only. Connect an optional View-only key to choose real Coinbase preflight data. It never authorizes an order.",
+      }),
+    );
+  }
   const actions = element("div", { className: "artifact-actions" });
   const editButton = element("button", {
     className: "button button--ghost",
@@ -674,7 +871,7 @@ function renderMandate(plan) {
     announce("Edit the request, then prepare a new mandate.");
   });
   authorizeButton.addEventListener("click", () => {
-    void authorizePlan(planId, authorizeButton);
+    void authorizePlan(planId, authorizeButton, selectedMode());
   });
   if (planId) state.authorizeButtons.set(planId, authorizeButton);
   actions.append(editButton, authorizeButton);
@@ -685,7 +882,9 @@ function renderMandate(plan) {
   dom.guardState.textContent = "Awaiting you";
   reveal(artifact, { focus: true });
   announce(
-    "Mandate captured. Review every boundary, then authorize one dry-run check.",
+    state.connection?.connected === true
+      ? "Mandate captured. Review every boundary, choose Dry run or View-only preflight, then authorize one check."
+      : "Mandate captured. Review every boundary, then authorize one dry-run check.",
   );
 }
 
@@ -892,13 +1091,18 @@ function impactLabel(record) {
   return `Up to ${plainNumber(settlement)} ${policy.quote_asset ?? ""} debited · estimated ${plainNumber(preview.base_size)} ${policy.base_asset ?? ""} received · ${plainNumber(preview.commission_total)} ${policy.quote_asset ?? ""} fee`;
 }
 
-function provenanceLabel(record) {
-  const mode =
+function recordMode(record) {
+  return (
     record?.mode ??
     record?.guard_receipt?.mode ??
     record?.guard_mode ??
     record?.boundary?.mode ??
-    "dry_run";
+    "dry_run"
+  );
+}
+
+function provenanceLabel(record) {
+  const mode = recordMode(record);
   const checkedAt =
     record?.checked?.at ??
     record?.sources?.preview?.received_at ??
@@ -906,7 +1110,16 @@ function provenanceLabel(record) {
     record?.generated_at ??
     "time unavailable";
   if (mode === "view_only_preflight") {
-    return `Coinbase View-only balance, product, market, and Preview facts · checked ${checkedAt}`;
+    if (
+      record?.source ===
+      "COINBASE_VIEW_ONLY_READS_AND_PREVIEW"
+    ) {
+      return `Coinbase View-only balance, product, market, and Preview facts · checked ${checkedAt}`;
+    }
+    if (record?.boundary?.coinbase_contacted === true) {
+      return `Coinbase View-only check was contacted but complete facts and Preview were not verified · checked ${checkedAt}`;
+    }
+    return `No Coinbase evidence was used; the requested View-only check could not start · checked ${checkedAt}`;
   }
   return `Labeled simulated balance, product, market, and Preview facts · checked ${checkedAt}`;
 }
@@ -932,16 +1145,11 @@ function receiptDetails(record) {
 }
 
 function resultBoundary(record, outcome) {
-  const mode =
-    record?.mode ??
-    record?.guard_receipt?.mode ??
-    record?.guard_mode ??
-    record?.boundary?.mode ??
-    "dry_run";
+  const mode = recordMode(record);
   if (mode === "view_only_preflight") {
     return outcome === "PASS"
-      ? "View-only point-in-time preflight. Not Delta authorization; no Create route, order, or money movement."
-      : "View-only verification stopped safely. No execution grant, Create route, order, or money movement.";
+      ? "Coinbase View-only point-in-time preflight plus local deterministic Guard evaluation. Production Delta was not contacted. Preview is not an execution or price guarantee; no Create route, order, or money movement."
+      : "View-only verification stopped safely without fallback. No execution grant, Create route, order, or money movement.";
   }
   if (typeof record?.boundary?.statement === "string") {
     return record.boundary.statement;
@@ -973,6 +1181,7 @@ function renderResult(resultPayload, target = dom.conversation) {
     resultPayload?.result ??
     resultPayload;
   state.currentResult = record;
+  setSelectedMode(recordMode(record));
   const outcome = resultOutcome(record);
   const outcomeClass = outcome.toLowerCase();
   const reason = resultReason(record, outcome);
@@ -1147,7 +1356,7 @@ async function prepareMandate(event) {
   return payload;
 }
 
-async function authorizePlan(planId, button) {
+async function authorizePlan(planId, button, mode = "dry_run") {
   if (state.pending) {
     announce(
       "A protected check is already running. No authorization was changed.",
@@ -1165,11 +1374,29 @@ async function authorizePlan(planId, button) {
     );
     return;
   }
+  if (!["dry_run", "view_only_preflight"].includes(mode)) {
+    addError(
+      "Choose one supported check mode before authorizing. Nothing was submitted.",
+    );
+    return;
+  }
+  if (
+    mode === "view_only_preflight" &&
+    state.connection?.connected !== true
+  ) {
+    addError(
+      "The View-only session is not connected. Reconnect or explicitly choose Dry run; the Guard will not fall back automatically.",
+    );
+    return;
+  }
   invalidateMandateAuthorizations("Authorization used");
   state.currentPlan = null;
+  setSelectedMode(mode);
   addMessage(
     "user",
-    "Authorize this mandate for one protected dry-run check.",
+    mode === "view_only_preflight"
+      ? "Authorize this mandate for one protected View-only preflight."
+      : "Authorize this mandate for one protected dry-run check.",
     "This authorizes evaluation only · not an order",
   );
   setGuardStep("proposal");
@@ -1177,10 +1404,13 @@ async function authorizePlan(planId, button) {
     try {
       const response = await requestJson("/api/advisor/authorize", {
         method: "POST",
-        body: { plan_id: planId },
+        body: { plan_id: planId, mode },
       });
       setGuardStep("decision");
       renderResult(response?.result ?? response);
+      if (mode === "view_only_preflight") {
+        await loadConnection();
+      }
     } catch (error) {
       addError(
         error instanceof Error
@@ -1410,6 +1640,7 @@ function renderActivity(payload) {
       }),
     );
     const summary = element("div");
+    const viewOnly = entry?.mode === "view_only_preflight";
     summary.append(
       element("h2", { text: activityMandate(entry) }),
       element("p", {
@@ -1419,7 +1650,9 @@ function renderActivity(payload) {
           "Redacted Guard decision",
       }),
       element("p", {
-        text: "Redacted local evidence · no credential · no order submitted",
+        text: viewOnly
+          ? "Redacted normalized facts · credential never retained in history · no order submitted"
+          : "Labeled simulated facts · no credential used · no order submitted",
       }),
     );
     const normalizedOutcome = ["PASS", "BLOCK", "REVIEW"].includes(outcome)
@@ -1498,29 +1731,168 @@ function handleQuickStart(event) {
   }
 }
 
+async function loadConnection({ reportFailure = false } = {}) {
+  if (!state.connectionLoaded) {
+    showConnectionProgress(
+      "Checking this local session. No credential is sent by this status check.",
+    );
+  }
+  try {
+    const payload = await requestJson("/api/connection");
+    applyConnectionStatus(payload);
+    clearConnectionFeedback();
+    return payload;
+  } catch (error) {
+    state.connectionLoaded = true;
+    state.connection = { connected: false };
+    applyConnectionStatus(state.connection);
+    if (reportFailure) {
+      clearConnectionFeedback();
+      addError(
+        error instanceof Error
+          ? error.message
+          : "The local View-only connection status is unavailable. Dry run remains available.",
+        dom.connectionFeedback,
+      );
+    }
+    return null;
+  } finally {
+    hideConnectionProgress();
+  }
+}
+
+async function connectViewOnly(event) {
+  event.preventDefault();
+  if (state.pending) {
+    announce(
+      "Another protected check is running. No connection or mandate was changed.",
+    );
+    return null;
+  }
+
+  const name = dom.coinbaseKeyName.value.trim();
+  const privateKey = dom.coinbasePrivateKey.value;
+  dom.coinbaseKeyName.value = "";
+  dom.coinbasePrivateKey.value = "";
+  clearConnectionFeedback();
+
+  if (!name || !privateKey) {
+    addError(
+      "Enter both the full Coinbase API key name and its EC private key. The fields have been cleared; nothing was stored.",
+      dom.connectionFeedback,
+    );
+    dom.coinbaseKeyName.focus();
+    return null;
+  }
+
+  showConnectionProgress(
+    "Testing View-only permission with Coinbase. Trade and Transfer must both be off. No order can be sent.",
+  );
+  return runPending(
+    dom.connectButton,
+    "Testing View only…",
+    async () => {
+      try {
+        const payload = await requestJson("/api/connection/connect", {
+          method: "POST",
+          body: { name, privateKey },
+        });
+        invalidateMandateAuthorizations("Connection changed");
+        state.currentPlan = null;
+        setSelectedMode("dry_run");
+        applyConnectionStatus(payload, { announceChange: true });
+        const success = element("p", {
+          className: "notice notice--green",
+          text: "Connection tested. View-only preflight is available for an explicitly selected mandate; Dry run remains the default. No order can be sent.",
+          attributes: { role: "status" },
+        });
+        dom.connectionFeedback.replaceChildren(success);
+        return payload;
+      } catch (error) {
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The View-only permission test stopped safely. The fields were cleared and no order was submitted.",
+          dom.connectionFeedback,
+        );
+        return null;
+      } finally {
+        hideConnectionProgress();
+      }
+    },
+  );
+}
+
+async function disconnectViewOnly() {
+  if (state.pending) {
+    announce(
+      "Another protected check is running. The connection was not changed.",
+    );
+    return null;
+  }
+  clearConnectionFeedback();
+  showConnectionProgress(
+    "Erasing the Coinbase credential reference from this local session…",
+  );
+  return runPending(
+    dom.disconnectButton,
+    "Disconnecting safely…",
+    async () => {
+      try {
+        const payload = await requestJson("/api/connection/disconnect", {
+          method: "POST",
+          body: {},
+        });
+        invalidateMandateAuthorizations("Connection changed");
+        state.currentPlan = null;
+        setSelectedMode("dry_run");
+        applyConnectionStatus(payload, { announceChange: true });
+        const success = element("p", {
+          className: "notice notice--green",
+          text: "Disconnected. The local session key reference was erased; credential-free Dry run remains available.",
+          attributes: { role: "status" },
+        });
+        dom.connectionFeedback.replaceChildren(success);
+        return payload;
+      } catch (error) {
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The local Guard could not confirm disconnection. Stop the local server to erase its process memory.",
+          dom.connectionFeedback,
+        );
+        return null;
+      } finally {
+        hideConnectionProgress();
+      }
+    },
+  );
+}
+
 async function loadStatus() {
   try {
     const payload = await requestJson("/api/status");
     const status = payload?.status ?? payload;
-    dom.modeStatus.textContent =
-      status?.mode_label ??
-      (status?.mode === "view_only_preflight" ? "View only" : "Dry run");
-    dom.connectionStatus.textContent =
-      status?.coinbase_connected === true
-        ? "Coinbase: View only"
-        : "Coinbase: off";
+    setSelectedMode("dry_run");
     dom.orderStatus.textContent = "Orders off";
-    dom.serviceStatus.textContent = "Local Guard status: ready";
+    dom.serviceStatus.textContent =
+      status?.ready === false
+        ? "Local Guard status: limited"
+        : "Local Guard status: ready";
   } catch {
-    dom.modeStatus.textContent = "Dry run";
-    dom.connectionStatus.textContent = "Coinbase: off";
+    setSelectedMode("dry_run");
     dom.orderStatus.textContent = "Orders off";
     dom.serviceStatus.textContent = "Local Guard status: unavailable";
   }
 }
 
 for (const tab of dom.navTabs) {
-  tab.addEventListener("click", () => navigate(tab.dataset.viewTarget));
+  tab.addEventListener("click", () => {
+    navigate(tab.dataset.viewTarget);
+    if (tab.dataset.viewTarget === "connection") {
+      void loadConnection({ reportFailure: true });
+    }
+  });
 }
 
 document.addEventListener("click", (event) => {
@@ -1569,4 +1941,12 @@ dom.refreshActivityButton.addEventListener("click", () => {
   void loadActivity();
 });
 
-void loadStatus();
+dom.connectionForm.addEventListener("submit", (event) => {
+  void connectViewOnly(event);
+});
+
+dom.disconnectButton.addEventListener("click", () => {
+  void disconnectViewOnly();
+});
+
+void Promise.all([loadStatus(), loadConnection()]);

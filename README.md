@@ -24,17 +24,22 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-Sprint 1 now includes an actual dependency-free local frontend and same-origin
-loopback service. It is not a screenshot or a fake banking dashboard. A user
-can state one spot BUY or SELL, inspect the closed mandate, authorize one dry
-run, and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
+Sprints 1 and 2 now include an actual dependency-free local frontend,
+same-origin loopback service, and optional session-only Coinbase View
+connection. It is not a screenshot or a fake banking dashboard. A user can
+state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
+credential-free dry run or connected View-only preflight, authorize one check,
+and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
 impact, checked facts, locally verified receipt, recovery action, and
 `NO ORDER SUBMITTED` boundary.
 
 The deliberate fixture story shows an agent proposal outside the mandate,
 Delta blocking it, one bounded revision, and the revised exact proposal
 passing. The default flow still uses labeled simulation and contacts neither
-Coinbase nor production Delta.
+Coinbase nor production Delta. A View-only preflight uses real Coinbase
+permissions, balances, product, BBO, and Preview when the user supplies a
+normal View-only key; its policy decision is still local deterministic Guard
+evaluation, not production Delta.
 
 ### Run the advisor locally
 
@@ -54,22 +59,48 @@ The first page needs no credential. Leave the composer empty and choose
 your own spot request. Nothing is authorized until the exact mandate card is
 reviewed and its one-check control is selected.
 
+### Optional View-only connection in the advisor
+
+Open **Connection** only if you want real Coinbase account/product/Preview
+facts. Enter the full normal-user CDP API key name and its ECDSA P-256 private
+key directly in the local page, then choose **Connect and test View only**.
+This is not OAuth. The fields are cleared before the request is sent; the
+credential is held only by the loopback server process, never browser storage,
+Guard history, logs, the repository, or remote telemetry.
+
+The server accepts only a key for which Coinbase reports View on and Trade and
+Transfer off. It rechecks that permission before every View-only preflight.
+Disconnect erases the in-process reference. It also expires after 15 minutes
+idle, 60 minutes absolute, or server exit. JavaScript strings cannot be
+guaranteed to be zeroized, so this is a non-persistence boundary, not a
+cryptographic-erasure claim.
+
+After connection, return to the mandate card and explicitly choose **View-only
+preflight**. Dry run remains the default. A requested View-only check never
+falls back to fixtures: a missing, expired, revoked, over-scoped, stale,
+partial, rate-limited, or unavailable source returns `REVIEW — unable to
+verify`. Coinbase Preview is point-in-time evidence, not an order or price
+guarantee.
+
 Current advisor-development capability status comes from
 [`config/advisor-capabilities.json`](config/advisor-capabilities.json):
 
 - credential-free protected spot dry run: enabled;
+- optional local/session-only Coinbase View connection and exact View-only
+  preflight: enabled;
 - meaningful simulated `BLOCK → retry → PASS` and unable-to-verify `REVIEW`:
   enabled;
-- private session activity and existing redacted Guard history: enabled;
+- private redacted session activity and existing CLI Guard history: enabled;
 - browser credential storage, Coinbase Create, order submission, production
   Delta, and money movement: unavailable;
-- advisor View-only connection, saved conditional plans, research, portfolio
-  planning, and post-PASS confirmation readiness: not yet enabled at the
-  Sprint 1 milestone.
+- saved conditional plans, research, portfolio planning, and post-PASS live
+  readiness: not yet enabled at the Sprint 2 milestone.
 
 The public release remains v1.5.3 until all eight advisor sprints, release
 archive checks, and CI gates are complete. The existing v1.5 CLI/skill
-View-only preflight remains separate and unchanged during this milestone.
+View-only preflight remains available as the file-based developer path. No
+real credential was used during advisor release testing; all provider calls
+were injected fakes and no external network was contacted.
 
 ## The first experience
 
@@ -524,6 +555,9 @@ config/execution-safety-profile.json     future 5-USDC live-test ceiling
 src/intent-compiler.js                   closed natural-language compiler
 src/preflight.js                         single dry-run/View-only orchestrator
 src/coinbase-rest.js                     allowlisted View-only client
+src/coinbase-view-only-rest.js           advisor-only View transport
+src/advisor/                              local server, sessions, and view models
+web/                                      dependency-free advisor frontend
 src/funding.js                           held-fund and portfolio checks
 src/execution-policy.js                  proposal and Preview checks
 src/execution-pipeline.js                exact proposal/evidence controller

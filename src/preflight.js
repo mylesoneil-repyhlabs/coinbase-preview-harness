@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createCoinbaseViewOnlyPreflightAdapter } from "./coinbase-rest.js";
+import { createCoinbaseViewOnlyPreflightAdapter } from "./coinbase-view-only-rest.js";
 import { createBoundExecution } from "./execution-binding.js";
 import { createExecutionConfirmation } from "./execution-confirmation.js";
 import {
@@ -243,6 +243,46 @@ function viewCredentialReviewError(error) {
   });
 }
 
+function validateVerifiedViewCredential(verified) {
+  const attestation = verified?.attestation;
+  const credentials = verified?.credentials;
+  if (
+    !verified ||
+    typeof verified !== "object" ||
+    !attestation ||
+    typeof attestation !== "object" ||
+    attestation.schema !==
+      "delta.coinbase.view_permission_attestation.v2" ||
+    attestation.can_view !== true ||
+    attestation.can_trade !== false ||
+    attestation.can_transfer !== false ||
+    !/^[a-f0-9]{64}$/.test(
+      attestation.key_fingerprint ?? "",
+    ) ||
+    !/^[a-f0-9]{64}$/.test(
+      attestation.portfolio_fingerprint ?? "",
+    ) ||
+    !credentials ||
+    typeof credentials !== "object" ||
+    typeof credentials.keyId !== "string" ||
+    !credentials.keyId ||
+    typeof credentials.privateKey !== "string" ||
+    !credentials.privateKey
+  ) {
+    throw reviewError(
+      "VIEW_ONLY_SESSION_MATERIAL_UNAVAILABLE",
+      "The local View-only connection did not provide a verified credential scope",
+      {
+        stage: "VIEW_ONLY_CREDENTIAL",
+        retryable: false,
+        recovery:
+          "Reconnect a View-only Coinbase key in this local session. No order was submitted.",
+      },
+    );
+  }
+  return verified;
+}
+
 function receiptSummary(entry) {
   return {
     receipt_digest: entry.receipt.receipt_digest,
@@ -271,6 +311,11 @@ export async function runGuardPreflight({
   plan,
   confirmPolicyDigest,
   viewKeyFile = null,
+  verifiedViewCredential = null,
+  viewOnlyRequested = false,
+  viewCredentialError = null,
+  assertViewCredentialCurrent = null,
+  viewAdapterSignal = null,
   nonce = randomUUID(),
   progress = () => {},
   now = () => new Date(),
@@ -280,9 +325,15 @@ export async function runGuardPreflight({
   runPipeline = runExecutionPipeline,
   loadCapabilityProfile = loadPreviewCapabilityProfile,
 } = {}) {
-  const mode = viewKeyFile
-    ? GUARD_MODES.VIEW_ONLY_PREFLIGHT
-    : GUARD_MODES.DRY_RUN;
+  const viewCredentialSourceCount =
+    (viewKeyFile ? 1 : 0) +
+    (verifiedViewCredential == null ? 0 : 1);
+  const mode =
+    viewOnlyRequested !== false ||
+    viewCredentialError != null ||
+    viewCredentialSourceCount > 0
+      ? GUARD_MODES.VIEW_ONLY_PREFLIGHT
+      : GUARD_MODES.DRY_RUN;
   if (!isValidRetryNonce(nonce)) {
     const receiptNonce = invalidNonceReceiptToken(nonce);
     const record = failedPreflightRecord(
@@ -334,14 +385,85 @@ export async function runGuardPreflight({
       "VIEW ONLY · reading only key permissions, balances, this product, BBO, and Preview. No order can be sent.",
     );
     try {
-      verified = await withProgress(
-        progress,
-        "Checking that the supplied Coinbase key is View-only.",
-        () =>
-          verifyViewCredentials(viewKeyFile, fetch, {
-            persistAttestation: false,
-          }),
-      );
+      if (viewOnlyRequested !== false && viewOnlyRequested !== true) {
+        throw reviewError(
+          "VIEW_ONLY_MODE_REQUEST_INVALID",
+          "The requested preflight mode is invalid",
+          {
+            stage: "VIEW_ONLY_CREDENTIAL",
+            retryable: false,
+            recovery:
+              "Choose either a protected dry run or View-only preflight. No order was submitted.",
+          },
+        );
+      }
+      if (viewCredentialError != null) {
+        if (viewCredentialSourceCount !== 0) {
+          throw reviewError(
+            "VIEW_ONLY_CREDENTIAL_SOURCE_CONFLICT",
+            "Choose one View-only credential source",
+            {
+              stage: "VIEW_ONLY_CREDENTIAL",
+              retryable: false,
+              recovery:
+                "Reconnect the local View-only session and retry. No order was submitted.",
+            },
+          );
+        }
+        throw viewCredentialError;
+      }
+      if (viewCredentialSourceCount === 0) {
+        throw reviewError(
+          "VIEW_ONLY_SESSION_NOT_CONNECTED",
+          "No local View-only Coinbase connection is active",
+          {
+            stage: "VIEW_ONLY_CREDENTIAL",
+            retryable: false,
+            recovery:
+              "Reconnect a View-only Coinbase key in this local session. No order was submitted.",
+          },
+        );
+      }
+      if (viewCredentialSourceCount > 1) {
+        throw reviewError(
+          "VIEW_ONLY_CREDENTIAL_SOURCE_CONFLICT",
+          "Choose one View-only credential source",
+          {
+            stage: "VIEW_ONLY_CREDENTIAL",
+            retryable: false,
+            recovery:
+              "Use either the local session connection or an external key file, never both. No order was submitted.",
+          },
+        );
+      }
+      if (
+        assertViewCredentialCurrent != null &&
+        typeof assertViewCredentialCurrent !== "function"
+      ) {
+        throw reviewError(
+          "VIEW_ONLY_SESSION_ASSERTION_INVALID",
+          "The local View-only connection assertion is unavailable",
+          {
+            stage: "VIEW_ONLY_CREDENTIAL",
+            retryable: false,
+            recovery:
+              "Reconnect a View-only Coinbase key in this local session. No order was submitted.",
+          },
+        );
+      }
+      verified =
+        verifiedViewCredential == null
+          ? await withProgress(
+              progress,
+              "Checking that the supplied Coinbase key is View-only.",
+              () =>
+                verifyViewCredentials(viewKeyFile, fetch, {
+                  persistAttestation: false,
+                }),
+            )
+          : validateVerifiedViewCredential(
+              verifiedViewCredential,
+            );
     } catch (error) {
       const credentialError = viewCredentialReviewError(error);
       const record = failedPreflightRecord(
@@ -557,7 +679,10 @@ export async function runGuardPreflight({
     const [capabilityProfile, coinbase] = await Promise.all([
       loadCapabilityProfile(),
       Promise.resolve(
-        createViewAdapter(verified.credentials, { timeoutMs: 5_000 }),
+        createViewAdapter(verified.credentials, {
+          timeoutMs: 5_000,
+          signal: viewAdapterSignal,
+        }),
       ),
     ]);
     try {
@@ -598,6 +723,36 @@ export async function runGuardPreflight({
             credential_fingerprint:
               verified.attestation.key_fingerprint,
           },
+        },
+      );
+    }
+  }
+  if (
+    mode === GUARD_MODES.VIEW_ONLY_PREFLIGHT &&
+    typeof assertViewCredentialCurrent === "function"
+  ) {
+    try {
+      await assertViewCredentialCurrent();
+    } catch (error) {
+      record = failedPreflightRecord(
+        plan,
+        viewCredentialReviewError(error),
+        {
+          mode,
+          nonce,
+          now: now(),
+          confirmPolicyDigest,
+          confirmationMatched: true,
+          coinbaseContacted:
+            record?.boundary?.coinbase_contacted === true,
+          credentialBinding: verified
+            ? {
+                portfolio_fingerprint:
+                  verified.attestation.portfolio_fingerprint,
+                credential_fingerprint:
+                  verified.attestation.key_fingerprint,
+              }
+            : null,
         },
       );
     }

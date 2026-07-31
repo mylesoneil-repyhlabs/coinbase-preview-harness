@@ -8,7 +8,11 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCoinbaseDemo } from "../coinbase-demo.js";
+import {
+  createCoinbaseViewOnlyPreflightAdapter,
+} from "../coinbase-view-only-rest.js";
 import { readHistory } from "../dry-run-history.js";
+import { GuardDecisionError } from "../guard-errors.js";
 import { createExecutionPlan } from "../plan.js";
 import { runGuardPreflight } from "../preflight.js";
 import { productionExecutionStatus } from "../integration/production-composition.js";
@@ -20,9 +24,13 @@ import {
   AdvisorSessionStore,
   appendActivity,
   isSessionToken,
+  registerSessionDisposer,
   rememberPlan,
 } from "./session-store.js";
 import { createSimulatedReviewFixture } from "./review-fixture.js";
+import {
+  createInMemoryViewCredentialProvider,
+} from "./view-only-credential-provider.js";
 import {
   advisorActivityView,
   advisorGuardResultView,
@@ -38,6 +46,14 @@ const SESSION_COOKIE = "delta_advisor_session";
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_STATIC_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
+const ADVISOR_POST_ROUTES = new Set([
+  "/api/advisor/plan",
+  "/api/advisor/authorize",
+  "/api/connection/connect",
+  "/api/connection/disconnect",
+  "/api/demo/showcase",
+  "/api/demo/review",
+]);
 const LOOPBACK_HOST_PATTERN =
   /^(?:127\.0\.0\.1|localhost)(?::(0|[1-9]\d{0,4}))?$/;
 
@@ -124,6 +140,97 @@ function strictFields(value, allowed, name) {
     );
   }
   return value;
+}
+
+function connectionHttpError(error) {
+  const code =
+    error instanceof GuardDecisionError &&
+    typeof error.code === "string"
+      ? error.code
+      : "VIEW_ONLY_CONNECTION_UNAVAILABLE";
+  if (code === "VIEW_ONLY_CREDENTIAL_MALFORMED") {
+    return new HttpError(
+      400,
+      code,
+      "Use one Coinbase CDP ECDSA P-256 key name and private key.",
+    );
+  }
+  if (
+    [
+      "VIEW_ONLY_CREDENTIAL_REJECTED",
+      "VIEW_ONLY_PERMISSION_REJECTED",
+      "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+    ].includes(code)
+  ) {
+    return new HttpError(
+      422,
+      code,
+      "Coinbase did not confirm a safe View-only scope. Trade and Transfer must be off.",
+    );
+  }
+  if (
+    [
+      "VIEW_ONLY_PERMISSION_RATE_LIMITED",
+      "VIEW_ONLY_PERMISSION_OUTAGE",
+      "VIEW_ONLY_PERMISSION_TIMEOUT",
+    ].includes(code)
+  ) {
+    return new HttpError(
+      503,
+      code,
+      "Coinbase could not verify the View-only key right now. Nothing was stored; try again.",
+    );
+  }
+  return new HttpError(
+    422,
+    code,
+    "The local View-only connection stopped safely. Nothing was stored and no order was submitted.",
+  );
+}
+
+function verifiedCredentialEnvelope({
+  attestation,
+  credentials,
+}) {
+  const result = { attestation };
+  Object.defineProperty(result, "credentials", {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: credentials,
+  });
+  return Object.freeze(result);
+}
+
+function disconnectedConnectionStatus() {
+  return Object.freeze({
+    schema_version:
+      "delta.coinbase.advisor_view_only_connection.v1",
+    connected: false,
+    mode: "view_only_preflight",
+    storage: "server_process_memory_only",
+    create_available: false,
+    no_order_submitted: true,
+  });
+}
+
+function connectionResponse(connection) {
+  return {
+    schema_version:
+      "delta.coinbase.advisor_connection_response.v1",
+    connection,
+    boundary: {
+      mode: "view_only_preflight",
+      local_session_only: true,
+      browser_storage: false,
+      persistent_storage: false,
+      create_available: false,
+      order_submitted: false,
+      money_moved: false,
+      statement:
+        "View only can read permissions, held balances, one product, BBO, and one exact Preview. Preview is not an order or price guarantee.",
+    },
+  };
 }
 
 async function readJson(request, { allowEmpty = false } = {}) {
@@ -365,6 +472,10 @@ export function createAdvisorRequestHandler({
   runShowcase = runCoinbaseDemo,
   createReview = createSimulatedReviewFixture,
   readGuardHistory = readHistory,
+  createViewCredentialProvider = () =>
+    createInMemoryViewCredentialProvider(),
+  createViewOnlyAdapter =
+    createCoinbaseViewOnlyPreflightAdapter,
   capabilityProfile = loadAdvisorCapabilities(),
   maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS,
 } = {}) {
@@ -380,6 +491,43 @@ export function createAdvisorRequestHandler({
   const statusCapabilities = advisorStatusCapabilities(
     capabilityProfile,
   );
+  if (typeof createViewCredentialProvider !== "function") {
+    throw new Error(
+      "Advisor View-only provider factory must be a function",
+    );
+  }
+  if (typeof createViewOnlyAdapter !== "function") {
+    throw new Error(
+      "Advisor View-only adapter factory must be a function",
+    );
+  }
+  const credentialProviders = new WeakMap();
+  function credentialProviderFor(session, { create = true } = {}) {
+    let provider = credentialProviders.get(session);
+    if (provider) return provider;
+    if (!create) return null;
+    provider = createViewCredentialProvider();
+    if (
+      !provider ||
+      typeof provider.connect !== "function" ||
+      typeof provider.status !== "function" ||
+      typeof provider.disconnect !== "function" ||
+      typeof provider.withVerifiedCredential !== "function"
+    ) {
+      throw new Error(
+        "Advisor View-only provider contract is invalid",
+      );
+    }
+    credentialProviders.set(session, provider);
+    registerSessionDisposer(session, () => {
+      try {
+        provider.disconnect();
+      } finally {
+        credentialProviders.delete(session);
+      }
+    });
+    return provider;
+  }
   let activeRequests = 0;
   return async function advisorRequestHandler(request, response) {
     let cookieHeader = {};
@@ -441,22 +589,242 @@ export function createAdvisorRequestHandler({
             money_moved: false,
           },
           boundary:
-            "Simulation only. No credentials, Coinbase contact, Create, order, or money movement.",
+            "Dry run: No credentials are needed. An optional local View-only session can read Coinbase facts and Preview; Create, orders, and money movement remain unavailable.",
         });
         return;
       }
 
-      const opened = sessionStore.open(
-        parseSessionCookie(request.headers.cookie),
+      if (
+        request.method === "GET" &&
+        pathname === "/api/connection"
+      ) {
+        const token = parseSessionCookie(
+          request.headers.cookie,
+        );
+        const session =
+          typeof sessionStore.peek === "function"
+            ? sessionStore.peek(token)
+            : null;
+        const provider =
+          session == null
+            ? null
+            : credentialProviderFor(session, {
+                create: false,
+              });
+        safeJson(
+          response,
+          200,
+          connectionResponse(
+            provider?.status() ??
+              disconnectedConnectionStatus(),
+          ),
+        );
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        pathname === "/api/activity"
+      ) {
+        const token = parseSessionCookie(
+          request.headers.cookie,
+        );
+        const session =
+          typeof sessionStore.peek === "function"
+            ? sessionStore.peek(token)
+            : null;
+        let entries;
+        try {
+          entries = await readGuardHistory({
+            limit: 20,
+            ...history,
+          });
+        } catch {
+          throw new HttpError(
+            503,
+            "HISTORY_UNAVAILABLE",
+            "Local Guard history is temporarily unavailable.",
+          );
+        }
+        safeJson(response, 200, {
+          schema_version:
+            "delta.coinbase.advisor_activity.v1",
+          session_activity: advisorActivityView(
+            session?.activity ?? [],
+          ),
+          guard_history: advisorHistoryView(entries),
+          boundary: {
+            local_only: true,
+            create_available: false,
+            order_submitted: false,
+            money_moved: false,
+          },
+        });
+        return;
+      }
+
+      if (
+        request.method !== "POST" ||
+        !ADVISOR_POST_ROUTES.has(pathname)
+      ) {
+        if (
+          request.method === "POST" ||
+          request.method === "GET"
+        ) {
+          throw new HttpError(
+            404,
+            "API_ROUTE_NOT_FOUND",
+            "That advisor action is not available.",
+          );
+        }
+        throw new HttpError(
+          405,
+          "METHOD_NOT_ALLOWED",
+          "Method not allowed.",
+        );
+      }
+
+      const suppliedToken = parseSessionCookie(
+        request.headers.cookie,
       );
-      const session = opened.session;
-      cookieHeader = {
-        "Set-Cookie": sessionCookie(
+      const existingSession =
+        typeof sessionStore.peek === "function"
+          ? sessionStore.peek(suppliedToken)
+          : null;
+      if (
+        pathname === "/api/connection/disconnect" &&
+        existingSession == null
+      ) {
+        strictFields(
+          await readJson(request, { allowEmpty: true }),
+          [],
+          "View-only disconnect request",
+        );
+        safeJson(
+          response,
+          200,
+          connectionResponse(
+            disconnectedConnectionStatus(),
+          ),
+        );
+        return;
+      }
+      if (
+        pathname === "/api/advisor/authorize" &&
+        existingSession == null
+      ) {
+        throw new HttpError(
+          404,
+          "PLAN_NOT_FOUND",
+          "This mandate is not available in the current local session.",
+        );
+      }
+
+      let session = existingSession;
+      if (session != null) {
+        session = sessionStore.open(suppliedToken).session;
+      } else if (
+        pathname === "/api/advisor/plan" ||
+        pathname === "/api/connection/connect"
+      ) {
+        session = sessionStore.open(null).session;
+      } else {
+        session = {
+          plans: new Map(),
+          activity: [],
+        };
+      }
+      if (isSessionToken(session.token)) {
+        cookieHeader = {
+          "Set-Cookie": sessionCookie(
+            session,
+            sessionStore,
+            secureCookies,
+          ),
+        };
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/connection/connect"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          ["name", "privateKey"],
+          "View-only connection request",
+        );
+        if (
+          typeof input.name !== "string" ||
+          input.name.length < 1 ||
+          input.name.length > 512 ||
+          typeof input.privateKey !== "string" ||
+          input.privateKey.length < 1 ||
+          input.privateKey.length > 8 * 1024
+        ) {
+          throw new HttpError(
+            400,
+            "VIEW_ONLY_CREDENTIAL_MALFORMED",
+            "Use one Coinbase CDP ECDSA P-256 key name and private key.",
+          );
+        }
+        const provider = credentialProviderFor(session);
+        let connection;
+        try {
+          connection = await provider.connect({
+            name: input.name,
+            privateKey: input.privateKey,
+          });
+        } catch (error) {
+          throw connectionHttpError(error);
+        }
+        appendActivity(
           session,
-          sessionStore,
-          secureCookies,
-        ),
-      };
+          activityEntry("VIEW_ONLY_CONNECTION", "CONNECTED", {
+            now,
+          }),
+        );
+        safeJson(
+          response,
+          200,
+          connectionResponse(connection),
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/connection/disconnect"
+      ) {
+        strictFields(
+          await readJson(request, { allowEmpty: true }),
+          [],
+          "View-only disconnect request",
+        );
+        const provider = credentialProviderFor(session, {
+          create: false,
+        });
+        const connection =
+          provider?.disconnect() ??
+          disconnectedConnectionStatus();
+        if (provider) {
+          appendActivity(
+            session,
+            activityEntry(
+              "VIEW_ONLY_CONNECTION",
+              "DISCONNECTED",
+              { now },
+            ),
+          );
+        }
+        safeJson(
+          response,
+          200,
+          connectionResponse(connection),
+          cookieHeader,
+        );
+        return;
+      }
 
       if (
         request.method === "POST" &&
@@ -506,7 +874,7 @@ export function createAdvisorRequestHandler({
       ) {
         const input = strictFields(
           await readJson(request),
-          ["plan_id"],
+          ["plan_id", "mode"],
           "Authorization request",
         );
         if (
@@ -517,6 +885,18 @@ export function createAdvisorRequestHandler({
             400,
             "INVALID_PLAN_ID",
             "Choose the currently displayed mandate.",
+          );
+        }
+        const requestedMode = input.mode ?? "dry_run";
+        if (
+          !["dry_run", "view_only_preflight"].includes(
+            requestedMode,
+          )
+        ) {
+          throw new HttpError(
+            400,
+            "INVALID_PREFLIGHT_MODE",
+            "Choose either a protected dry run or View-only preflight.",
           );
         }
         const stored = session.plans.get(input.plan_id);
@@ -537,21 +917,77 @@ export function createAdvisorRequestHandler({
             "This mandate is not awaiting confirmation. Create a fresh plan.",
           );
         }
-        stored.state = "RUNNING_DRY_RUN";
+        stored.state =
+          requestedMode === "view_only_preflight"
+            ? "RUNNING_VIEW_ONLY_PREFLIGHT"
+            : "RUNNING_DRY_RUN";
         let result;
         try {
-          result = await runPreflight({
+          const common = {
             plan: stored.plan,
             confirmPolicyDigest: stored.plan.policy_digest,
             nonce: randomUUID(),
-            history,
-          });
+          };
+          if (requestedMode === "dry_run") {
+            result = await runPreflight({
+              ...common,
+              history,
+            });
+          } else {
+            const viewOnlyCommon = {
+              ...common,
+              // Keep a real Coinbase result inside the active server session.
+              // It is appended to redacted session activity only after the
+              // provider lease has revalidated, so disconnect/expiry cannot
+              // race a durable PASS write.
+              history: { enabled: false },
+            };
+            const provider = credentialProviderFor(session);
+            if (provider.status().connected !== true) {
+              result = await runPreflight({
+                ...viewOnlyCommon,
+                viewOnlyRequested: true,
+              });
+            } else {
+              try {
+                result =
+                  await provider.withVerifiedCredential(
+                    async ({
+                      attestation,
+                      credentials,
+                      signal,
+                      assertCurrent,
+                    }) =>
+                      runPreflight({
+                        ...viewOnlyCommon,
+                        viewOnlyRequested: true,
+                        verifiedViewCredential:
+                          verifiedCredentialEnvelope({
+                            attestation,
+                            credentials,
+                          }),
+                        assertViewCredentialCurrent:
+                          assertCurrent,
+                        viewAdapterSignal: signal,
+                        createViewAdapter:
+                          createViewOnlyAdapter,
+                      }),
+                  );
+              } catch (error) {
+                result = await runPreflight({
+                  ...viewOnlyCommon,
+                  viewOnlyRequested: true,
+                  viewCredentialError: error,
+                });
+              }
+            }
+          }
         } catch {
           stored.state = "STOPPED_SAFE";
           throw new HttpError(
             500,
-            "DRY_RUN_STOPPED_SAFE",
-            "The protected dry run stopped safely. No order was submitted.",
+            "PREFLIGHT_STOPPED_SAFE",
+            "The protected check stopped safely. No order was submitted.",
           );
         }
         stored.state = "COMPLETED";
@@ -565,12 +1001,18 @@ export function createAdvisorRequestHandler({
         const view = advisorGuardResultView(result.record);
         appendActivity(
           session,
-          activityEntry("DRY_RUN", "COMPLETED", {
+          activityEntry(
+            requestedMode === "view_only_preflight"
+              ? "VIEW_ONLY_PREFLIGHT"
+              : "DRY_RUN",
+            "COMPLETED",
+            {
             now,
             plan: stored.plan,
             decision: view.decision.outcome,
             receiptDigest: view.receipt?.receipt_digest ?? null,
-          }),
+            },
+          ),
         );
         safeJson(
           response,
@@ -633,42 +1075,6 @@ export function createAdvisorRequestHandler({
           response,
           200,
           { review },
-          cookieHeader,
-        );
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        pathname === "/api/activity"
-      ) {
-        let entries;
-        try {
-          entries = await readGuardHistory({
-            limit: 20,
-            ...history,
-          });
-        } catch {
-          throw new HttpError(
-            503,
-            "HISTORY_UNAVAILABLE",
-            "Local Guard history is temporarily unavailable.",
-          );
-        }
-        safeJson(
-          response,
-          200,
-          {
-            schema_version: "delta.coinbase.advisor_activity.v1",
-            session_activity: advisorActivityView(session.activity),
-            guard_history: advisorHistoryView(entries),
-            boundary: {
-              local_only: true,
-              create_available: false,
-              order_submitted: false,
-              money_moved: false,
-            },
-          },
           cookieHeader,
         );
         return;

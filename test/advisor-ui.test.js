@@ -97,6 +97,9 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
       "/api/activity",
       "/api/advisor/authorize",
       "/api/advisor/plan",
+      "/api/connection",
+      "/api/connection/connect",
+      "/api/connection/disconnect",
       "/api/demo/review",
       "/api/demo/showcase",
       "/api/status",
@@ -108,6 +111,7 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
   assert.match(app, /redirect:\s*["']error["']/);
   assert.match(app, /new AbortController\(\)/);
   assert.match(app, /["']X-Delta-Advisor["']:\s*["']1["']/);
+  assert.doesNotMatch(app, /\bconsole\.(?:log|debug|info|warn|error)\b/);
 });
 
 test("markup has keyboard and screen-reader foundations for the complete flow", () => {
@@ -117,7 +121,10 @@ test("markup has keyboard and screen-reader foundations for the complete flow", 
   assert.match(html, /<main\s+id=["']main-content["']/i);
   assert.match(html, /<aside\b[^>]*aria-label=["']Delta protection["']/i);
   assert.match(html, /<form\s+id=["']advisor-form["']/i);
+  assert.match(html, /<form\s+id=["']connection-form["']/i);
   assert.match(html, /<label\s+for=["']intent-input["']/i);
+  assert.match(html, /<label\s+for=["']coinbase-key-name["']/i);
+  assert.match(html, /<label\s+for=["']coinbase-private-key["']/i);
   assert.match(
     html,
     /<textarea\b(?=[^>]*\bid=["']intent-input["'])(?=[^>]*\bname=["']intent["'])(?=[^>]*\brequired\b)[^>]*>/i,
@@ -156,8 +163,13 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(html, /Educational research,\s*never advice/i);
   assert.match(html, /Editable planning,\s*never auto-buy/i);
   assert.match(html, /Nothing is watching the market/i);
-  assert.match(html, /View-only connection\s+arrives.+next sprint/is);
-  assert.match(html, /Do not paste a Coinbase password, key, private key, or JWT/i);
+  assert.match(html, /credential-free dry run/i);
+  assert.match(html, /permissions are exactly View only/i);
+  assert.match(html, /Never enter your Coinbase\s+account password/i);
+  assert.match(html, /This is not OAuth/i);
+  assert.match(html, /Preview is point-in-time\s+information/i);
+  assert.match(html, /not an execution or price guarantee/i);
+  assert.match(html, /Create, order submission, transfers/i);
   assert.match(html, /Not a Coinbase product, integration, or\s+endorsement/i);
   assert.match(app, /This authorizes evaluation only\s*·\s*not an order/i);
   assert.match(app, /Live order unavailable/i);
@@ -169,6 +181,89 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(app, /No order submitted · Coinbase Create remains unavailable/);
   assert.doesNotMatch(app, /Saved locally with exact integrity bindings/i);
   assert.match(app, /Generated and verified locally with exact integrity bindings/i);
+  assert.match(app, /View-only verification stopped safely without fallback/i);
+  assert.match(app, /Production Delta was not contacted/i);
+  assert.doesNotMatch(
+    app,
+    /View-only point-in-time preflight plus local Delta simulation/i,
+  );
+});
+
+test("credential onboarding is session-only, explicit, and clears both inputs before network use", () => {
+  const keyInput = html.match(
+    /<input\b(?=[^>]*\bid=["']coinbase-key-name["'])[^>]*>/i,
+  )?.[0];
+  const privateKeyInput = html.match(
+    /<textarea\b(?=[^>]*\bid=["']coinbase-private-key["'])[^>]*>/i,
+  )?.[0];
+  assert.ok(keyInput);
+  assert.ok(privateKeyInput);
+  assert.match(keyInput, /\bautocomplete=["']off["']/i);
+  assert.match(keyInput, /\bspellcheck=["']false["']/i);
+  assert.match(privateKeyInput, /\bautocomplete=["']new-password["']/i);
+  assert.match(privateKeyInput, /\bspellcheck=["']false["']/i);
+  assert.match(html, /cleared from these fields immediately/i);
+  assert.match(html, /never written to\s+browser storage or Guard history/i);
+  assert.match(html, /Disconnect and erase session key/i);
+  assert.match(html, /15-minute idle\s*·\s*60-minute maximum/i);
+
+  const connectStart = app.indexOf("async function connectViewOnly(event)");
+  const connectEnd = app.indexOf(
+    "async function disconnectViewOnly",
+    connectStart,
+  );
+  const connectSource = app.slice(connectStart, connectEnd);
+  const keyClear = connectSource.indexOf(
+    'dom.coinbaseKeyName.value = ""',
+  );
+  const privateKeyClear = connectSource.indexOf(
+    'dom.coinbasePrivateKey.value = ""',
+  );
+  const request = connectSource.indexOf(
+    'requestJson("/api/connection/connect"',
+  );
+  assert.ok(keyClear >= 0);
+  assert.ok(privateKeyClear > keyClear);
+  assert.ok(request > privateKeyClear);
+  assert.match(
+    connectSource,
+    /body:\s*\{\s*name,\s*privateKey\s*\}/,
+  );
+  assert.match(connectSource, /if \(state\.pending\)/);
+  assert.match(connectSource, /fields have been cleared; nothing was stored/i);
+  assert.match(app, /safeProviderMessage/);
+});
+
+test("each mandate makes Dry run versus View-only preflight an explicit bound choice", () => {
+  const renderStart = app.indexOf("function renderMandate(plan)");
+  const renderEnd = app.indexOf("function firstIssue", renderStart);
+  const renderSource = app.slice(renderStart, renderEnd);
+  assert.match(renderSource, /Choose one protected check/);
+  assert.match(renderSource, /value:\s*"dry_run"/);
+  assert.match(renderSource, /value:\s*"view_only_preflight"/);
+  assert.match(renderSource, /checked:\s*""/);
+  assert.match(renderSource, /Preview is not an execution or price guarantee/);
+  assert.match(
+    renderSource,
+    /authorizePlan\(planId,\s*authorizeButton,\s*selectedMode\(\)\)/,
+  );
+
+  const authorizeStart = app.indexOf("async function authorizePlan(");
+  const authorizeEnd = app.indexOf("function attemptOutcome", authorizeStart);
+  const authorizeSource = app.slice(authorizeStart, authorizeEnd);
+  assert.match(
+    authorizeSource,
+    /\["dry_run",\s*"view_only_preflight"\]\.includes\(mode\)/,
+  );
+  assert.match(
+    authorizeSource,
+    /state\.connection\?\.connected !== true/,
+  );
+  assert.match(authorizeSource, /will not fall back automatically/i);
+  assert.match(
+    authorizeSource,
+    /body:\s*\{\s*plan_id:\s*planId,\s*mode\s*\}/,
+  );
 });
 
 test("frontend consumes normalized clarification and unsupported messages", () => {
@@ -188,11 +283,11 @@ test("mandate authorization is bound to the rendered plan and stale cards lock",
   assert.match(renderSource, /"data-plan-id": planId/);
   assert.match(
     renderSource,
-    /authorizePlan\(planId,\s*authorizeButton\)/,
+    /authorizePlan\(planId,\s*authorizeButton,\s*selectedMode\(\)\)/,
   );
 
   const authorizeStart = app.indexOf(
-    "async function authorizePlan(planId, button)",
+    "async function authorizePlan(planId, button, mode = \"dry_run\")",
   );
   const authorizeEnd = app.indexOf(
     "function attemptOutcome",
@@ -203,9 +298,19 @@ test("mandate authorization is bound to the rendered plan and stale cards lock",
     authorizeSource,
     /state\.authorizeButtons\.get\(planId\) !== button/,
   );
-  assert.match(authorizeSource, /body:\s*\{\s*plan_id:\s*planId\s*\}/);
+  assert.match(
+    authorizeSource,
+    /body:\s*\{\s*plan_id:\s*planId,\s*mode\s*\}/,
+  );
   assert.match(app, /invalidateMandateAuthorizations\("Superseded"\)/);
   assert.match(app, /button\.dataset\.guardLocked = "true"/);
+  assert.match(app, /artifact\?\.classList\.add\("is-stale"\)/);
+  assert.match(app, /querySelectorAll\("\[data-mandate-mode\]"\)/);
+  assert.match(app, /input\.dataset\.guardLocked = "true"/);
+  assert.match(
+    app,
+    /wasDisabled \|\| control\.dataset\.guardLocked === "true"/,
+  );
 });
 
 test("pending guard runs before mandate mutation and locks conflicting controls", () => {

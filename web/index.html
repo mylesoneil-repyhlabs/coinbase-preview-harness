@@ -99,7 +99,9 @@
                     eligible.
                   </p>
                 </div>
-                <span class="mode-badge">Simulation</span>
+                <span id="advisor-mode-badge" class="mode-badge">
+                  Dry-run simulation
+                </span>
               </header>
 
               <div class="quick-starts" aria-label="Ways to start">
@@ -477,30 +479,132 @@
             <p class="eyebrow">OPTIONAL CONNECTION</p>
             <h1 id="connection-heading">Coinbase data, with a deliberately narrow key.</h1>
             <p>
-              The default dry run needs no credential. View-only connection
-              arrives as a local, session-scoped path in the next sprint.
+              Keep using the credential-free dry run, or connect a normal
+              Coinbase CDP API key whose permissions are exactly View only.
+              The key stays in this local server process for this session.
             </p>
           </header>
 
           <div class="connection-layout">
             <section class="feature-card connection-card">
-              <div class="connection-state">
-                <span class="connection-state__icon" aria-hidden="true">○</span>
+              <div
+                id="connection-state"
+                class="connection-state"
+                aria-live="polite"
+              >
+                <span
+                  id="connection-state-icon"
+                  class="connection-state__icon"
+                  aria-hidden="true"
+                >○</span>
                 <div>
                   <p class="eyebrow">CURRENT STATE</p>
-                  <h2>Not connected</h2>
+                  <h2 id="connection-state-title">Checking local session…</h2>
                 </div>
               </div>
-              <p>
+              <p id="connection-state-description">
                 No Coinbase key is loaded. Dry runs stay fully available with
                 labeled fixture data.
               </p>
-              <button class="button button--disabled" type="button" disabled>
-                View-only connection — Sprint 2
-              </button>
+
+              <form id="connection-form" class="credential-form">
+                <div class="field-group">
+                  <label for="coinbase-key-name">Coinbase API key name</label>
+                  <input
+                    id="coinbase-key-name"
+                    name="name"
+                    type="text"
+                    required
+                    inputmode="text"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    placeholder="organizations/…/apiKeys/…"
+                  >
+                  <small>
+                    Use the full CDP key name. Never enter your Coinbase
+                    account password.
+                  </small>
+                </div>
+                <div class="field-group">
+                  <label for="coinbase-private-key">EC private key</label>
+                  <textarea
+                    id="coinbase-private-key"
+                    name="privateKey"
+                    rows="5"
+                    required
+                    autocomplete="new-password"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    placeholder="Paste the Coinbase CDP EC private key"
+                  ></textarea>
+                  <small>
+                    Sent only to this loopback server for a permission test;
+                    cleared from these fields immediately and never written to
+                    browser storage or Guard history.
+                  </small>
+                </div>
+                <button
+                  id="connect-button"
+                  class="button button--primary"
+                  type="submit"
+                  data-action-control="guard"
+                >
+                  Connect and test View only
+                </button>
+              </form>
+
+              <div id="connected-controls" hidden>
+                <dl class="connection-facts">
+                  <div>
+                    <dt>Permissions</dt>
+                    <dd id="connection-permissions">
+                      View yes · Trade no · Transfer no
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Verified</dt>
+                    <dd id="connection-verified-at">Time unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Session expiry</dt>
+                    <dd id="connection-expires-at">Time unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Storage</dt>
+                    <dd>Local server memory only</dd>
+                  </div>
+                </dl>
+                <button
+                  id="disconnect-button"
+                  class="button button--secondary button--danger"
+                  type="button"
+                  data-action-control="guard"
+                >
+                  Disconnect and erase session key
+                </button>
+              </div>
+
+              <div
+                id="connection-progress"
+                class="connection-progress"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></div>
+              <div
+                id="connection-feedback"
+                class="connection-feedback"
+                aria-live="polite"
+              ></div>
               <p class="fine-print">
-                Do not paste a Coinbase password, key, private key, or JWT into
-                this interface.
+                This is not OAuth. Closing the local server, disconnecting, or
+                session expiry erases the in-memory reference. No order can be
+                sent.
               </p>
             </section>
 
@@ -515,8 +619,13 @@
                 <li><span aria-hidden="true">✓</span> One exact Preview</li>
               </ul>
               <div class="notice notice--green">
-                Trade, Transfer, Receive, Create, and every money-moving route
-                remain unavailable.
+                The connection is accepted only when View is on and Trade and
+                Transfer are off. Coinbase Preview is point-in-time
+                information—not an execution or price guarantee.
+              </div>
+              <div class="notice notice--amber">
+                Create, order submission, transfers, and every money-moving
+                route remain unavailable.
               </div>
             </section>
 
@@ -530,11 +639,11 @@
                 </div>
                 <div>
                   <dt>Connection lifetime</dt>
-                  <dd>Local session only</dd>
+                  <dd>15-minute idle · 60-minute maximum</dd>
                 </div>
                 <div>
-                  <dt>Guard history</dt>
-                  <dd>Redacted facts only</dd>
+                  <dt>Session activity</dt>
+                  <dd>Redacted facts only · key omitted</dd>
                 </div>
                 <div>
                   <dt>Remote telemetry</dt>

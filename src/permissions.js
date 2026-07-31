@@ -27,6 +27,17 @@ export const VIEW_ATTESTATION_PATH = path.join(
   "view-permission-attestation.json",
 );
 export const JWT_PROFILE = "CDP_URIS_V1";
+const CDP_KEY_ID_PATTERN =
+  /^organizations\/[^/\s]+\/apiKeys\/[^/\s]+$/;
+const PORTFOLIO_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VIEW_CREDENTIAL_FIELDS = Object.freeze([
+  "keyId",
+  "name",
+  "id",
+  "privateKey",
+  "secret",
+]);
 
 function base64url(value) {
   return Buffer.from(value).toString("base64url");
@@ -104,7 +115,116 @@ export function createRequestJwt(keyId, privateKey, method = "GET", host = "api.
   return `${signingInput}.${base64url(toJoseSignature(signature))}`;
 }
 
+function malformedViewCredential() {
+  return reviewError(
+    "VIEW_ONLY_CREDENTIAL_MALFORMED",
+    "Coinbase View-only credential material is malformed",
+    {
+      stage: "VIEW_ONLY_CREDENTIAL",
+      retryable: false,
+      recovery:
+        "Reconnect using one normal Coinbase CDP ECDSA P-256 key with View enabled and Trade and Transfer disabled. No order was submitted.",
+    },
+  );
+}
+
+function malformedPermissionResponse() {
+  return reviewError(
+    "VIEW_ONLY_PERMISSION_RESPONSE_MALFORMED",
+    "Coinbase permission response did not match the required View-only schema",
+    {
+      stage: "VIEW_ONLY_CREDENTIAL",
+      recovery:
+        "Reconnect or retry the View-only permission check later. No order was submitted.",
+    },
+  );
+}
+
+/**
+ * Convert Coinbase's downloaded-key shape (name/privateKey), its legacy
+ * aliases (id/secret), or the server-only canonical shape
+ * (keyId/privateKey) into the single credential representation used by the
+ * deterministic adapters.
+ *
+ * This function deliberately never includes a supplied value or field name in
+ * an error. A malformed JSON key can contain secrets in either place.
+ */
+export function validateViewCredentialMaterial(material) {
+  if (
+    !material ||
+    typeof material !== "object" ||
+    Array.isArray(material)
+  ) {
+    throw malformedViewCredential();
+  }
+  if (
+    Object.keys(material).some(
+      (field) => !VIEW_CREDENTIAL_FIELDS.includes(field),
+    )
+  ) {
+    throw malformedViewCredential();
+  }
+
+  const keyIds = [material.keyId, material.name, material.id].filter(
+    (value) => value !== undefined,
+  );
+  const privateKeys = [material.privateKey, material.secret].filter(
+    (value) => value !== undefined,
+  );
+  if (
+    keyIds.length < 1 ||
+    privateKeys.length < 1 ||
+    keyIds.some((value) => typeof value !== "string") ||
+    privateKeys.some((value) => typeof value !== "string") ||
+    new Set(keyIds).size !== 1 ||
+    new Set(privateKeys).size !== 1
+  ) {
+    throw malformedViewCredential();
+  }
+
+  const keyId = keyIds[0];
+  const privateKey = privateKeys[0];
+  if (
+    keyId.length > 512 ||
+    !CDP_KEY_ID_PATTERN.test(keyId) ||
+    privateKey.length < 1 ||
+    privateKey.length > 8 * 1024 ||
+    !privateKey.includes("BEGIN EC PRIVATE KEY")
+  ) {
+    throw malformedViewCredential();
+  }
+
+  let parsedKey;
+  try {
+    parsedKey = createPrivateKey(privateKey);
+  } catch {
+    throw malformedViewCredential();
+  }
+  if (
+    parsedKey.asymmetricKeyType !== "ec" ||
+    parsedKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+  ) {
+    throw malformedViewCredential();
+  }
+
+  return Object.freeze({ keyId, privateKey });
+}
+
 export function assertViewOnlyPermissions(response) {
+  if (
+    !response ||
+    typeof response !== "object" ||
+    Array.isArray(response) ||
+    typeof response.can_view !== "boolean" ||
+    typeof response.can_trade !== "boolean" ||
+    typeof response.can_transfer !== "boolean" ||
+    typeof response.portfolio_uuid !== "string" ||
+    !PORTFOLIO_UUID_PATTERN.test(response.portfolio_uuid) ||
+    (Object.hasOwn(response, "can_receive") &&
+      typeof response.can_receive !== "boolean")
+  ) {
+    throw malformedPermissionResponse();
+  }
   const failures = [];
   if (response?.can_view !== true) failures.push("can_view must be true");
   if (response?.can_trade !== false) failures.push("can_trade must be false");
@@ -300,6 +420,10 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
     !response ||
     typeof response.ok !== "boolean" ||
     !Number.isInteger(response.status) ||
+    response.status < 100 ||
+    response.status > 599 ||
+    response.ok !==
+      (response.status >= 200 && response.status <= 299) ||
     typeof response.text !== "function"
   ) {
     throw reviewError(
@@ -366,6 +490,74 @@ async function fetchPermissions(keyId, privateKey, fetchImpl) {
   }
 }
 
+function createViewPermissionAttestation(
+  keyId,
+  permissions,
+  verifiedAt = new Date(),
+) {
+  if (
+    !(verifiedAt instanceof Date) ||
+    !Number.isFinite(verifiedAt.getTime())
+  ) {
+    throw new TypeError("verifiedAt must be a valid Date");
+  }
+  const canReceiveReported = Object.hasOwn(permissions, "can_receive");
+  return Object.freeze({
+    schema: "delta.coinbase.view_permission_attestation.v2",
+    verified_at: verifiedAt.toISOString(),
+    environment: "coinbase-read-preview",
+    jwt_profile: JWT_PROFILE,
+    can_view: true,
+    can_trade: false,
+    can_transfer: false,
+    can_receive:
+      permissions.can_receive === false ? false : null,
+    can_receive_reported: canReceiveReported,
+    portfolio_fingerprint: createHash("sha256")
+      .update(permissions.portfolio_uuid)
+      .digest("hex"),
+    key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
+  });
+}
+
+/**
+ * Verify credential material held by the local advisor process without
+ * touching the filesystem or persisting an attestation. The returned
+ * `credentials` property is intentionally non-enumerable so routine
+ * serialization/logging exposes only the redacted attestation. It remains
+ * available to trusted server-side adapters as `result.credentials`.
+ */
+export async function verifyViewCredentialMaterial(
+  material,
+  fetchImpl = fetch,
+  { now = () => new Date() } = {},
+) {
+  if (typeof fetchImpl !== "function" || typeof now !== "function") {
+    throw new TypeError("View-only verifier dependencies are invalid");
+  }
+  const credentials = validateViewCredentialMaterial(material);
+  const permissions = await fetchPermissions(
+    credentials.keyId,
+    credentials.privateKey,
+    fetchImpl,
+  );
+  assertViewOnlyPermissions(permissions);
+  const verifiedAt = now();
+  const attestation = createViewPermissionAttestation(
+    credentials.keyId,
+    permissions,
+    verifiedAt,
+  );
+  const result = { attestation };
+  Object.defineProperty(result, "credentials", {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: credentials,
+  });
+  return Object.freeze(result);
+}
+
 export async function verifyTradeKeyFileAndConfigure(
   keyFilePath,
   fetchImpl = fetch,
@@ -412,23 +604,10 @@ export async function verifyViewKeyFileAndConfigure(
   const { keyId, privateKey } = await readExternalKeyFile(keyFilePath);
   const permissions = await fetchPermissions(keyId, privateKey, fetchImpl);
   assertViewOnlyPermissions(permissions);
-  const canReceiveReported = Object.hasOwn(permissions, "can_receive");
-  const attestation = {
-    schema: "delta.coinbase.view_permission_attestation.v2",
-    verified_at: new Date().toISOString(),
-    environment: "coinbase-read-preview",
-    jwt_profile: JWT_PROFILE,
-    can_view: true,
-    can_trade: false,
-    can_transfer: false,
-    can_receive:
-      permissions.can_receive === false ? false : null,
-    can_receive_reported: canReceiveReported,
-    portfolio_fingerprint: createHash("sha256")
-      .update(permissions.portfolio_uuid)
-      .digest("hex"),
-    key_fingerprint: createHash("sha256").update(keyId).digest("hex"),
-  };
+  const attestation = createViewPermissionAttestation(
+    keyId,
+    permissions,
+  );
   if (persistAttestation) {
     await persistPermissionAttestation(
       VIEW_ATTESTATION_PATH,
