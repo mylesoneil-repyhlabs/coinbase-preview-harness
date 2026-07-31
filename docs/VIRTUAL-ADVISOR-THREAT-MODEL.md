@@ -62,15 +62,21 @@ CLI execution.
 A later post-PASS confirmation challenge binds:
 
 ```text
-session
-receipt digest
-preflight fingerprint
-prospective Create-payload digest
+advisor session
+authorized policy and exact proposal digests
+normalized Preview/evidence fingerprint
+fresh Delta decision receipt digest
+prospective exact Create-request bytes digest
 expiry
 ```
 
 It is local readiness evidence only. It is not a durable one-use grant and
 cannot submit anything. Any bound-field change or replay invalidates it.
+
+The existing `execution_confirmation.v2` object is preflight-readiness
+evidence only: it can be produced before Coinbase reads and does not bind the
+post-Preview proposal, evidence, Delta receipt, Create bytes, or advisor
+session. The advisor must not label or render it as final-order confirmation.
 
 Future execution requires all of:
 

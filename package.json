@@ -9,6 +9,7 @@
   },
   "packageManager": "pnpm@11.9.0",
   "scripts": {
+    "advisor": "./run advisor",
     "doctor": "node src/cli.js doctor",
     "credential-readiness": "node src/cli.js credential-readiness",
     "configure-credentials": "node src/cli.js configure-preview-credentials",

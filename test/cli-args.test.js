@@ -20,6 +20,7 @@ const VALID_COMMAND_SURFACES = [
   ["version", [], "version"],
   ["--version", [], "version"],
   ["doctor", [], "doctor"],
+  ["advisor", [], "advisor"],
   ["credential-readiness", [], "credential-readiness"],
   [
     "configure-credentials",

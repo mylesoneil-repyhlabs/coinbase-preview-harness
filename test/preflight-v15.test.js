@@ -771,12 +771,22 @@ test("history is redacted, versioned, and supersedes changed exact evidence", as
   );
   const entries = await readHistory({ directory, limit: 10 });
   assert.equal(entries.length, 2);
+  const currentHistoryTime = new Date(FIXED.getTime() + 2_000);
   assert.throws(
-    () => assertReceiptActiveInHistory(firstRecord.guard_receipt, entries),
+    () =>
+      assertReceiptActiveInHistory(
+        firstRecord.guard_receipt,
+        entries,
+        { now: currentHistoryTime },
+      ),
     /superseded/i,
   );
   assert.equal(
-    assertReceiptActiveInHistory(secondRecord.guard_receipt, entries),
+    assertReceiptActiveInHistory(
+      secondRecord.guard_receipt,
+      entries,
+      { now: currentHistoryTime },
+    ),
     true,
   );
 

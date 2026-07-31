@@ -45,6 +45,7 @@ const INSTALL_PAYLOAD = [
   "scripts",
   "skills",
   "src",
+  "web",
 ];
 
 function installEnvironment(home, overrides = {}) {
@@ -121,6 +122,8 @@ test("fresh install creates a managed version and an atomic skill link", async (
       (await lstat(path.join(harness, ".delta-coinbase-guard-node"))).isFile(),
       true,
     );
+    await access(path.join(harness, "src", "advisor-server.js"));
+    await access(path.join(harness, "web", "index.html"));
     await assert.rejects(access(path.join(harness, "docs", "MASTRA-PARTNER-BRIEF.md")));
     await assert.rejects(access(path.join(harness, "examples", "mastra")));
     await assert.rejects(access(path.join(harness, "output", "mastra")));
@@ -194,6 +197,41 @@ test("fresh Codex install discovers bundled Node when login PATH has no node", a
       ).trim(),
       await realpath(process.execPath),
     );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("source launcher discovers bundled Codex Node on a restricted PATH", async () => {
+  const home = await mkdtemp(
+    path.join(os.tmpdir(), "coinbase-guard-source-runtime-"),
+  );
+  try {
+    const bundledNode = path.join(
+      home,
+      ".cache",
+      "codex-runtimes",
+      "codex-primary-runtime",
+      "dependencies",
+      "node",
+      "bin",
+      "node",
+    );
+    await mkdir(path.dirname(bundledNode), { recursive: true });
+    await symlink(process.execPath, bundledNode);
+
+    const { stdout, stderr } = await execFileAsync(
+      path.join(ROOT, "run"),
+      ["version"],
+      {
+        env: installEnvironment(home, {
+          HARNESS_NODE_BINARY: "",
+        }),
+        timeout: 10_000,
+      },
+    );
+    assert.equal(stdout.trim(), PACKAGE_VERSION);
+    assert.equal(stderr, "");
   } finally {
     await rm(home, { recursive: true, force: true });
   }

@@ -83,7 +83,7 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 2 | Session-only View-only connection and real preflight wiring | No persistence or secret leakage; exact permissions; graceful provider failures |
 | 3 | Premium conditional saved-plan composer and trigger simulator | Simulation labels; timezone/expiry/revoke/one-shot; no monitoring claim |
 | 4 | Educational token exploration and editable portfolio planning | Source/as-of/assumptions/risk; no suitability or automatic trade |
-| 5 | Exact final-review and post-PASS confirmation readiness | Challenge binds receipt, preflight, exact payload, session, expiry; still no Create |
+| 5 | Exact final-review and post-PASS confirmation readiness | New challenge binds session, policy, proposal, normalized Preview/evidence, Delta receipt, exact prospective Create bytes, and expiry; still no Create |
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
 | 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
 

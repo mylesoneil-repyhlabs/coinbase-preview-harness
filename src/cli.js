@@ -978,6 +978,7 @@ Start here — no credential required:
   Then it runs a protected dry run by default. No order can be sent.
 
 Safe commands:
+  advisor
   doctor [--json]
   plan --intent "..." [--compiler deterministic|openai] [--details] [--json]
   preflight --plan /path/to/plan.json --confirm-policy <digest> [--details] [--json]
@@ -1039,6 +1040,8 @@ try {
       await version();
     } else if (command === "doctor") {
       await doctor(args);
+    } else if (command === "advisor") {
+      await import("./advisor-server.js");
     } else if (command === "credential-readiness") {
       await credentialReadiness();
     } else if (command === "configure-preview-credentials") {

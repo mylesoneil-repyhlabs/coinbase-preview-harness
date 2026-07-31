@@ -10,7 +10,7 @@
       "network_allowed": false
     },
     "view_only_preflight": {
-      "enabled": true,
+      "enabled": false,
       "credentials_required": true,
       "network_allowed": true,
       "local_loopback_only": true
@@ -18,10 +18,10 @@
   },
   "features": {
     "advisor": true,
-    "conditional_plan_simulation": true,
-    "educational_research": true,
-    "portfolio_planning": true,
-    "post_pass_final_confirmation_readiness": true,
+    "conditional_plan_simulation": false,
+    "educational_research": false,
+    "portfolio_planning": false,
+    "post_pass_final_confirmation_readiness": false,
     "saved_plan_monitoring": false,
     "durable_executor": false,
     "live_execution": false,

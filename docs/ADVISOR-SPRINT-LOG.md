@@ -63,3 +63,93 @@ real monitor.
 
 The team now has a single product, design, security, and release contract.
 The existing v1.5.3 behavior is unchanged at this milestone.
+
+## Sprint 1 — usable credential-free advisor
+
+### Product Manager requirements
+
+Deliver immediate value without a key: one calm conversational entry, a short
+composer, an explicit protected example, a plain-English mandate review, a
+separate proposal, all three Guard outcomes, and an unmissable no-order
+boundary. Future features must be visibly `Preview` or `Coming soon`, never
+dead-end controls that imply a live route.
+
+### Engineering-lead architecture
+
+Added a dependency-free Node 22 loopback service and static frontend. The
+browser owns presentation only; deterministic server code reuses
+`createExecutionPlan`, `runGuardPreflight`, local receipt verification, and
+redacted history. A single checked-in capability contract drives server status
+and keeps unshipped features disabled.
+
+Session controls now match the contract: 15-minute idle and 60-minute absolute
+expiry, explicit destroy/clear hooks, secret-disposal callbacks, least-recently
+used capacity eviction, and cleanup on server close. Cross-site API traffic is
+rejected before session allocation.
+
+### Senior full-stack implementation
+
+Built the real Advisor, Plans, Activity, and Connection surfaces; persistent
+mode/connection/orders-off context; editable mandate card; one-check
+authorization; proposal, decision, impact, provenance, receipt, and recovery
+views; deliberate `BLOCK → retry → PASS`; safe `REVIEW`; and a private activity
+view. Added `./run advisor` so the managed Codex runtime works even when
+`node` is absent from the shell `PATH`.
+
+### Backend and data
+
+The same-origin API is an explicit allowlist for status, plan, one-check
+authorization, two labeled fixture stories, and redacted activity. Plans and
+session activity remain memory-only. The server does not send raw Guard
+records, policy digests, account identifiers, provider bodies, or secret
+material to the browser.
+
+### DevOps and release review
+
+The server binds only to `127.0.0.1`; static serving canonicalizes both the web
+root and final target and rejects symlink escape. Mutations require exact Host,
+Origin, Fetch Metadata, JSON, and `X-Delta-Advisor: 1`; bodies and concurrent
+requests are bounded. CSP, no-store, no-referrer, no-sniff, frame denial, COOP,
+CORP, and a no-CORS/no-proxy route boundary remain enforced.
+
+### Designer and frontend critique
+
+Synthetic internal critique identified an overly dense first prompt,
+insufficiently plain decision meanings, future-feature dead ends, lost mobile
+safety context, and weak long-wait recovery. The shipped revision starts with
+an empty compact composer and explicit protected example, explains `PASS` as
+fits mandate, `BLOCK` as outside mandate, and `REVIEW` as unable to verify,
+compares observed facts with allowed boundaries, elevates `NO ORDER SUBMITTED`,
+keeps the safety strip visible on narrow layouts, and shows a visible safe-wait
+state while conflicting actions are disabled.
+
+### QA
+
+Release-blocking review found that an older mandate card could read the newest
+mutable plan and authorize the wrong item. Authorization is now bound to the
+card's immutable `plan_id`; stale cards are invalidated, and all conflicting
+controls share one visible pending lock. Result rendering fails closed unless
+the normalized outcome is exactly `PASS` and the receipt verifies.
+
+Additional adversarial coverage includes hostile Host/Origin/Fetch Metadata,
+missing custom header, body limits, malformed requests, method confusion,
+static traversal and intermediate-symlink escape, cross-site session-allocation
+resistance, concurrency saturation, session isolation, replay, capability
+truth, and local evidence redaction. REVIEW fixture evidence is described as
+generated and verified locally, not persisted.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: the revised first screen makes the no-key
+example discoverable without making the user parse an expert prompt. The
+plain-English decision meaning and observed-versus-allowed comparison improve
+trust; the persistent orders-off state prevents the polished interface from
+being mistaken for a live broker.
+
+### Shipped impact
+
+The branch contains a usable, interactive protected-execution consultation
+that reaches mandate review, deterministic dry-run evaluation, receipt, and
+recovery without a credential. Coinbase Create, live orders, production Delta,
+View-only advisor connection, saved monitoring, research, portfolio planning,
+and final-order confirmation remain disabled at this milestone.

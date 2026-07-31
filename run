@@ -4,20 +4,47 @@ set -euo pipefail
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SAVED_NODE_PATH="$HARNESS_DIR/.delta-coinbase-guard-node"
 
-if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && [[ -x "$HARNESS_NODE_BINARY" ]]; then
+compatible_node() {
+  local candidate="$1"
+  local candidate_major
+  [[ -x "$candidate" ]] || return 1
+  candidate_major="$(
+    "$candidate" -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null
+  )" || return 1
+  [[ "$candidate_major" =~ ^[0-9]+$ ]] || return 1
+  (( candidate_major >= 22 ))
+}
+
+if [[ -n "${HARNESS_NODE_BINARY:-}" ]] && \
+  compatible_node "$HARNESS_NODE_BINARY"; then
   NODE_BINARY="$HARNESS_NODE_BINARY"
 elif [[ -f "$SAVED_NODE_PATH" ]] && [[ ! -L "$SAVED_NODE_PATH" ]]; then
   IFS= read -r NODE_BINARY < "$SAVED_NODE_PATH"
-  if [[ ! -x "$NODE_BINARY" ]]; then
+  if ! compatible_node "$NODE_BINARY"; then
     echo "The Node.js executable saved by the installer is no longer available." >&2
     echo "Rerun $HARNESS_DIR/install to refresh it." >&2
     exit 1
   fi
-elif command -v node >/dev/null 2>&1; then
+elif command -v node >/dev/null 2>&1 && \
+  compatible_node "$(command -v node)"; then
   NODE_BINARY="$(command -v node)"
+elif [[ -n "${HOME:-}" ]]; then
+  NODE_BINARY=""
+  for codex_node_candidate in \
+    "$HOME"/.cache/codex-runtimes/*/dependencies/node/bin/node; do
+    if compatible_node "$codex_node_candidate"; then
+      NODE_BINARY="$codex_node_candidate"
+      break
+    fi
+  done
+  if [[ -z "$NODE_BINARY" ]]; then
+    echo "Node.js 22+ is required. Install Node or rerun $HARNESS_DIR/install." >&2
+    exit 1
+  fi
 else
   echo "Node.js 22+ is required. Install Node or rerun $HARNESS_DIR/install." >&2
   exit 1
 fi
 
+NODE_BINARY="$("$NODE_BINARY" -p 'require("node:fs").realpathSync(process.execPath)')"
 exec "$NODE_BINARY" "$HARNESS_DIR/src/cli.js" "$@"

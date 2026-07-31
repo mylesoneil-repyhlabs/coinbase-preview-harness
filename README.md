@@ -16,7 +16,7 @@ This is an independent Delta prototype. It is not a Coinbase product,
 integration, or endorsement. No public command in this release can submit an
 order or move money.
 
-## Advisor v1.6 development
+## Advisor v1.6 development preview
 
 The active development branch is transforming the same guard into an actual
 local-first **protected execution copilot**. The eight-sprint
@@ -24,12 +24,52 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-At the Sprint 0 milestone, no frontend or new credential path is claimed as
-shipped. The current verified product remains v1.5.3. The advisor will preserve
-credential-free dry run, optional View-only reads/Preview, exact binding, and
-the compile-time Create lock. Conditional plans will be simulation-only;
-research and portfolio planning will be educational; remote credential
-collection and unattended execution remain out of scope.
+Sprint 1 now includes an actual dependency-free local frontend and same-origin
+loopback service. It is not a screenshot or a fake banking dashboard. A user
+can state one spot BUY or SELL, inspect the closed mandate, authorize one dry
+run, and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
+impact, checked facts, locally verified receipt, recovery action, and
+`NO ORDER SUBMITTED` boundary.
+
+The deliberate fixture story shows an agent proposal outside the mandate,
+Delta blocking it, one bounded revision, and the revised exact proposal
+passing. The default flow still uses labeled simulation and contacts neither
+Coinbase nor production Delta.
+
+### Run the advisor locally
+
+From this development branch:
+
+```sh
+./run advisor
+```
+
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173). The launcher finds the
+Node.js runtime saved by the managed installer, uses `HARNESS_NODE_BINARY` when
+explicitly supplied, or falls back to Node.js 22+ on `PATH`. `pnpm advisor`
+uses the same launcher.
+
+The first page needs no credential. Leave the composer empty and choose
+**Try a protected ETH dry run** to fill a complete, editable example, or write
+your own spot request. Nothing is authorized until the exact mandate card is
+reviewed and its one-check control is selected.
+
+Current advisor-development capability status comes from
+[`config/advisor-capabilities.json`](config/advisor-capabilities.json):
+
+- credential-free protected spot dry run: enabled;
+- meaningful simulated `BLOCK → retry → PASS` and unable-to-verify `REVIEW`:
+  enabled;
+- private session activity and existing redacted Guard history: enabled;
+- browser credential storage, Coinbase Create, order submission, production
+  Delta, and money movement: unavailable;
+- advisor View-only connection, saved conditional plans, research, portfolio
+  planning, and post-PASS confirmation readiness: not yet enabled at the
+  Sprint 1 milestone.
+
+The public release remains v1.5.3 until all eight advisor sprints, release
+archive checks, and CI gates are complete. The existing v1.5 CLI/skill
+View-only preflight remains separate and unchanged during this milestone.
 
 ## The first experience
 

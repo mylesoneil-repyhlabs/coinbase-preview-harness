@@ -68,6 +68,10 @@ export const CLI_COMMAND_SCHEMAS = Object.freeze({
       "--json": flag(),
     },
   }),
+  advisor: schema({
+    command: "advisor",
+    usage: "advisor",
+  }),
   "credential-readiness": schema({
     command: "credential-readiness",
     usage: "credential-readiness",

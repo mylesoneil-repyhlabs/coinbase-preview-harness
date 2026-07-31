@@ -46,6 +46,7 @@ const COPY_ENTRIES = Object.freeze([
   "scripts",
   "skills",
   "src",
+  "web",
 ]);
 const REPOSITORY_ONLY_PATHS = new Set([
   "scripts/generate-mastra-partner-assets.mjs",
@@ -62,6 +63,10 @@ const REQUIRED_MANAGED_FILES = Object.freeze([
   "skills/delta-coinbase-guard/SKILL.md",
   "skills/delta-coinbase-guard/scripts/run",
   "src/cli.js",
+  "src/advisor-server.js",
+  "web/index.html",
+  "web/app.js",
+  "web/styles.css",
 ]);
 const MARKER_NAME = ".delta-coinbase-guard-install.json";
 const NODE_PATH_NAME = ".delta-coinbase-guard-node";
