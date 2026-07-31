@@ -158,7 +158,8 @@ order submitted, no external executor, and no money moved.
 ## Retry and history
 
 Reuse the nonce only after an interrupted identical command. Exact nonce plus
-identical semantics returns the prior result without another Coinbase request;
+identical semantics may return the prior result. View-only retry rechecks key
+permissions but does not reread account, product, BBO, or Preview evidence;
 nonce reuse with changed semantics must fail closed. A new evidence attempt
 uses a new nonce and must not reuse an old receipt.
 

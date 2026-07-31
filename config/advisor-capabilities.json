@@ -1,0 +1,46 @@
+{
+  "schema_version": "delta.coinbase.advisor_capabilities.v1",
+  "product_version": "1.6.0",
+  "product_name": "Delta Guard Advisor",
+  "default_mode": "dry_run",
+  "modes": {
+    "dry_run": {
+      "enabled": true,
+      "credentials_required": false,
+      "network_allowed": false
+    },
+    "view_only_preflight": {
+      "enabled": true,
+      "credentials_required": true,
+      "network_allowed": true,
+      "local_loopback_only": true
+    }
+  },
+  "features": {
+    "advisor": true,
+    "conditional_plan_simulation": true,
+    "educational_research": true,
+    "portfolio_planning": true,
+    "post_pass_final_confirmation_readiness": true,
+    "saved_plan_monitoring": false,
+    "durable_executor": false,
+    "live_execution": false,
+    "autonomous_execution": false,
+    "coinbase_create": false
+  },
+  "credentials": {
+    "default_storage": "server_process_memory_only",
+    "browser_storage_allowed": false,
+    "persistent_storage_allowed": false,
+    "session_idle_ttl_seconds": 900,
+    "session_absolute_ttl_seconds": 3600,
+    "required_permission_profile": "VIEW_ONLY"
+  },
+  "release_boundaries": {
+    "coinbase_create_enabled": false,
+    "production_delta_integrated": false,
+    "coinbase_partnership_claimed": false,
+    "personalized_financial_advice": false,
+    "unattended_execution": false
+  }
+}

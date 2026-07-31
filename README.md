@@ -16,6 +16,21 @@ This is an independent Delta prototype. It is not a Coinbase product,
 integration, or endorsement. No public command in this release can submit an
 order or move money.
 
+## Advisor v1.6 development
+
+The active development branch is transforming the same guard into an actual
+local-first **protected execution copilot**. The eight-sprint
+[roadmap](docs/VIRTUAL-ADVISOR-ROADMAP.md), [design contract](docs/VIRTUAL-ADVISOR-DESIGN-CONTRACT.md),
+[threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
+[advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
+
+At the Sprint 0 milestone, no frontend or new credential path is claimed as
+shipped. The current verified product remains v1.5.3. The advisor will preserve
+credential-free dry run, optional View-only reads/Preview, exact binding, and
+the compile-time Create lock. Conditional plans will be simulation-only;
+research and portfolio planning will be educational; remote credential
+collection and unattended execution remain out of scope.
+
 ## The first experience
 
 After installation, invoke `$delta-coinbase-guard` in Codex. The first message

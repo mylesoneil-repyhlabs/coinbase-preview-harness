@@ -63,3 +63,16 @@ integration preview, not a production custody or trading service.
 If credentials may have been exposed, revoke them in Coinbase immediately,
 create a new least-privileged key, and review account and portfolio activity
 before continuing.
+
+## Advisor v1.6 development boundary
+
+The advisor roadmap adds a loopback web interface, not a browser-side trading
+client. The planned credential-capable server binds to `127.0.0.1`; credential
+material remains in server-process memory only and is cleared on disconnect,
+expiry, failure, or process exit. It must never enter browser storage, URLs,
+logs, history, screenshots, analytics, or release assets.
+
+A hosted/static advisor is credential-free. Remote credential handling
+requires a separate reviewed service and threat model. A visible confirmation
+control does not add a Coinbase Create route: public Create, live orders,
+durable grants, and unattended execution remain unavailable.
