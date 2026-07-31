@@ -152,6 +152,33 @@ handoff, by `DRAFT CREATED · NOT AUTHORIZED · ORDERS OFF`. There is no
 portfolio-wide authorization, batch/rebalance path, implicit first-leg
 selection, or automatic advisor mutation.
 
+## Locked future-confirmation explanation
+
+Only a fresh, complete View-only `PASS` with a verified, unexpired local
+receipt may render **What a future live confirmation would protect**. The card
+appears immediately after `No order submitted`, before technical receipt
+details, and is driven only by the server DTO plus the enabled
+`live_readiness_preview` capability. The browser never derives it from a
+client-observed `PASS`.
+
+The information hierarchy is:
+
+1. `DESIGN PREVIEW · LOCKED` and `ORDERS OFF`;
+2. “This point-in-time View-only PASS is not authorization, eligibility, or
+   readiness to trade”;
+3. exact action and limit, estimated economics, and Preview check/expiry;
+4. future one-order concept with no challenge or grant;
+5. all nine missing production controls, each visibly marked `Missing`; and
+6. “There is no final-confirmation, grant, or order route.”
+
+The card has no button, link, input, positive `tabindex`, Trade-key field,
+raw identifier, or Create bytes. It stacks its facts and checklist at mobile
+width. A dry run, `BLOCK`, `REVIEW`, expired result, incomplete binding, or
+tampered result never advances to this visual state. The server also requires
+a valid sealed-record digest, exact supplied-versus-bound execution digest,
+and receipt-bound View-only permission facts; none of those permission facts
+or credential identifiers enter the card.
+
 ## Visual system
 
 - Canvas: warm paper `#f4f1e8`

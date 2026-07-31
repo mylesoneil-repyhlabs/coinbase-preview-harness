@@ -22,10 +22,14 @@ async function probeFixture() {
   const plan = await createExecutionPlan(BUY_INTENT);
   const capabilityProfile = await loadPreviewCapabilityProfile();
   const attestation = {
+    schema: "delta.coinbase.view_permission_attestation.v2",
+    environment: "coinbase-read-preview",
+    verified_at: FIXED.toISOString(),
     can_view: true,
     can_trade: false,
     can_transfer: false,
     can_receive: false,
+    can_receive_reported: true,
     jwt_profile: "CDP_URIS_V1",
     portfolio_fingerprint: "portfolio-fingerprint",
     key_fingerprint: "credential-fingerprint",
@@ -186,6 +190,42 @@ test("credentialed Preview uses accounts, product, book, and Preview only", asyn
     marketCalls: 1,
     accountCalls: 1,
     previewCalls: 1,
+    deltaCalls: 0,
+    createCalls: 0,
+  });
+});
+
+test("PROBE rejects an over-scoped Trade credential before every adapter", async () => {
+  const { args, state } = await probeFixture();
+  const attestation = {
+    ...args.attestation,
+    can_trade: true,
+  };
+  const boundExecution = createBoundExecution(
+    args.plan,
+    attestation,
+    args.plan.policy_digest,
+  );
+  const executionConfirmation = createExecutionConfirmation({
+    boundExecution,
+    attestation,
+    confirmedExecutionDigest: boundExecution.execution_digest,
+    confirmedAt: FIXED,
+  });
+  const record = await runExecutionPipeline({
+    ...args,
+    attestation,
+    boundExecution,
+    executionConfirmation,
+  });
+  assert.equal(record.status, "REVIEW");
+  assert.equal(record.decision, "REVIEW");
+  assert.equal(record.failure.code, "CREDENTIAL_ATTESTATION_INVALID");
+  assert.deepEqual(state, {
+    productCalls: 0,
+    marketCalls: 0,
+    accountCalls: 0,
+    previewCalls: 0,
     deltaCalls: 0,
     createCalls: 0,
   });

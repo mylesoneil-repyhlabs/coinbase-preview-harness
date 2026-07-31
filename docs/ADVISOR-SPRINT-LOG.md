@@ -583,3 +583,160 @@ is authorized, no portfolio plan becomes Guard evidence, and no automatic or
 portfolio-wide transaction exists. Saved monitoring, unattended execution,
 Coinbase Create, Trade credentials, production Delta, and post-PASS
 live-order readiness remain disabled.
+
+## Sprint 5 — locked future live-confirmation explanation
+
+### Product Manager requirements
+
+Explain the commercial value of exact post-PASS protection without pretending
+the current product can place an order. Only a fresh, complete connected
+View-only PASS may show what a future live confirmation would protect. The
+normal user must see exact action/economics/freshness, Orders off, and the
+missing production controls—not an enabled confirmation, Trade-key field,
+grant, or “ready to trade” claim.
+
+### Engineering-lead architecture
+
+Added one pure server-side projection to the existing allowlisted advisor
+result view. It creates no endpoint, POST, session identity, challenge, grant,
+credential mode, executor import, or browser-derived state. The capability
+loader and server status projection both fail startup if
+`post_pass_final_confirmation_readiness`, `durable_executor`,
+`live_execution`, `autonomous_execution`, or `coinbase_create` becomes true.
+The only enabled execution-adjacent flag is
+`live_readiness_preview=true`.
+
+The projection requires exact View-only PROBE mode/status/decision, a
+receipt-verified and unexpired `PASS`, canonical action integrity, matching
+proposal descriptor, all four authenticated Coinbase source records, complete
+account/funding evidence, PASS proposal and Preview checks, exact Preview
+request/transport binding, bound prospective Create digest, matching
+credential/portfolio scope, current preflight, one-use policy, and untouched
+adapter/order/gate fields. The record digest is mandatory and recomputed;
+supplied and bound execution digests must be present and equal; and allowlisted
+permission facts must prove a View-only, non-Trade key. Confirmation time plus
+the authorized TTL must equal policy expiry, and receipt/preflight expiry may
+not outlive it. Malformed, contradictory, expired, or future clocks fail
+closed.
+
+### Senior full-stack implementation
+
+The PASS result now renders **What a future live confirmation would protect**
+immediately after `No order submitted`, before receipt detail. It shows
+`DESIGN PREVIEW · LOCKED`, `ORDERS OFF`, the exact action and limit, estimated
+economics, Preview check/expiry, a future one-order concept with no challenge
+or grant, and all nine missing production prerequisites. Every prerequisite is
+visibly marked `Missing`.
+
+The card has no button, link, input, positive tabindex, confirm/place/submit
+copy, or client-side reconstructed binding. The browser requires both the
+capability flag and exact server projection. The old disabled live-order
+button was replaced by static `Orders off · no live confirmation available`
+status.
+
+### Backend and data
+
+The returned DTO contains only allowlisted policy/action/economics/time labels
+and boolean binding summaries. It excludes raw Create bytes, client order ID,
+Preview ID, account ID, raw Coinbase response, credential/portfolio
+fingerprint, bound permission details, final-review challenge, execution
+confirmation, and grant ID. Estimated impact is re-derived from the exact
+Preview evidence rather than trusting a mutable settlement display field.
+
+The local Guard receipt remains local SHA-256 integrity evidence. It is not a
+production Delta signature or execution authorization. View-only PROBE stops
+before production Delta, so the UI correctly lists production Delta
+verification as missing and never treats `execution_confirmation.v2` as final
+order confirmation.
+
+### DevOps and release review
+
+No route was added. Explicit regressions keep live-readiness,
+final-confirmation, final-review-challenge, grant, claim, execute, Create,
+orders, submit, place, and proxy paths at `404`. The existing dependency-
+closure test still proves the advisor cannot import the Coinbase execution
+REST adapter or `createCoinbaseExecutionAdapter`.
+
+README, security policy, roadmap, design contract, threat model, capability
+contract, and this log were updated before the isolated Sprint 5 checkpoint.
+The public version remains v1.5.3 until Sprints 6–7 and the actual release
+archive gates complete.
+
+### Designer and frontend critique
+
+Synthetic internal review—not customer proof—found that a disabled “Live order
+unavailable” button still looked like a latent action, and that “before
+anything becomes eligible” overstated the current state. The shipped revision
+uses static Orders-off status and says the mandate is inspected before any
+future live confirmation could be considered.
+
+The explanation uses progressive disclosure: it gives the exact action,
+economics, freshness, and missing-control checklist without hashes or schema
+ceremony. At mobile width its facts and prerequisite list stack to one column.
+
+### QA
+
+Focused capability/UI/dependency tests passed **26/26**. Focused loopback,
+redaction, route, View-only integration, and tamper tests passed **24/24**.
+An additional direct-pipeline scope gate passed **8/8**, for **58/58** focused
+tests overall. The complete repository suite passed **620/620**. Local links,
+skill metadata, v1.5.3 release metadata, and diff integrity also passed.
+
+Adversarial coverage mutates the policy, canonical action, exact proposal,
+Preview request and response, normalized evidence, prospective Create digest,
+credential scope, portfolio scope, every Coinbase provenance class, account
+completeness, proposal/Preview decisions, nonce, preflight fingerprint,
+receipt, timestamps, adapter state, order ID, transmitted-body digest, and
+one-time-gate state. Every mutation omits the projection. Feature-disabled,
+dry-run, missing-connection REVIEW, expired, future-clock, and invalid-clock
+paths likewise fail closed.
+
+The final adversarial pass also removed an optional-integrity seam: missing or
+blank top-level record digests, resealed contradictory boundary/source facts,
+receipt-unbound settlement mutation, and a mismatched supplied execution
+digest, expired policy window, or shifted confirmation time all omit the
+projection. A Trade-enabled credential is rejected before any PROBE adapter
+call. The mutation harness reseals every non-digest case so it exercises the
+deeper receipt and semantic invariants rather than stopping at the outer
+digest. A source regression proves the released advisor view-model contains no
+debug-readiness environment branch or console logging.
+
+An independent read-only Sprint 5 security audit reported GO: strict
+capability fail-close, fresh complete receipt-verified View-only PASS only,
+no sensitive material leakage, no new readiness/execution/Create/proxy route
+or executor import, and a static locked UI with no interactive order control.
+This is internal synthetic assurance, not customer or third-party
+certification.
+
+The supported in-app browser completed the actual credential-free example:
+empty composer → example fill → mandate review → one-check authorization →
+verified PASS, with `No order submitted`, no readiness card on dry run, and
+static Orders-off status. At a 320×800 viewport, inner, body, and document
+width were all 320 pixels, horizontal overflow was false, the compact
+`Dry run / Coinbase off / Orders off` bar remained visible, the unfocused
+composer was 46 pixels high, and the console had zero warnings or errors.
+No real credential was used; the View-only locked card is covered by the
+injected fake-provider server integration and static DOM contract rather than
+fabricating provider evidence in the browser.
+
+One browser locator waited for the literal text `MANDATE CAPTURED` while the
+accessible region was named `Mandate captured`; it timed out, then a fresh DOM
+snapshot confirmed the mandate was already rendered correctly. The
+subsequent supported interaction completed. This was test-harness locator
+case mismatch, not an application or API failure.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: the locked card answers “what would a real
+confirmation eventually protect?” without turning a successful View-only
+check into a trading CTA. The missing-prerequisite list makes the security gap
+concrete, while keeping it behind a successful optional connection means the
+credential-free first experience stays fast and calm.
+
+### Shipped impact
+
+The development branch can now explain the exact future execution boundary
+after a qualified View-only PASS while remaining non-actionable. It does not
+issue authorization, eligibility, a challenge, grant, Trade credential,
+production Delta proof, Create request, order, or money movement. Orders
+remain off.

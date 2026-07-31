@@ -88,11 +88,12 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
 | 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
 
-Current development checkpoint: Sprints 0–4 are implemented. Sprint 3 is a
+Current development checkpoint: Sprints 0–5 are implemented. Sprint 3 is a
 non-executable conditional template and one-check simulation only. Sprint 4
 is neutral educational planning with a fresh editable one-leg handoff; it
-does not create Guard evidence or authorize a trade. Sprints 5–7 remain
-behind disabled capability flags until their own gates pass.
+does not create Guard evidence or authorize a trade. Sprint 5 is a locked
+server-derived explanation shown only for a fresh, complete, locally
+receipt-verified View-only PASS. Sprints 6–7 remain behind their own gates.
 
 ## Feature modes
 
@@ -181,12 +182,27 @@ Portfolio-wide approval, batch trades, and rebalancing remain absent.
 
 ### Sprint 5 implementation contract
 
-The only enabled capability may be `live_readiness_preview=true`. Final
+The only enabled readiness capability is `live_readiness_preview=true`. Final
 confirmation readiness, a durable executor, live execution, and Create remain
-false. After PASS, the UI may show “What a live confirmation will protect”:
-the exact action, price bound, estimated economics, Preview time, one-use
-scope, and a missing-prerequisite checklist. “Orders off” remains prominent;
-no enabled or focusable “Confirm and place” action exists.
+false. Only a fresh, complete, exact View-only `PREVIEW_PROBE_PASS` with a
+verified, unexpired local receipt may show **What a future live confirmation
+would protect**: the exact action, price bound, estimated economics, Preview
+time and expiry, future one-order concept, and a nine-item missing-prerequisite
+checklist. Dry run, `BLOCK`, `REVIEW`, stale evidence, partial bindings,
+tampering, source mismatch, credential/portfolio drift, or any execution field
+change omits the projection. “Orders off” remains prominent; no enabled or
+focusable confirmation/order action exists.
+
+The projection is a safe allowlisted view over a digest-sealed record. It also
+requires exact equality between the supplied and bound execution digests plus
+receipt-bound allowlisted facts proving View-only, non-Trade scope. It exposes
+no raw Create body, client order ID, Preview ID, account ID,
+credential/portfolio fingerprint, permission detail, challenge, grant, or new
+digest. The local receipt is integrity evidence only, not production Delta
+authorization. The advisor has no
+live-readiness POST, final-confirmation, grant, claim, Create, order, submit,
+place, execute, or proxy route, and its dependency closure excludes the
+Coinbase execution transport.
 
 `execution_confirmation.v2` remains preflight-readiness evidence and must not
 be reused. A future production design requires a new server-authoritative

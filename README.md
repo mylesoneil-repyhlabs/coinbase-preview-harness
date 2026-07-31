@@ -24,7 +24,7 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-Sprints 1 through 4 now include an actual dependency-free local frontend,
+Sprints 1 through 5 now include an actual dependency-free local frontend,
 same-origin loopback service, and optional session-only Coinbase View
 connection. It is not a screenshot or a fake banking dashboard. A user can
 state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
@@ -135,6 +135,35 @@ Advisor and separately prepare and authorize a new mandate with fresh Guard
 evidence. Portfolio-wide approval, batch trades, rebalancing, suitability
 claims, ranking, auto-buying, and individualized advice are absent.
 
+### Understand the future live boundary
+
+A fresh, complete connected View-only `PASS` now adds a locked card titled
+**What a future live confirmation would protect**. It summarizes the exact
+action and price bound, estimated economics, Coinbase Preview check time and
+expiry, and the concept of a future one-order scope. The card is a
+server-derived explanation only. It is not shown for a dry run, `BLOCK`,
+`REVIEW`, expired result, incomplete binding, or tampered receipt.
+
+The explanation depends on the locally verified receipt binding the policy,
+canonical action, exact proposal, authenticated View-only Preview and
+normalized evidence, prospective Create **digest**, credential scope,
+portfolio scope, and current preflight. The sealed record must have its exact
+top-level digest, matching supplied and bound execution digests, and
+allowlisted permission facts proving View-only rather than Trade scope. It
+also verifies that confirmation time plus the authorized TTL equals policy
+expiry and that receipt/preflight expiry never outlives it. It does not retain
+or expose Create bytes, a client order ID, Preview ID, account ID, credential
+fingerprint, permission details, or grant/challenge identifier.
+
+The card marks all future controls as missing: an authenticated execution
+principal, production Delta verifier, isolated View+Trade executor credential,
+server final-review challenge, durable atomic one-use grant and journal,
+server kill-switch epoch, exact-byte Create service, reconciliation, and a
+separate first-order approval. `execution_confirmation.v2` is not reused as
+final confirmation. There is no final-confirmation, grant, claim, Create,
+order, submit, place, execute, or generic-proxy route, and the UI offers no
+live-order action. **Orders remain off.**
+
 ### Optional View-only connection in the advisor
 
 Open **Connection** only if you want real Coinbase account/product/Preview
@@ -172,12 +201,15 @@ Current advisor-development capability status comes from
   enabled;
 - explicit one-leg plus Buy/Sell handoff to a new editable, unauthorized
   protected-trade draft: enabled;
+- locked live-readiness explanation for a fresh, complete, receipt-verified
+  View-only PASS: enabled; it is neither authorization nor readiness to trade;
 - browser credential storage, Coinbase Create, order submission, production
   Delta, and money movement: unavailable;
 - non-executable conditional-plan revisions and explicitly authorized
   one-check simulations: enabled;
 - saved monitoring, timers, unattended execution, individualized advice,
-  automatic portfolio trading, and post-PASS live readiness: not enabled.
+  automatic portfolio trading, post-PASS final confirmation, durable grants,
+  and live execution: not enabled.
 
 The public release remains v1.5.3 until all eight advisor sprints, release
 archive checks, and CI gates are complete. The existing v1.5 CLI/skill

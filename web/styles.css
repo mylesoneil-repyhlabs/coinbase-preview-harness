@@ -660,6 +660,138 @@ h3 {
   border-left-color: var(--amber);
 }
 
+.live-readiness-preview {
+  display: grid;
+  gap: 15px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid rgb(25 80 67 / 20%);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgb(236 247 242 / 94%), rgb(248 248 243 / 98%));
+}
+
+.live-readiness-preview__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.live-readiness-preview__header .eyebrow,
+.live-readiness-preview__header h3,
+.live-readiness-preview__statement,
+.live-readiness-preview__boundary,
+.live-readiness-preview__prerequisites h4 {
+  margin: 0;
+}
+
+.live-readiness-preview__header h3 {
+  margin-top: 4px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.orders-off-badge {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid rgb(25 80 67 / 22%);
+  border-radius: 999px;
+  color: var(--green);
+  background: white;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.live-readiness-preview__statement {
+  color: var(--ink);
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+.live-readiness-preview__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.live-readiness-preview__facts > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 76%);
+}
+
+.live-readiness-preview__facts dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.live-readiness-preview__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.live-readiness-preview__prerequisites {
+  padding-top: 2px;
+}
+
+.live-readiness-preview__prerequisites h4 {
+  font-size: 13px;
+}
+
+.live-readiness-preview__prerequisites ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.live-readiness-preview__prerequisites li {
+  position: relative;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.live-readiness-preview__prerequisites li::before {
+  position: absolute;
+  top: 0.1em;
+  left: 0;
+  color: var(--amber);
+  content: "○";
+  font-weight: 800;
+}
+
+.live-readiness-preview__boundary {
+  padding-top: 12px;
+  border-top: 1px solid rgb(25 80 67 / 14%);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.static-order-status {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .artifact__header,
 .artifact__footer,
 .rail-card__heading,
@@ -2767,8 +2899,18 @@ h3 {
   .artifact-grid,
   .plan-facts,
   .retention-list,
-  .showcase-attempts {
+  .showcase-attempts,
+  .live-readiness-preview__facts,
+  .live-readiness-preview__prerequisites ul {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .live-readiness-preview__header {
+    display: grid;
+  }
+
+  .orders-off-badge {
+    justify-self: start;
   }
 
   .artifact__footer {
@@ -2780,6 +2922,10 @@ h3 {
   }
 
   .artifact-actions .button {
+    width: 100%;
+  }
+
+  .static-order-status {
     width: 100%;
   }
 

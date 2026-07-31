@@ -1,9 +1,33 @@
 import { guardDecision, verifyGuardReceipt } from "../guard-receipt.js";
+import {
+  buildCoinbaseCreateRequest,
+  buildCoinbasePreviewRequest,
+} from "../coinbase-order.js";
+import { digest, digestBytes } from "../evidence.js";
+import { derivePreviewSettlement } from "../execution-policy.js";
+import { assertCanonicalSpotAction } from "../spot-action.js";
 
 const SIMULATED_SOURCE = "SIMULATED_FIXTURE_NOT_COINBASE";
+const DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
 function decimal(value) {
-  return typeof value === "string" ? value : null;
+  return (
+    typeof value === "string" &&
+    value.length <= 128 &&
+    DECIMAL_PATTERN.test(value)
+  )
+    ? value
+    : null;
+}
+
+function sha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function recordIntegrityVerified(record) {
+  if (!record || !sha256(record.record_digest)) return false;
+  const { record_digest: recordDigest, ...recordPayload } = record;
+  return digest(recordPayload) === recordDigest;
 }
 
 function mandateView(policy, descriptor = null) {
@@ -125,12 +149,22 @@ function proposalView(record) {
 function impactView(record) {
   const preview = record?.preview?.evidence;
   if (!preview || !record?.policy) return null;
+  let settlement = null;
+  try {
+    settlement = derivePreviewSettlement(
+      record.policy,
+      record.proposal?.action,
+      preview,
+    );
+  } catch {
+    settlement = null;
+  }
   if (record.policy.side === "BUY") {
     return {
       debit: {
         asset: record.policy.quote_asset,
         value:
-          decimal(record.preview_check?.settlement?.value) ??
+          decimal(settlement?.value) ??
           decimal(preview.order_total),
       },
       estimated_receive: {
@@ -151,7 +185,7 @@ function impactView(record) {
     estimated_receive: {
       asset: record.policy.quote_asset,
       value:
-        decimal(record.preview_check?.settlement?.value) ??
+        decimal(settlement?.value) ??
         decimal(preview.order_total),
     },
     estimated_fee: {
@@ -161,12 +195,56 @@ function impactView(record) {
   };
 }
 
+function completeImpactView(record, impact) {
+  let expectedSettlement;
+  try {
+    expectedSettlement = derivePreviewSettlement(
+      record.policy,
+      record.proposal.action,
+      record.preview.evidence,
+    );
+  } catch {
+    return false;
+  }
+  const expectedDebitAsset =
+    record?.policy?.side === "BUY"
+      ? record?.policy?.quote_asset
+      : record?.policy?.base_asset;
+  const expectedReceiveAsset =
+    record?.policy?.side === "BUY"
+      ? record?.policy?.base_asset
+      : record?.policy?.quote_asset;
+  return (
+    record?.preview_check?.settlement?.kind ===
+      expectedSettlement.kind &&
+    record?.preview_check?.settlement?.value ===
+      expectedSettlement.value &&
+    impact?.debit?.asset === expectedDebitAsset &&
+    impact?.debit?.value ===
+      (record.policy.side === "BUY"
+        ? expectedSettlement.value
+        : record.preview.evidence.base_size) &&
+    impact?.estimated_receive?.asset === expectedReceiveAsset &&
+    impact?.estimated_receive?.value ===
+      (record.policy.side === "BUY"
+        ? record.preview.evidence.base_size
+        : expectedSettlement.value) &&
+    impact?.estimated_fee?.asset === record?.policy?.quote_asset &&
+    impact?.estimated_fee?.value ===
+      record.preview.evidence.commission_total &&
+    decimal(impact.debit.value) != null &&
+    decimal(impact.estimated_receive.value) != null &&
+    decimal(impact.estimated_fee.value) != null
+  );
+}
+
 function receiptView(record) {
   const receipt = record?.guard_receipt;
   if (!receipt) return null;
   let verified = false;
   try {
     verified =
+      recordIntegrityVerified(record) &&
       verifyGuardReceipt(receipt, record).verified === true;
   } catch {
     verified = false;
@@ -183,7 +261,379 @@ function receiptView(record) {
   };
 }
 
-export function advisorGuardResultView(record) {
+function actionIntegrityVerified(record) {
+  try {
+    assertCanonicalSpotAction(record.action_descriptor, record.policy);
+    assertCanonicalSpotAction(
+      record.proposal.action_descriptor,
+      record.policy,
+    );
+    return (
+      digest(record.action_descriptor) ===
+      digest(record.proposal.action_descriptor)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function exactRequestBindingsVerified(record) {
+  try {
+    const previewRequest = buildCoinbasePreviewRequest(
+      record.proposal.action,
+    );
+    const createRequest = buildCoinbaseCreateRequest(
+      record.proposal.action,
+      record.execution.client_order_id,
+      record.preview.evidence.preview_id,
+    );
+    return (
+      digestBytes(JSON.stringify(previewRequest)) ===
+        record.preview.request_digest &&
+      digestBytes(JSON.stringify(createRequest)) ===
+        record.execution.create_payload_digest
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sourceFactsVerified(record) {
+  const accounts = record?.sources?.accounts;
+  const product = record?.sources?.product;
+  const bestBidAsk = record?.sources?.best_bid_ask;
+  const preview = record?.sources?.preview;
+  const parsed = Object.fromEntries(
+    [
+      ["confirmation", record?.confirmation?.confirmed_at],
+      ["evidenceRequested", accounts?.requested_at],
+      ["evidenceReceived", accounts?.received_at],
+      ["bboObserved", bestBidAsk?.observed_at],
+      ["previewRequested", preview?.requested_at],
+      ["previewReceived", preview?.received_at],
+    ].map(([name, value]) => [name, Date.parse(value)]),
+  );
+  if (
+    Object.values(parsed).some((value) => !Number.isFinite(value))
+  ) {
+    return false;
+  }
+  const expectedBboAge = Math.max(
+    0,
+    parsed.evidenceReceived - parsed.bboObserved,
+  );
+  return (
+    accounts?.timestamp_kind === "LOCAL_RECEIPT_TIME" &&
+    product?.timestamp_kind === "LOCAL_RECEIPT_TIME" &&
+    bestBidAsk?.timestamp_kind === "COINBASE_PRICEBOOK_TIME" &&
+    preview?.timestamp_kind === "LOCAL_RECEIPT_TIME" &&
+    product?.requested_at === accounts.requested_at &&
+    bestBidAsk?.requested_at === accounts.requested_at &&
+    product?.received_at === accounts.received_at &&
+    bestBidAsk?.received_at === accounts.received_at &&
+    accounts?.age_ms === 0 &&
+    product?.age_ms === 0 &&
+    preview?.age_ms === 0 &&
+    bestBidAsk?.age_ms === expectedBboAge &&
+    parsed.confirmation <= parsed.evidenceRequested &&
+    parsed.evidenceRequested <= parsed.evidenceReceived &&
+    parsed.evidenceReceived <= parsed.previewRequested &&
+    parsed.previewRequested <= parsed.previewReceived &&
+    parsed.bboObserved <= parsed.evidenceReceived + 2_000 &&
+    preview?.received_at === record?.preview?.collected_at
+  );
+}
+
+function viewCredentialScopeVerified(record) {
+  const binding = record?.credential_binding;
+  const verifiedAt = Date.parse(binding?.verified_at);
+  const generatedAt = Date.parse(record?.generated_at);
+  const receiveScopeAccepted =
+    binding?.can_receive === false ||
+    (
+      binding?.can_receive === null &&
+      binding?.can_receive_reported === false
+    );
+  return (
+    binding?.attestation_schema ===
+      "delta.coinbase.view_permission_attestation.v2" &&
+    binding?.environment === "coinbase-read-preview" &&
+    binding?.request_auth_profile === "CDP_URIS_V1" &&
+    binding?.can_view === true &&
+    binding?.can_trade === false &&
+    binding?.can_transfer === false &&
+    receiveScopeAccepted &&
+    Number.isFinite(verifiedAt) &&
+    Number.isFinite(generatedAt) &&
+    verifiedAt <= generatedAt
+  );
+}
+
+function confirmationWindowVerified(record) {
+  const confirmedAt = Date.parse(record?.confirmation?.confirmed_at);
+  const policyExpiresAt = Date.parse(
+    record?.confirmation?.policy_expires_at,
+  );
+  const generatedAt = Date.parse(record?.generated_at);
+  const preflightExpiresAt = Date.parse(record?.preflight?.expires_at);
+  const receiptExpiresAt = Date.parse(
+    record?.guard_receipt?.expires_at,
+  );
+  const ttlSeconds = record?.policy?.validity?.ttl_seconds;
+  return (
+    Number.isFinite(confirmedAt) &&
+    Number.isFinite(policyExpiresAt) &&
+    Number.isFinite(generatedAt) &&
+    Number.isFinite(preflightExpiresAt) &&
+    Number.isFinite(receiptExpiresAt) &&
+    Number.isInteger(ttlSeconds) &&
+    ttlSeconds > 0 &&
+    policyExpiresAt - confirmedAt === ttlSeconds * 1_000 &&
+    confirmedAt <= generatedAt &&
+    preflightExpiresAt <= policyExpiresAt &&
+    receiptExpiresAt <= policyExpiresAt
+  );
+}
+
+function completeLiveReadinessBindings(record, receipt) {
+  const action = record?.proposal?.action;
+  const evidence = record?.preview?.evidence;
+  const credential = record?.credential_binding;
+  const funding = record?.funding;
+  const sources = record?.sources;
+  return (
+    recordIntegrityVerified(record) &&
+    record?.schema_version === "delta.coinbase.execution_record.v3" &&
+    record?.artifact_class === "PROBE" &&
+    record?.status === "PREVIEW_PROBE_PASS" &&
+    record?.decision === "PASS" &&
+    record?.guard_mode === "view_only_preflight" &&
+    record?.boundary?.mode === "view_only_preflight" &&
+    record?.boundary?.view_only === true &&
+    record?.boundary?.dry_run === false &&
+    record?.boundary?.create_available === false &&
+    record?.boundary?.no_order_submitted === true &&
+    record?.boundary?.money_moved === false &&
+    record?.boundary?.coinbase_contacted === true &&
+    record?.boundary
+      ?.preview_is_not_execution_or_price_guarantee === true &&
+    record?.policy != null &&
+    sha256(record?.policy_digest) &&
+    record?.policy?.usage?.max_executions === 1 &&
+    record?.confirmation?.matched === true &&
+    record?.confirmation?.execution_matched === true &&
+    record?.confirmation?.supplied_digest ===
+      record.policy_digest &&
+    sha256(record?.confirmation?.execution_digest) &&
+    sha256(record?.confirmation?.supplied_execution_digest) &&
+    record?.confirmation?.supplied_execution_digest ===
+      record.confirmation.execution_digest &&
+    sha256(record?.confirmation?.receipt_digest) &&
+    confirmationWindowVerified(record) &&
+    actionIntegrityVerified(record) &&
+    sha256(record?.action_descriptor?.descriptor_digest) &&
+    action != null &&
+    sha256(record?.proposal?.proposal_digest) &&
+    typeof evidence?.preview_id === "string" &&
+    evidence.preview_id.length > 0 &&
+    sha256(record?.preview?.request_digest) &&
+    record?.preview?.transport_body_digest ===
+      record.preview.request_digest &&
+    sha256(record?.preview?.response_fingerprint) &&
+    sha256(record?.preview?.evidence_digest) &&
+    sha256(record?.execution?.create_payload_digest) &&
+    typeof record?.execution?.client_order_id === "string" &&
+    record.execution.client_order_id.length > 0 &&
+    exactRequestBindingsVerified(record) &&
+    record?.execution?.adapter_invoked === false &&
+    record?.execution?.order_submitted === false &&
+    record?.execution?.order_id == null &&
+    record?.execution?.transmitted_body_digest == null &&
+    record?.execution?.one_time_gate_consumed === false &&
+    sha256(credential?.credential_fingerprint) &&
+    sha256(credential?.portfolio_fingerprint) &&
+    viewCredentialScopeVerified(record) &&
+    funding?.complete === true &&
+    funding?.decision === "PASS" &&
+    funding?.portfolio_fingerprint ===
+      credential.portfolio_fingerprint &&
+    sha256(funding?.evidence_digest) &&
+    sources?.accounts?.provenance ===
+      "COINBASE_AUTHENTICATED_VIEW" &&
+    sources?.accounts?.complete === true &&
+    sources?.product?.provenance ===
+      "COINBASE_AUTHENTICATED_VIEW" &&
+    sources?.best_bid_ask?.provenance ===
+      "COINBASE_AUTHENTICATED_VIEW" &&
+    sources?.preview?.provenance ===
+      "COINBASE_AUTHENTICATED_VIEW" &&
+    sourceFactsVerified(record) &&
+    sources?.preview?.received_at ===
+      record?.preview?.collected_at &&
+    record?.proposal_check?.decision === "PASS" &&
+    record?.preview_check?.decision === "PASS" &&
+    record?.delta == null &&
+    record?.preflight?.schema_version ===
+      "delta.coinbase.preflight_binding.v1" &&
+    sha256(record?.preflight?.nonce_digest) &&
+    sha256(record?.preflight?.fingerprint) &&
+    typeof record?.preflight?.expires_at === "string" &&
+    receipt?.mode === "view_only_preflight" &&
+    record?.guard_receipt?.nonce_digest ===
+      record?.preflight?.nonce_digest &&
+    receipt?.issued_at === record?.generated_at &&
+    receipt?.expires_at === record?.preflight?.expires_at &&
+    receipt?.binding_completeness === "COMPLETE" &&
+    record?.guard_receipt?.provenance?.source ===
+      "COINBASE_VIEW_ONLY" &&
+    record?.guard_receipt?.provenance?.coinbase_contacted === true &&
+    record?.guard_receipt?.provenance
+      ?.production_delta_contacted === false &&
+    record?.guard_receipt?.decision?.outcome === "PASS" &&
+    record?.guard_receipt?.execution_boundary?.create_available ===
+      false &&
+    record?.guard_receipt?.execution_boundary?.order_submitted ===
+      false &&
+    record?.guard_receipt?.execution_boundary?.money_moved === false &&
+    record?.guard_receipt?.execution_boundary?.one_use_status ===
+      "LOCKED"
+  );
+}
+
+const LIVE_READINESS_PREREQUISITES = Object.freeze([
+  "Authenticated execution principal",
+  "Production Delta verifier",
+  "Isolated View+Trade credential in an executor",
+  "Server-issued final review challenge",
+  "Durable atomic one-use grant and journal",
+  "Server kill-switch epoch",
+  "Exact-byte Create service",
+  "Submission reconciliation",
+  "Separate first-order approval",
+]);
+
+function liveReadinessView(
+  record,
+  receipt,
+  { enabled = false, now = new Date() } = {},
+) {
+  if (enabled !== true || receipt?.verified !== true) return null;
+  const bindingsComplete = completeLiveReadinessBindings(
+    record,
+    receipt,
+  );
+  if (!bindingsComplete) return null;
+  const current = now instanceof Date ? now : new Date(now);
+  const receiptExpiry = Date.parse(receipt.expires_at);
+  const preflightExpiry = Date.parse(record.preflight.expires_at);
+  const policyExpiry = Date.parse(
+    record.confirmation.policy_expires_at,
+  );
+  const evidenceTimes = [
+    receipt.issued_at,
+    record.generated_at,
+    record.confirmation.confirmed_at,
+    record.proposal.created_at,
+    record.preview.collected_at,
+    record.sources.accounts.requested_at,
+    record.sources.accounts.received_at,
+    record.sources.product.requested_at,
+    record.sources.product.received_at,
+    record.sources.best_bid_ask.requested_at,
+    record.sources.best_bid_ask.received_at,
+    record.sources.best_bid_ask.observed_at,
+    record.sources.preview.requested_at,
+    record.sources.preview.received_at,
+  ].map((value) => Date.parse(value));
+  if (
+    !Number.isFinite(current.getTime()) ||
+    !Number.isFinite(receiptExpiry) ||
+    !Number.isFinite(preflightExpiry) ||
+    !Number.isFinite(policyExpiry) ||
+    evidenceTimes.some(
+      (timestamp) =>
+        !Number.isFinite(timestamp) ||
+        timestamp > current.getTime(),
+    ) ||
+    current.getTime() >=
+      Math.min(receiptExpiry, preflightExpiry, policyExpiry)
+  ) {
+    return null;
+  }
+  const action = proposalView(record);
+  const impact = impactView(record);
+  const actionSizeComplete =
+    record.policy.side === "BUY"
+      ? decimal(action?.quote_size) != null &&
+        action?.base_size == null
+      : decimal(action?.base_size) != null &&
+        action?.quote_size == null;
+  if (
+    !action ||
+    decimal(action.limit_price) == null ||
+    !actionSizeComplete ||
+    !impact ||
+    !completeImpactView(record, impact)
+  ) {
+    return null;
+  }
+  const exactAction = {
+    ...action,
+    base_asset: record.policy.base_asset,
+    quote_asset: record.policy.quote_asset,
+  };
+  return {
+    schema_version: "delta.coinbase.live_readiness_preview.v1",
+    status: "LOCKED_EXPLANATION_ONLY",
+    label: "What a future live confirmation would protect",
+    statement:
+      "Explanation only. This View-only PASS is not authorization, eligibility, or readiness to trade.",
+    exact_action: exactAction,
+    mandate_condition:
+      mandateView(record.policy, record.action_descriptor)?.condition ??
+      null,
+    estimated_impact: impact,
+    preview_checked_at:
+      record.sources.preview.received_at ??
+      record.preview.collected_at ??
+      null,
+    preview_expires_at: record.preflight.expires_at,
+    future_one_order_scope: {
+      max_orders: 1,
+      grant_exists: false,
+      statement:
+        "A future design would bind one exact order; no execution grant exists.",
+    },
+    protected_bindings: {
+      policy: true,
+      action: true,
+      proposal: true,
+      preview: true,
+      evidence: true,
+      prospective_create_digest: true,
+      credential_scope: true,
+      portfolio_scope: true,
+      current_preflight: true,
+    },
+    missing_prerequisites: LIVE_READINESS_PREREQUISITES.map(
+      (label) => ({ label, status: "MISSING" }),
+    ),
+    boundary: {
+      orders_off: true,
+      create_available: false,
+      authorized: false,
+      eligible: false,
+      ready_to_trade: false,
+      final_confirmation_available: false,
+      grant_exists: false,
+    },
+  };
+}
+
+export function advisorGuardResultView(
+  record,
+  { liveReadinessEnabled = false, now = new Date() } = {},
+) {
   const rawDecision = guardDecision(record, record?.guard_mode);
   const receipt = receiptView(record);
   const decision =
@@ -204,6 +654,13 @@ export function advisorGuardResultView(record) {
     record?.boundary?.coinbase_contacted === true;
   const completeCoinbasePreview =
     coinbaseContacted && Boolean(record?.preview?.evidence);
+  const liveReadiness = liveReadinessView(record, receipt, {
+    enabled:
+      liveReadinessEnabled === true &&
+      decision === rawDecision &&
+      decision.outcome === "PASS",
+    now,
+  });
   return {
     schema_version: "delta.coinbase.advisor_guard_result_view.v1",
     mode: record?.guard_mode ?? "dry_run",
@@ -252,6 +709,7 @@ export function advisorGuardResultView(record) {
         record?.delta?.verifier_confirmed === true,
     },
     receipt,
+    ...(liveReadiness ? { live_readiness: liveReadiness } : {}),
     boundary: {
       create_available: false,
       order_submitted: false,

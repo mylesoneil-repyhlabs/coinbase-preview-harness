@@ -1450,6 +1450,137 @@ function updateDecisionSnapshot(outcome, reason) {
   dom.decisionSnapshotReason.textContent = reason;
 }
 
+function liveReadinessActionLabel(preview) {
+  const action = preview?.exact_action;
+  if (!action) return "Exact action unavailable";
+  const size =
+    action.quote_size != null
+      ? `${plainNumber(action.quote_size)} ${action.quote_asset ?? "quote asset"}`
+      : `${plainNumber(action.base_size)} ${action.base_asset ?? "base asset"}`;
+  const limit =
+    action.limit_price == null
+      ? "price bound unavailable"
+      : `limit ${plainNumber(action.limit_price)} ${action.quote_asset ?? ""}`.trim();
+  return `${action.side} ${size} on ${action.product_id} · ${action.type} ${action.time_in_force} · ${limit}`;
+}
+
+function liveReadinessConditionLabel(preview) {
+  const condition = preview?.mandate_condition;
+  if (!condition) return "No separate market trigger";
+  const operator =
+    ["LTE", "AT_OR_BELOW"].includes(condition.operator)
+      ? "≤"
+      : ["GTE", "AT_OR_ABOVE"].includes(condition.operator)
+        ? "≥"
+        : condition.operator ?? "must satisfy";
+  const reference =
+    condition.reference === "BEST_ASK"
+      ? "Fresh best ask"
+      : condition.reference === "BEST_BID"
+        ? "Fresh best bid"
+        : condition.reference;
+  return `${reference} ${operator} ${plainNumber(condition.value)} ${condition.asset}`;
+}
+
+function renderLiveReadinessPreview(preview) {
+  if (
+    preview?.schema_version !==
+      "delta.coinbase.live_readiness_preview.v1" ||
+    preview?.status !== "LOCKED_EXPLANATION_ONLY" ||
+    preview?.boundary?.orders_off !== true
+  ) {
+    return null;
+  }
+  const card = element("section", {
+    className: "live-readiness-preview",
+    attributes: {
+      "aria-label": "Locked future live confirmation design preview",
+    },
+  });
+  const header = element("div", {
+    className: "live-readiness-preview__header",
+  });
+  const title = element("div");
+  title.append(
+    element("p", {
+      className: "eyebrow",
+      text: "DESIGN PREVIEW · LOCKED",
+    }),
+    element("h3", { text: preview.label }),
+  );
+  header.append(
+    title,
+    element("span", {
+      className: "orders-off-badge",
+      text: "ORDERS OFF",
+    }),
+  );
+  card.append(
+    header,
+    element("p", {
+      className: "live-readiness-preview__statement",
+      text:
+        "This point-in-time View-only PASS is not authorization, eligibility, or readiness to trade.",
+    }),
+  );
+
+  const facts = element("dl", {
+    className: "live-readiness-preview__facts",
+  });
+  for (const [label, value] of [
+    ["Exact action", liveReadinessActionLabel(preview)],
+    ["Price protection", liveReadinessConditionLabel(preview)],
+    [
+      "Estimated economics",
+      impactLabel({ impact: preview.estimated_impact }),
+    ],
+    [
+      "View-only Preview",
+      `Checked ${preview.preview_checked_at ?? "time unavailable"} · expires ${preview.preview_expires_at ?? "time unavailable"}`,
+    ],
+    [
+      "Future one-order scope",
+      "Concept only · no final challenge or execution grant exists",
+    ],
+  ]) {
+    const item = element("div");
+    item.append(
+      element("dt", { text: label }),
+      element("dd", { text: value }),
+    );
+    facts.append(item);
+  }
+  card.append(facts);
+
+  const prerequisites = element("section", {
+    className: "live-readiness-preview__prerequisites",
+  });
+  prerequisites.append(
+    element("h4", {
+      text: "Missing before any future live order could be considered",
+    }),
+  );
+  const list = element("ul");
+  for (const item of preview.missing_prerequisites ?? []) {
+    if (item?.status !== "MISSING" || typeof item?.label !== "string") {
+      continue;
+    }
+    list.append(
+      element("li", { text: `${item.label} · Missing` }),
+    );
+  }
+  prerequisites.append(list);
+  card.append(
+    prerequisites,
+    element("p", {
+      className: "live-readiness-preview__boundary",
+      text:
+        "Orders remain off. There is no final-confirmation, grant, or order route.",
+    }),
+  );
+  return card;
+}
+
 function renderResult(resultPayload, target = dom.conversation) {
   const record =
     resultPayload?.record ??
@@ -1522,6 +1653,11 @@ function renderResult(resultPayload, target = dom.conversation) {
       text: "No order submitted · Coinbase Create remains unavailable",
     }),
   );
+  const liveReadiness =
+    state.capabilities?.live_readiness_preview === true
+      ? renderLiveReadinessPreview(record?.live_readiness)
+      : null;
+  if (liveReadiness) artifact.append(liveReadiness);
   const details = element("details", { className: "details-panel" });
   details.append(element("summary", { text: "Technical receipt details" }));
   details.append(definitionGrid(receiptDetails(record), "details-list"));
@@ -1552,19 +1688,22 @@ function renderResult(resultPayload, target = dom.conversation) {
     retry.addEventListener("click", () => dom.intentInput.focus());
     actions.append(retry);
   }
-  const liveButton = element("button", {
-    className: "button button--disabled",
-    text: "Live order unavailable",
-    attributes: { type: "button", disabled: "" },
+  const orderStatus = element("span", {
+    className: "static-order-status",
+    text: "Orders off · no live confirmation available",
   });
-  actions.append(liveButton);
+  actions.append(orderStatus);
   footer.append(actions);
   artifact.append(footer);
   target.append(artifact);
 
-  setGuardStep("confirmation");
+  setGuardStep(liveReadiness ? "confirmation" : "decision");
   dom.guardState.textContent =
-    outcome === "PASS" ? "Passed · locked" : `${titleCase(outcome)} · locked`;
+    liveReadiness
+      ? "Future confirmation · locked"
+      : outcome === "PASS"
+        ? "Passed · locked"
+        : `${titleCase(outcome)} · locked`;
   updateDecisionSnapshot(outcome, reason);
   reveal(artifact, { focus: true });
   announce(`${outcome}. ${reason} No order was submitted.`);

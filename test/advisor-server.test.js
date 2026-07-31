@@ -137,6 +137,7 @@ test("loopback status is truthful, session-only, and protected by browser header
   assert.equal(status.capabilities.conditional_plan_simulation, true);
   assert.equal(status.capabilities.educational_research, true);
   assert.equal(status.capabilities.portfolio_planning, true);
+  assert.equal(status.capabilities.live_readiness_preview, true);
   assert.equal(status.capabilities.conditional_plan_monitoring, false);
   assert.equal(status.capabilities.production_delta, false);
   assert.equal(status.capabilities.live_create, false);
@@ -228,6 +229,7 @@ test("one explicit authorization runs a real credential-free dry run and cannot 
   assert.equal(result.receipt.verified, true);
   assert.match(result.receipt.receipt_digest, /^[a-f0-9]{64}$/);
   assert.equal(result.delta.production_delta_contacted, false);
+  assert.equal(result.live_readiness, undefined);
   assertLockedBoundary(result.boundary);
   assert.match(result.boundary.statement, /Dry run only/i);
   assert.match(result.boundary.statement, /No Coinbase order/i);
@@ -289,6 +291,7 @@ test("server view downgrades a claimed PASS when its exact receipt does not veri
   assert.equal(result.delta.decision, "REVIEW");
   assert.equal(result.delta.verifier_confirmed, false);
   assert.equal(result.receipt.verified, false);
+  assert.equal(result.live_readiness, undefined);
   assertLockedBoundary(result.boundary);
 });
 
@@ -337,8 +340,16 @@ test("there is no Create, execution, order, credential, or generic proxy API", a
   const forbiddenRoutes = [
     "/api/orders",
     "/api/orders/preview",
+    "/api/live-readiness",
     "/api/execute",
+    "/api/execute/create",
     "/api/create",
+    "/api/final-confirmation",
+    "/api/final-review-challenge",
+    "/api/grant",
+    "/api/claim",
+    "/api/submit",
+    "/api/place",
     "/api/coinbase",
     "/api/coinbase/orders",
     "/api/proxy",

@@ -9,10 +9,14 @@ const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const [html, app, styles] = await Promise.all([
+const [html, app, styles, advisorViewModel] = await Promise.all([
   readFile(path.join(ROOT, "web", "index.html"), "utf8"),
   readFile(path.join(ROOT, "web", "app.js"), "utf8"),
   readFile(path.join(ROOT, "web", "styles.css"), "utf8"),
+  readFile(
+    path.join(ROOT, "src", "advisor", "view-model.js"),
+    "utf8",
+  ),
 ]);
 
 function defaultIntentFromHtml() {
@@ -180,7 +184,7 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(html, /Create, order submission, transfers/i);
   assert.match(html, /Not a Coinbase product, integration, or\s+endorsement/i);
   assert.match(app, /This authorizes evaluation only\s*·\s*not an order/i);
-  assert.match(app, /Live order unavailable/i);
+  assert.match(app, /Orders off · no live confirmation available/i);
   assert.match(app, /Advice off · Orders off/);
   assert.match(app, /No trade authorized/);
   assert.match(app, /PASS · Fits mandate/);
@@ -195,6 +199,92 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.doesNotMatch(
     app,
     /View-only point-in-time preflight plus local Delta simulation/i,
+  );
+});
+
+test("locked live-readiness is projection-only, non-actionable, and mobile-safe", () => {
+  assert.doesNotMatch(
+    advisorViewModel,
+    /DELTA_DEBUG_READINESS|console\.(?:debug|error|log)\s*\(/,
+  );
+  const previewStart = app.indexOf(
+    "function renderLiveReadinessPreview(preview)",
+  );
+  const previewEnd = app.indexOf(
+    "function renderResult",
+    previewStart,
+  );
+  const previewSource = app.slice(previewStart, previewEnd);
+  assert.ok(previewStart >= 0);
+  assert.match(
+    previewSource,
+    /delta\.coinbase\.live_readiness_preview\.v1/,
+  );
+  assert.match(previewSource, /LOCKED_EXPLANATION_ONLY/);
+  assert.match(previewSource, /DESIGN PREVIEW · LOCKED/);
+  assert.match(previewSource, /ORDERS OFF/);
+  assert.match(
+    previewSource,
+    /not authorization, eligibility, or readiness to trade/i,
+  );
+  assert.match(
+    previewSource,
+    /Future one-order scope/,
+  );
+  assert.match(
+    previewSource,
+    /no final challenge or execution grant exists/i,
+  );
+  assert.match(previewSource, /· Missing/);
+  assert.match(
+    previewSource,
+    /There is no final-confirmation, grant, or order route/i,
+  );
+  assert.doesNotMatch(
+    previewSource,
+    /element\(["'](?:button|a|input|textarea|select)["']/,
+  );
+  assert.doesNotMatch(
+    previewSource,
+    /\b(?:preview_id|client_order_id|credential_fingerprint|portfolio_fingerprint|create_payload|grant_id|challenge_id)\b/,
+  );
+
+  const resultStart = app.indexOf("function renderResult(");
+  const resultEnd = app.indexOf(
+    "async function prepareMandate",
+    resultStart,
+  );
+  const resultSource = app.slice(resultStart, resultEnd);
+  assert.match(
+    resultSource,
+    /state\.capabilities\?\.live_readiness_preview === true[\s\S]*?renderLiveReadinessPreview\(record\?\.live_readiness\)/,
+  );
+  assert.ok(
+    resultSource.indexOf("no-order-banner") <
+      resultSource.indexOf("renderLiveReadinessPreview"),
+  );
+  assert.ok(
+    resultSource.indexOf("renderLiveReadinessPreview") <
+      resultSource.indexOf("Technical receipt details"),
+  );
+  assert.match(
+    resultSource,
+    /Future confirmation · locked/,
+  );
+  assert.match(
+    resultSource,
+    /setGuardStep\(liveReadiness \? "confirmation" : "decision"\)/,
+  );
+  assert.match(
+    resultSource,
+    /dom\.guardState\.textContent\s*=\s*liveReadiness\s*\?/,
+  );
+  assert.doesNotMatch(resultSource, /Live order unavailable/);
+
+  assert.match(styles, /\.live-readiness-preview\s*\{/);
+  assert.match(
+    styles,
+    /@media\s*\(max-width:\s*580px\)[\s\S]*?\.live-readiness-preview__facts,[\s\S]*?\.live-readiness-preview__prerequisites ul[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
   );
 });
 

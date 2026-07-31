@@ -77,6 +77,32 @@ requires a separate reviewed service and threat model. A visible confirmation
 control does not add a Coinbase Create route: public Create, live orders,
 durable grants, and unattended execution remain unavailable.
 
+### Locked live-readiness boundary
+
+`features.live_readiness_preview` enables only a server-derived explanation
+for a fresh, complete, locally receipt-verified View-only `PASS`. It does not
+enable post-PASS final confirmation, an authenticated execution principal, a
+production Delta verifier, a Trade credential, a durable one-use grant or
+journal, a kill switch, exact-byte Create transport, reconciliation, or first-
+order approval.
+
+The projection is omitted on dry run, `BLOCK`, `REVIEW`, expiry, partial or
+future-dated evidence, binding/source/scope mismatch, tampering, or any sign
+that an adapter, gate, or order field changed. Its browser DTO exposes only a
+safe action/economics/time summary and missing-prerequisite labels. It excludes
+raw Coinbase bodies and IDs, Create bytes, fingerprints, challenges, and
+grants. A missing or invalid sealed-record digest, mismatched supplied
+execution digest, or permission scope other than View-only fails closed before
+projection. Confirmation time, authorized TTL, policy expiry, preflight
+expiry, and receipt expiry must also agree relationally. Those internal
+permission and timing facts are receipt/record-bound but never returned to the
+browser. There is no live-readiness mutation,
+final-confirmation, grant, claim, Create, order, submit, place, execute, or
+proxy route.
+
+The local `guard_receipt.v1` proves local integrity only. It is not a
+production Delta signature or live-order authorization.
+
 ### Educational-planning boundary
 
 Educational planning is a session-only planning surface, not Guard evidence,

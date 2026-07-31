@@ -2066,7 +2066,11 @@ export function createAdvisorRequestHandler({
             "The protected dry-run result is unavailable. No order was submitted.",
           );
         }
-        const view = advisorGuardResultView(result.record);
+        const view = advisorGuardResultView(result.record, {
+          liveReadinessEnabled:
+            capabilityProfile.features.live_readiness_preview,
+          now: now(),
+        });
         appendActivity(
           session,
           activityEntry(

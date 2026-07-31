@@ -118,9 +118,22 @@ kill-switch epoch
 expiry and maximum uses
 ```
 
-That challenge does not exist in this release. Sprint 5 may show a locked
-live-readiness preview explaining these protections, but final-confirmation
-readiness, a durable executor, Create, and live execution remain false.
+That challenge does not exist in this release. Sprint 5 implements only a
+read-only locked explanation. The server emits it for a fresh
+`PREVIEW_PROBE_PASS` only after verifying the local receipt, canonical action,
+complete authenticated View-only sources, policy/proposal/Preview/evidence
+and prospective-Create-digest bindings, matching credential/portfolio scope,
+current preflight, exact supplied-versus-bound execution digest, the sealed
+record digest, allowlisted non-Trade permission facts, and untouched execution
+fields. The browser receives a safe summary plus missing-prerequisite
+labels—never raw Create bytes, client order ID, Preview ID, account ID,
+credential/portfolio fingerprint, permission details, challenge, grant, or
+new secret.
+
+Dry run, `BLOCK`, `REVIEW`, expiry, future timestamps, partial bindings,
+tampering, source mismatch, credential/portfolio drift, or any adapter/order/
+gate field change omits the explanation. Final-confirmation readiness, a
+durable executor, Create, and live execution remain false.
 
 The existing `execution_confirmation.v2` object is preflight-readiness
 evidence only: it can be produced before Coinbase reads and does not bind the
@@ -160,6 +173,7 @@ Future execution requires all of:
 | Cross-session, stale, or forged education object | Opaque session-owned ID, exact revision and digest checks | Reject; no draft |
 | Implicit or repeated education handoff | Explicit one leg plus side; atomic one-handoff state | One editable unauthorized draft at most |
 | Forged PASS or confirmation | No final-confirmation route; future challenge requires pinned production proof | Remains `LOCKED` |
+| Forged or stale live-readiness input | Server-only exact predicate plus verified receipt, freshness, source, scope, and untouched-execution checks | Projection omitted; no route or grant |
 | Double final confirmation | No final-confirmation route; future durable challenge must consume atomically | Remains `LOCKED` |
 | Kill-switch race or uncertain send | No send path; future executor requires epoch checks, durable journal, reconciliation | No order |
 | Generic Coinbase/Create route | No route/import plus source scan | Unreachable |

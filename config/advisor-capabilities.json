@@ -21,6 +21,7 @@
     "conditional_plan_simulation": true,
     "educational_research": true,
     "portfolio_planning": true,
+    "live_readiness_preview": true,
     "post_pass_final_confirmation_readiness": false,
     "saved_plan_monitoring": false,
     "durable_executor": false,

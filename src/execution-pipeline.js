@@ -73,7 +73,13 @@ function finalRecord(record, { guardMode = null, nonce = null } = {}) {
   return { ...withReceipt, record_digest: digest(withReceipt) };
 }
 
-function validAttestation(attestation, { tradeRequired = false } = {}) {
+function validAttestation(
+  attestation,
+  {
+    tradeRequired = false,
+    viewOnlyRequired = false,
+  } = {},
+) {
   const receiveScopeAccepted =
     attestation?.can_receive === false ||
     (
@@ -85,6 +91,7 @@ function validAttestation(attestation, { tradeRequired = false } = {}) {
     attestation?.can_view === true &&
     typeof attestation?.can_trade === "boolean" &&
     (!tradeRequired || attestation.can_trade === true) &&
+    (!viewOnlyRequired || attestation.can_trade === false) &&
     attestation?.can_transfer === false &&
     receiveScopeAccepted &&
     attestation?.jwt_profile === JWT_PROFILE &&
@@ -320,8 +327,18 @@ async function runExecutionPipelineCore({
     },
     credential_binding: attestation
       ? {
+          attestation_schema: attestation.schema ?? null,
+          environment: attestation.environment ?? null,
+          request_auth_profile: attestation.jwt_profile ?? null,
           portfolio_fingerprint: attestation.portfolio_fingerprint,
           credential_fingerprint: attestation.key_fingerprint,
+          can_view: attestation.can_view,
+          can_trade: attestation.can_trade,
+          can_transfer: attestation.can_transfer,
+          can_receive: attestation.can_receive,
+          can_receive_reported:
+            attestation.can_receive_reported ?? null,
+          verified_at: attestation.verified_at ?? null,
         }
       : null,
     market: null,
@@ -440,6 +457,7 @@ async function runExecutionPipelineCore({
     if (
       !validAttestation(attestation, {
         tradeRequired: mode === "LIVE" && !builtInSimulation,
+        viewOnlyRequired: mode === "PROBE",
       })
     ) {
       throw reviewError(

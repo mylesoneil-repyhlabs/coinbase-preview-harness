@@ -15,6 +15,45 @@ function requireBoolean(value, label) {
   return value;
 }
 
+const EXECUTION_FEATURES = Object.freeze([
+  "post_pass_final_confirmation_readiness",
+  "durable_executor",
+  "live_execution",
+  "autonomous_execution",
+  "coinbase_create",
+]);
+
+function assertExecutionDisabled(profile) {
+  requireBoolean(
+    profile.features.live_readiness_preview,
+    "live_readiness_preview",
+  );
+  for (const feature of EXECUTION_FEATURES) {
+    if (requireBoolean(profile.features[feature], feature)) {
+      throw new Error(
+        `Advisor execution feature ${feature} must remain disabled`,
+      );
+    }
+  }
+  if (
+    requireBoolean(
+      profile.release_boundaries.coinbase_create_enabled,
+      "coinbase_create_enabled",
+    ) ||
+    requireBoolean(
+      profile.release_boundaries.production_delta_integrated,
+      "production_delta_integrated",
+    ) ||
+    requireBoolean(
+      profile.release_boundaries.unattended_execution,
+      "unattended_execution",
+    )
+  ) {
+    throw new Error("Advisor release boundary cannot enable execution");
+  }
+  return profile;
+}
+
 export function loadAdvisorCapabilities(
   capabilitiesPath = ADVISOR_CAPABILITIES_PATH,
 ) {
@@ -34,26 +73,12 @@ export function loadAdvisorCapabilities(
   ) {
     throw new Error("Advisor capability contract is invalid");
   }
-  if (
-    requireBoolean(
-      parsed.release_boundaries.coinbase_create_enabled,
-      "coinbase_create_enabled",
-    ) ||
-    requireBoolean(
-      parsed.release_boundaries.production_delta_integrated,
-      "production_delta_integrated",
-    ) ||
-    requireBoolean(
-      parsed.release_boundaries.unattended_execution,
-      "unattended_execution",
-    )
-  ) {
-    throw new Error("Advisor release boundary cannot enable execution");
-  }
+  assertExecutionDisabled(parsed);
   return Object.freeze(parsed);
 }
 
 export function advisorStatusCapabilities(profile) {
+  assertExecutionDisabled(profile);
   return Object.freeze({
     conversational_spot_plan: requireBoolean(
       profile.features.advisor,
@@ -90,6 +115,10 @@ export function advisorStatusCapabilities(profile) {
     portfolio_planning: requireBoolean(
       profile.features.portfolio_planning,
       "portfolio_planning",
+    ),
+    live_readiness_preview: requireBoolean(
+      profile.features.live_readiness_preview,
+      "live_readiness_preview",
     ),
     post_pass_final_confirmation_readiness: requireBoolean(
       profile.features.post_pass_final_confirmation_readiness,
