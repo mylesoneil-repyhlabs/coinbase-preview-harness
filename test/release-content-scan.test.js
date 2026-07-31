@@ -47,6 +47,23 @@ test("release content scan rejects embedded private-key material", async () => {
   });
 });
 
+test("release content scan rejects embedded image data that could hide a canary", async () => {
+  await withPayload(async (root) => {
+    const privateMarker = ["-----BEGIN ", "PRIVATE KEY-----"].join("");
+    const encodedCanary = Buffer.from(privateMarker).toString("base64");
+    const imageScheme = ["data", "image/png;base64"].join(":");
+    const imageElement = ["<", "image"].join("");
+    await writeFile(
+      path.join(root, "unsafe.svg"),
+      `${imageElement} href="${imageScheme},${encodedCanary}" />\n`,
+    );
+
+    const result = scan(root);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /contains an embedded image/);
+  });
+});
+
 test("release content scan rejects provider-token-shaped values", async () => {
   await withPayload(async (root) => {
     const prefix = ["gh", "p_"].join("");

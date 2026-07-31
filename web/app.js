@@ -32,7 +32,6 @@ const dom = {
   views: [...document.querySelectorAll("[data-view]")],
   quickStarts: [...document.querySelectorAll("[data-start]")],
   modeStatus: document.querySelector("#mode-status"),
-  advisorModeBadge: document.querySelector("#advisor-mode-badge"),
   connectionStatus: document.querySelector("#connection-status"),
   orderStatus: document.querySelector("#order-status"),
   serviceStatus: document.querySelector("#service-status"),
@@ -47,6 +46,9 @@ const dom = {
   conditionalProduct: document.querySelector("#conditional-product"),
   conditionalSide: document.querySelector("#conditional-side"),
   conditionalSize: document.querySelector("#conditional-size"),
+  conditionalSizeLabel: document.querySelector(
+    "#conditional-size-label",
+  ),
   conditionalThreshold: document.querySelector("#conditional-threshold"),
   conditionalConditionLabel: document.querySelector(
     "#conditional-condition-label",
@@ -755,7 +757,11 @@ function addMessage(role, text, boundary = null) {
   return article;
 }
 
-function addError(message, target = dom.conversation) {
+function addError(
+  message,
+  target = dom.conversation,
+  { actionLabel = null, onAction = null } = {},
+) {
   const error = element("section", {
     className: "error-card",
     attributes: { role: "alert" },
@@ -764,6 +770,21 @@ function addError(message, target = dom.conversation) {
     element("strong", { text: "Stopped safely" }),
     element("p", { text: message }),
   );
+  if (
+    typeof actionLabel === "string" &&
+    typeof onAction === "function"
+  ) {
+    const action = element("button", {
+      className: "button button--ghost error-card__action",
+      text: actionLabel,
+      attributes: {
+        type: "button",
+        "data-action-control": "guard",
+      },
+    });
+    action.addEventListener("click", onAction);
+    error.append(action);
+  }
   target.append(error);
   reveal(error);
   announce(`Stopped safely. ${message}`);
@@ -771,26 +792,26 @@ function addError(message, target = dom.conversation) {
 }
 
 function setGuardStep(stepName) {
-  const order = ["mandate", "proposal", "decision", "confirmation"];
+  const order = ["mandate", "proposal", "decision"];
   const currentIndex = order.indexOf(stepName);
   for (const step of dom.guardSteps) {
     const index = order.indexOf(step.dataset.guardStep);
-    step.classList.toggle("is-complete", index < currentIndex);
-    step.classList.toggle("is-current", index === currentIndex);
+    const knownStep = index >= 0;
+    step.classList.toggle(
+      "is-complete",
+      knownStep && index < currentIndex,
+    );
+    step.classList.toggle(
+      "is-current",
+      knownStep && index === currentIndex,
+    );
   }
   dom.guardState.textContent =
     {
       mandate: "Capturing",
       proposal: "Proposing",
       decision: "Checking",
-      confirmation: "Locked",
     }[stepName] ?? "Ready";
-}
-
-function checkModeLabel(mode) {
-  return mode === "view_only_preflight"
-    ? "View-only preflight"
-    : "Dry-run simulation";
 }
 
 function setSelectedMode(mode) {
@@ -801,7 +822,6 @@ function setSelectedMode(mode) {
   state.selectedMode = nextMode;
   dom.modeStatus.textContent =
     nextMode === "view_only_preflight" ? "View only" : "Dry run";
-  dom.advisorModeBadge.textContent = checkModeLabel(nextMode);
   renderViewContext();
 }
 
@@ -979,6 +999,16 @@ function mandateRows(plan) {
   const policy = policyFromPlan(plan);
   const size = policy.size ?? {};
   const amountPrefix = size.operator === "MAX" ? "Up to" : "Exactly";
+  const baseAsset =
+    policy.base_asset ??
+    policy.product_id?.split("-")?.[0] ??
+    "the selected asset";
+  const amountLabel =
+    size.operator === "MAX"
+      ? policy.side === "SELL"
+        ? "Maximum to sell"
+        : "Maximum spend"
+      : "Exact amount";
   const partialFill =
     policy.partial_fill_policy === "ALLOW"
       ? "partial fills allowed"
@@ -987,22 +1017,22 @@ function mandateRows(plan) {
   return [
     [
       "Action",
-      `${titleCase(policy.side)} ${amountPrefix.toLowerCase()} ${plainNumber(size.value)} ${size.asset} on ${policy.product_id ?? "exact pair"}`,
-    ],
-    ["Condition", conditionLabel(policy.market_condition)],
-    [
-      "Execution",
-      `Price-bounded immediate-or-cancel · ${partialFill} · ≤${plainNumber(policy.limits?.max_slippage_bps)} bps`,
+      `${titleCase(policy.side)} ${baseAsset} on ${policy.product_id ?? "the exact pair"}`,
     ],
     [
-      "Economics",
-      `Fee ≤${plainNumber(commission?.value)} ${commission?.asset ?? policy.quote_asset ?? ""} · ${settlementLabel(policy)}`,
+      amountLabel,
+      `${amountPrefix} ${plainNumber(size.value)} ${size.asset}`,
+    ],
+    ["Price trigger", conditionLabel(policy.market_condition)],
+    ["Expires", ttlLabel(policy.validity?.ttl_seconds)],
+    [
+      "Protections",
+      `Immediate-or-cancel · ${partialFill} · slippage ≤${plainNumber(policy.limits?.max_slippage_bps)} bps · fee ≤${plainNumber(commission?.value)} ${commission?.asset ?? policy.quote_asset ?? ""} · ${settlementLabel(policy)}`,
     ],
     [
       "Funding",
       `Held ${size.asset ?? "funds"} only · no conversion or substitution`,
     ],
-    ["Validity", ttlLabel(policy.validity?.ttl_seconds)],
   ];
 }
 
@@ -1190,7 +1220,10 @@ function renderMandate(plan) {
       text: "Mandate captured",
     }),
   );
-  artifact.append(header, definitionGrid(mandateRows(plan)));
+  artifact.append(
+    header,
+    definitionGrid(mandateRows(plan), "mandate-summary"),
+  );
 
   const footer = element("div", { className: "artifact__footer" });
   let selectedMode = () => "dry_run";
@@ -1254,8 +1287,8 @@ function renderMandate(plan) {
         setSelectedMode(mode);
         authorizeButton.textContent =
           mode === "view_only_preflight"
-            ? "Authorize View-only preflight"
-            : "Authorize dry-run check";
+            ? "Confirm View-only check"
+            : "Confirm dry-run check";
         announce(
           mode === "view_only_preflight"
             ? "View-only preflight selected for this mandate. Coinbase Preview is point in time; no order can be sent."
@@ -1279,7 +1312,7 @@ function renderMandate(plan) {
   });
   const authorizeButton = element("button", {
     className: "button button--primary",
-    text: "Authorize for one check",
+    text: "Confirm this protected check",
     attributes: {
       type: "button",
       "data-action-control": "guard",
@@ -1303,8 +1336,8 @@ function renderMandate(plan) {
   reveal(artifact, { focus: true });
   announce(
     state.connection?.connected === true
-      ? "Mandate captured. Review every boundary, choose Dry run or View-only preflight, then authorize one check."
-      : "Mandate captured. Review every boundary, then authorize one dry-run check.",
+      ? "Mandate captured. Review every boundary, choose Dry run or View-only preflight, then confirm one protected check."
+      : "Mandate captured. Review every boundary, then confirm one protected dry-run check.",
   );
 }
 
@@ -1445,31 +1478,51 @@ function renderComparison(record) {
   comparison.append(
     element("h3", { text: "Observed vs allowed" }),
   );
-  const header = element("div", {
-    className: "comparison__header",
-    attributes: { "aria-hidden": "true" },
+  const scroll = element("div", {
+    className: "comparison__scroll",
+    attributes: {
+      role: "region",
+      tabindex: "0",
+      "aria-label":
+        "Observed and allowed values; scroll horizontally on narrow screens",
+    },
   });
-  header.append(
-    element("span", { text: "Check" }),
-    element("span", { text: "Observed" }),
-    element("span", { text: "Allowed" }),
-  );
-  comparison.append(header);
+  const table = element("table", {
+    className: "comparison__table",
+  });
+  const header = element("thead");
+  const headerRow = element("tr");
+  for (const label of ["Check", "Observed", "Allowed"]) {
+    headerRow.append(
+      element("th", {
+        text: label,
+        attributes: { scope: "col" },
+      }),
+    );
+  }
+  header.append(headerRow);
+  const body = element("tbody");
   for (const [label, observed, allowed] of rows) {
-    const row = element("div", { className: "comparison__row" });
+    const row = element("tr");
     row.append(
-      element("strong", { text: label }),
-      element("span", {
+      element("th", {
+        text: label,
+        attributes: { scope: "row" },
+      }),
+      element("td", {
         className: "comparison__observed",
         text: observed,
       }),
-      element("span", {
+      element("td", {
         className: "comparison__allowed",
         text: allowed,
       }),
     );
-    comparison.append(row);
+    body.append(row);
   }
+  table.append(header, body);
+  scroll.append(table);
+  comparison.append(scroll);
   return comparison;
 }
 
@@ -1713,7 +1766,9 @@ function renderLiveReadinessPreview(preview) {
       className: "eyebrow",
       text: "DESIGN PREVIEW · LOCKED",
     }),
-    element("h3", { text: preview.label }),
+    element("h3", {
+      text: "What remains before any future live order",
+    }),
   );
   header.append(
     title,
@@ -1746,7 +1801,7 @@ function renderLiveReadinessPreview(preview) {
       `Checked ${preview.preview_checked_at ?? "time unavailable"} · expires ${preview.preview_expires_at ?? "time unavailable"}`,
     ],
     [
-      "Future one-order scope",
+      "One-order controls",
       "Concept only · no final challenge or execution grant exists",
     ],
   ]) {
@@ -1907,13 +1962,11 @@ function renderResult(resultPayload, target = dom.conversation) {
   artifact.append(footer);
   target.append(artifact);
 
-  setGuardStep(liveReadiness ? "confirmation" : "decision");
+  setGuardStep("decision");
   dom.guardState.textContent =
-    liveReadiness
-      ? "Future preview · locked"
-      : outcome === "PASS"
-        ? "Passed · locked"
-        : `${titleCase(outcome)} · locked`;
+    outcome === "PASS"
+      ? "Passed · locked"
+      : `${titleCase(outcome)} · locked`;
   updateDecisionSnapshot(outcome, reason);
   reveal(artifact, { focus: true });
   announce(`${outcome}. ${reason} No order was submitted.`);
@@ -2017,15 +2070,15 @@ async function authorizePlan(planId, button, mode = "dry_run") {
     );
     return;
   }
-  invalidateMandateAuthorizations("Authorization used");
+  invalidateMandateAuthorizations("Check used");
   state.currentPlan = null;
   setSelectedMode(mode);
   addMessage(
     "user",
     mode === "view_only_preflight"
-      ? "Authorize this mandate for one protected View-only preflight."
-      : "Authorize this mandate for one protected dry-run check.",
-    "This authorizes evaluation only · not an order",
+      ? "Confirm this mandate for one protected View-only preflight."
+      : "Confirm this mandate for one protected dry-run check.",
+    "This confirms evaluation only · not an order",
   );
   setGuardStep("proposal");
   await runPending(button, "Checking exact proposal…", async () => {
@@ -2044,8 +2097,17 @@ async function authorizePlan(planId, button, mode = "dry_run") {
         error instanceof Error
           ? error.message
           : "The local Guard could not complete this check. No order was submitted.",
+        dom.conversation,
+        {
+          actionLabel: "Prepare a fresh protected check",
+          onAction: () => {
+            dom.intentInput.focus();
+            const end = dom.intentInput.value.length;
+            dom.intentInput.setSelectionRange(end, end);
+          },
+        },
       );
-      setGuardStep("confirmation");
+      setGuardStep("decision");
       dom.guardState.textContent = "Stopped · locked";
     }
   });
@@ -2234,9 +2296,17 @@ function conditionalInput() {
 
 function updateConditionalSideCopy() {
   const buy = dom.conditionalSide.value === "BUY";
+  const [baseAsset = "base asset", quoteAsset = "quote asset"] =
+    dom.conditionalProduct.value
+      .trim()
+      .toUpperCase()
+      .split("-");
+  dom.conditionalSizeLabel.textContent = buy
+    ? `Maximum spend (${quoteAsset})`
+    : `Maximum to sell (${baseAsset})`;
   dom.conditionalConditionLabel.textContent = buy
-    ? "Fresh best ask is at or below"
-    : "Fresh best bid is at or above";
+    ? `Fresh best ask (${quoteAsset} per ${baseAsset}) is at or below`
+    : `Fresh best bid (${quoteAsset} per ${baseAsset}) is at or above`;
 }
 
 function setConditionalDefaults() {
@@ -2277,7 +2347,9 @@ function conditionalMandateRibbon(plan) {
     ),
     conditionalFact(
       "If",
-      `${template.condition.reference === "BEST_ASK" ? "Fresh best ask" : "Fresh best bid"} ${template.condition.operator === "LTE" ? "≤" : "≥"} ${plainNumber(template.condition.value)} ${template.condition.asset}`,
+      template.side === "BUY"
+        ? `Buy only if the fresh best ask is at or below ${plainNumber(template.condition.value)} ${template.condition.asset}`
+        : `Sell only if the fresh best bid is at or above ${plainNumber(template.condition.value)} ${template.condition.asset}`,
     ),
     conditionalFact(
       "Limits",
@@ -3971,7 +4043,8 @@ function handleQuickStart(event) {
     navigate("advisor", { focus: false });
     dom.intentInput.value = SAMPLE_INTENT;
     dom.intentInput.focus();
-    dom.intentInput.select();
+    const end = dom.intentInput.value.length;
+    dom.intentInput.setSelectionRange(end, end);
     announce("Protected spot-trade example is ready to prepare.");
   } else if (start === "condition") {
     navigate("plans");
@@ -4092,7 +4165,7 @@ async function disconnectViewOnly() {
   }
   clearConnectionFeedback();
   showConnectionProgress(
-    "Erasing the Coinbase credential reference from this local session…",
+    "Erasing Coinbase credential material from this local session…",
   );
   return runPending(
     dom.disconnectButton,
@@ -4109,7 +4182,7 @@ async function disconnectViewOnly() {
         applyConnectionStatus(payload, { announceChange: true });
         const success = element("p", {
           className: "notice notice--green",
-          text: "Disconnected. The local session key reference was erased; credential-free Dry run remains available.",
+          text: "Disconnected. Coinbase credential material was erased from the local session; credential-free Dry run remains available.",
           attributes: { role: "status" },
         });
         dom.connectionFeedback.replaceChildren(success);
@@ -4241,6 +4314,10 @@ for (const row of dom.educationRows) {
 
 dom.conditionalSide.addEventListener(
   "change",
+  updateConditionalSideCopy,
+);
+dom.conditionalProduct.addEventListener(
+  "input",
   updateConditionalSideCopy,
 );
 

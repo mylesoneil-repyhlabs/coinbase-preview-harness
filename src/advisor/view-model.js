@@ -585,7 +585,7 @@ function liveReadinessView(
   return {
     schema_version: "delta.coinbase.live_readiness_preview.v1",
     status: "LOCKED_EXPLANATION_ONLY",
-    label: "What a future live confirmation would protect",
+    label: "What remains before any future live order",
     statement:
       "Explanation only. This View-only PASS is not authorization, eligibility, or readiness to trade.",
     exact_action: exactAction,

@@ -1,6 +1,7 @@
 # Optional Coinbase View-only setup
 
-Delta Coinbase Guard v1.5 needs no credential for installation, mandate
+Delta Coinbase Guard v1.6 needs no credential for installation, Advisor
+startup, mandate
 capture, authorization, the complete dry run, local Delta simulation, receipt,
 or Guard history.
 
@@ -71,7 +72,34 @@ The Guard validates:
 Failure is `REVIEW — unable to verify`; it never falls back to a broader key or
 silently uses simulated evidence.
 
-## Use it in one preflight
+## Connect in the local Advisor
+
+Start `./run advisor`, open its printed `127.0.0.1` URL, and choose
+**Connection**. Enter the complete CDP key name and ECDSA private key only in
+that local page, then choose **Connect and test View only**.
+
+This path is not OAuth. Credential material necessarily exists briefly in the
+form, page JavaScript, and one same-origin loopback request. The fields are
+cleared before dispatch. After receipt, accepted key material exists only in
+the loopback server process until disconnect, failed validation, 15 minutes
+idle, 60 minutes absolute, or process exit.
+
+The Advisor never writes credential material to browser storage, browser
+history, a URL, logs, analytics, Guard history, the repository, or remote
+telemetry. JavaScript and server strings cannot be promised cryptographic
+zeroization; this is a non-persistence contract.
+
+The page session itself uses a separate high-entropy capability retained only
+in page memory and sent on stateful same-origin requests. No cookie is issued
+or trusted. Reloading starts a new session and loses the old page capability.
+
+Once connected, return to the latest unchanged mandate and explicitly select
+**View-only preflight**. The connection itself is not authorization. The
+server rechecks permissions before each preflight, and a missing, revoked,
+over-scoped, partial, stale, or unavailable source returns `REVIEW` with no
+fixture fallback.
+
+## Use the file-based CLI preflight
 
 The normal Codex flow is:
 
@@ -90,7 +118,7 @@ The skill keeps the plan path and exact policy digest private, then invokes:
   --no-artifacts
 ```
 
-No separate configure/bind/second-digest workflow is required for v1.5
+No separate configure/bind/second-digest workflow is required for the
 View-only preflight. Developer-only legacy seams remain under `help --all` for
 integration testing; they are not the user journey.
 

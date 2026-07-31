@@ -1,4 +1,4 @@
-# Coinbase Guard v1.5 — authentic Codex recording kit
+# Coinbase Guard v1.6 — authentic Codex recording kit
 
 Record the real surface: a fresh Codex conversation using the installed
 `$delta-coinbase-guard` skill. Do not reconstruct, fabricate, or screen-capture
@@ -6,6 +6,8 @@ a fake Codex UI. Keep the real chat dominant on the left. The supplied SVGs
 are explanatory right-hand presentation guides, not product UI.
 
 Read [the assurance ledger](COINBASE-DEMO-ASSURANCE.md) before recording.
+For the separate local Advisor walkthrough, use
+[ADVISOR-DEMO-v1.6.md](ADVISOR-DEMO-v1.6.md).
 
 ## Before recording
 
@@ -19,7 +21,7 @@ https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/latest
 ```sh
 shasum -a 256 -c delta-coinbase-guard-v1.zip.sha256
 unzip delta-coinbase-guard-v1.zip
-cd delta-coinbase-guard-v1.5.3
+cd delta-coinbase-guard-v1.6.0
 ./install
 ```
 
@@ -96,8 +98,10 @@ receipt, or Coinbase-authenticated stored fact.
 
 ## Companion-panel timing
 
-Align one v1.5 trust panel to each actual chat moment. If Codex takes longer,
-extend the panel; never cut or merge the authorization step.
+Align one trust panel to each actual chat moment. The checked-in filenames
+retain `v1.5` because they document the unchanged chat-native Guard sequence.
+If Codex takes longer, extend the panel; never cut or merge the authorization
+step.
 
 | Codex moment | Right-hand panel | Suggested hold |
 | --- | --- | ---: |
@@ -150,7 +154,7 @@ recording itself will not expose sensitive metadata.
 ## Separate fixed BLOCK → RETRY → PASS showcase
 
 The fixed showcase remains useful for the separation-of-control story but is
-not the normal v1.5 user journey. Use a separate chat:
+not the normal chat-native user journey. Use a separate chat:
 
 ```text
 Use $delta-coinbase-guard to run the fixed conditional-allocation partner
@@ -184,7 +188,7 @@ Create unavailable.
 
 ## Final recording checklist
 
-- Fresh Codex chat and managed v1.5 install.
+- Fresh Codex chat and managed v1.6 install.
 - Real chat clearly dominant and readable.
 - Exactly two user messages for the primary authorization flow.
 - Complete mandate visible before authorization.

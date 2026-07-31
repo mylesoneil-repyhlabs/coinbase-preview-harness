@@ -3,11 +3,15 @@ name: delta-coinbase-guard
 description: Turn a natural-language Coinbase Advanced spot BUY or SELL into a closed, reviewable mandate; ask only for missing material constraints; wait for explicit authorization; and run one protected credential-free dry run or optional ephemeral View-only Coinbase preflight. Use for chat-native Coinbase spot planning, mandate verification, PASS/BLOCK/REVIEW explanations, local receipts, and dry-run history. Coinbase Create and all money movement are unavailable.
 ---
 
-# Delta Coinbase Guard v1.5
+# Delta Coinbase Guard v1.6
 
 When `$delta-coinbase-guard` is invoked, keep the experience chat-native and
 start with the protected dry-run path unless the user explicitly chooses
 View-only facts.
+
+v1.6 also ships the local Delta Guard Advisor through `./run advisor`. Do not
+open it during the ordinary chat-native flow. Mention or launch it only when
+the user explicitly asks for the visual local product.
 
 Use the installed harness for policy compilation, canonicalization, evidence
 checks, arithmetic, decisions, receipts, replay handling, and history. Limit
@@ -34,7 +38,7 @@ are the two available modes. If the user already supplied an intent,
 acknowledge the no-order boundary briefly and begin; do not ask them to choose
 a mode.
 
-If doctor fails, stop and ask the user to reinstall the verified v1.5 release.
+If doctor fails, stop and ask the user to reinstall the verified v1.6 release.
 Read [workflow.md](references/workflow.md) before planning. Read
 [security-boundary.md](references/security-boundary.md) before accepting a
 View-only key path or explaining proof.
@@ -173,4 +177,4 @@ the local history. Never treat history as fresh evidence.
 Use `"$GUARD_RUN" coinbase-demo --no-artifacts` only when the user explicitly
 asks for the fixed conditional `BLOCK → RETRY → PASS` presentation fixture.
 Then read [showcase-response.md](references/showcase-response.md). It is not
-the ordinary v1.5 path, live Coinbase data, or production Delta.
+the ordinary protected-check path, live Coinbase data, or production Delta.

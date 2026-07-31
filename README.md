@@ -1,34 +1,42 @@
-# Delta Coinbase Guard v1.5
+# Delta Coinbase Guard v1.6
 
-> Tell Codex the Coinbase spot trade you want. The Guard turns it into a closed
-> mandate, pauses for your authorization, evaluates one exact proposal, and
-> keeps Coinbase Create unavailable.
+> Describe one Coinbase spot trade. Delta Guard Advisor turns it into a closed
+> mandate, waits for confirmation of one protected check, evaluates one exact
+> proposal, and keeps Coinbase Create unavailable.
 
 [![CI](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/actions/workflows/ci.yml)
 
-[**Download v1.5.3**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip)
-· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip.sha256)
-· [Recording kit](docs/COINBASE-CODEX-RECORDING-KIT.md)
+[**Download v1.6.0**](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.6.0/delta-coinbase-guard-v1.6.0.zip)
+· [SHA-256](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.6.0/delta-coinbase-guard-v1.6.0.zip.sha256)
+· [Advisor demo](docs/ADVISOR-DEMO-v1.6.md)
+· [Release notes](docs/RELEASE-NOTES-v1.6.0.md)
 · [Claim ledger](docs/COINBASE-DEMO-ASSURANCE.md)
-· [Sprint log](docs/SPRINT-LOG.md)
+· [Sprint log](docs/ADVISOR-SPRINT-LOG.md)
 
 This is an independent Delta prototype. It is not a Coinbase product,
 integration, or endorsement. No public command in this release can submit an
 order or move money.
 
-## Advisor v1.6 development preview
+![Credential-free Delta Guard Advisor v1.6 first run](https://raw.githubusercontent.com/mylesoneil-repyhlabs/coinbase-preview-harness/v1.6.0/docs/images/advisor-v1.6/01-first-run.png)
 
-The active development branch is transforming the same guard into an actual
-local-first **protected execution copilot**. The eight-sprint
+_Actual local Advisor at first run. Credential-free Dry run; Coinbase off;
+orders off. The repository-only PNG is excluded from the text-only release
+archive._
+
+## Delta Guard Advisor v1.6
+
+v1.6 ships an actual local-first **protected execution copilot** on the same
+deterministic Guard core. The eight-sprint
 [roadmap](docs/VIRTUAL-ADVISOR-ROADMAP.md), [design contract](docs/VIRTUAL-ADVISOR-DESIGN-CONTRACT.md),
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
-[advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
+[advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) record the product, safety,
+review, and release decisions.
 
-Sprints 1 through 6 now include an actual dependency-free local frontend,
+The release includes an actual dependency-free local frontend,
 same-origin loopback service, and optional session-only Coinbase View
 connection. It is not a screenshot or a fake banking dashboard. A user can
 state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
-credential-free dry run or connected View-only preflight, authorize one check,
+credential-free dry run or connected View-only preflight, confirm one check,
 and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
 impact, checked facts, locally verified receipt, recovery action, and
 `NO ORDER SUBMITTED` boundary.
@@ -48,8 +56,8 @@ documents, then launches them after installation under restricted `PATH` and
 source deletion. Coinbase Create and every execution/final-confirmation/grant
 route remain absent.
 
-The **Plans** surface now adds a premium conditional simulator for one-shot
-spot BUY or SELL plans. A session-only saved revision is a non-executable
+Progressive **Explore** options include a **Conditional check planner** for
+one-shot spot BUY or SELL plans. A session-only saved revision is a non-executable
 template: nothing watches the market. The user chooses a labeled fixture or
 one fresh connected View-only BBO check, grants a short-lived one-check
 simulation authorization, and sees `CONDITION NOT MET`, `BLOCK`, `PASS`, or
@@ -79,7 +87,7 @@ evaluation, not production Delta.
 
 ### Run the advisor locally
 
-From this development branch:
+From the installed release or a checkout:
 
 ```sh
 ./run advisor
@@ -90,16 +98,19 @@ Node.js runtime saved by the managed installer, uses `HARNESS_NODE_BINARY` when
 explicitly supplied, or falls back to Node.js 22+ on `PATH`. `pnpm advisor`
 uses the same launcher.
 
-The first page needs no credential. Leave the composer empty and choose
-**Try a protected ETH dry run** to fill a complete, editable example, or write
-your own spot request. Nothing is authorized until the exact mandate card is
-reviewed and its one-check control is selected.
+The first page needs no credential. Choose **Try a protected trade**, then
+load the complete ETH example or write your own spot request. The primary
+composer and start action appear before the optional condition and education
+tools. Nothing is checked until the exact mandate card is reviewed and
+**Confirm this protected check** is selected.
 
 ### Try the one-check conditional simulator
 
-Open **Plans**, review the editable **Action / If / Limits / Until** ribbon,
-and choose **Save & simulate**. This seals a session-only, non-executable
-template. Select either a clearly labeled fixture or a connected View-only
+Open **Explore condition checks and educational planning**, choose the
+**Conditional check planner**, review the editable
+**Action / If / Limits / Until** ribbon, and choose **Save & simulate**. This
+seals a session-only, non-executable template. Select either a clearly labeled
+fixture or a connected View-only
 source, authorize one check for 30–600 seconds, and run it once. The result
 shows `CONDITION NOT MET`, `BLOCK`, `PASS`, or `REVIEW`, the exact proposal
 when one was prepared, a locally verified receipt, and
@@ -112,8 +123,9 @@ separate flow that can use balances, product facts, BBO, and Preview.
 
 ### Try educational planning
 
-Open **Plans → Educational planning** to build a neutral, editable allocation
-canvas. The canvas starts blank: no planning amount, asset, weight, scenario
+Open **Explore condition checks and educational planning → Educational
+planning** to build a neutral, editable allocation canvas. The canvas starts
+blank: no planning amount, asset, weight, scenario
 attribution, trade side, or handoff leg is selected for the user. An optional
 **Load mechanical example · not a recommendation** control can fill a 10,000
 USDC BTC/ETH sample for editing, but it never creates a plan, authorizes a
@@ -150,14 +162,15 @@ Advisor and separately prepare and authorize a new mandate with fresh Guard
 evidence. Portfolio-wide approval, batch trades, rebalancing, suitability
 claims, ranking, auto-buying, and individualized advice are absent.
 
-### Understand the future live boundary
+### Understand what remains locked
 
-A fresh, complete connected View-only `PASS` now adds a locked card titled
-**What a future live confirmation would protect**. It summarizes the exact
-action and price bound, estimated economics, Coinbase Preview check time and
-expiry, and the concept of a future one-order scope. The card is a
-server-derived explanation only. It is not shown for a dry run, `BLOCK`,
-`REVIEW`, expired result, incomplete binding, or tampered receipt.
+A fresh, complete connected View-only `PASS` may add a neutral, locked
+**What remains** disclosure. It summarizes the exact action and price bound,
+estimated economics, Coinbase Preview check time and expiry, and the missing
+controls that any future one-order path would require. Decision remains the
+terminal product state. The disclosure is server-derived and read-only; it is
+not shown for a dry run, `BLOCK`, `REVIEW`, expired result, incomplete
+binding, or tampered receipt.
 
 The explanation depends on the locally verified receipt binding the policy,
 canonical action, exact proposal, authenticated View-only Preview and
@@ -170,7 +183,7 @@ expiry and that receipt/preflight expiry never outlives it. It does not retain
 or expose Create bytes, a client order ID, Preview ID, account ID, credential
 fingerprint, permission details, or grant/challenge identifier.
 
-The card marks all future controls as missing: an authenticated execution
+The disclosure marks all future controls as missing: an authenticated execution
 principal, production Delta verifier, isolated View+Trade executor credential,
 server final-review challenge, durable atomic one-use grant and journal,
 server kill-switch epoch, exact-byte Create service, reconciliation, and a
@@ -187,13 +200,13 @@ key directly in the local page, then choose **Connect and test View only**.
 This is not OAuth. The fields are cleared before the request is sent; the
 key still exists transiently in the form, page JavaScript, and one same-origin
 loopback request during Connect. After that request is received, the accepted
-key reference is retained only in loopback server-process memory for the
+key material is retained only in loopback server-process memory for the
 session. It is never written to browser storage, browser history, a URL, Guard
 history, logs, analytics, the repository, or remote telemetry.
 
 The server accepts only a key for which Coinbase reports View on and Trade and
 Transfer off. It rechecks that permission before every View-only preflight.
-Disconnect erases the in-process reference. It also expires after 15 minutes
+Disconnect erases the in-process credential material. It also expires after 15 minutes
 idle, 60 minutes absolute, or server exit. JavaScript strings cannot be
 guaranteed to be zeroized, so this is a non-persistence boundary, not a
 cryptographic-erasure claim.
@@ -205,7 +218,7 @@ partial, rate-limited, or unavailable source returns `REVIEW — unable to
 verify`. Coinbase Preview is point-in-time evidence, not an order or price
 guarantee.
 
-Current advisor-development capability status comes from
+Current release capability status comes from
 [`config/advisor-capabilities.json`](config/advisor-capabilities.json):
 
 - credential-free protected spot dry run: enabled;
@@ -231,11 +244,10 @@ Current advisor-development capability status comes from
   automatic portfolio trading, post-PASS final confirmation, durable grants,
   and live execution: not enabled.
 
-The public release remains v1.5.3 until all eight advisor sprints, release
-archive checks, and CI gates are complete. The existing v1.5 CLI/skill
-View-only preflight remains available as the file-based developer path. No
-real credential was used during advisor release testing; all provider calls
-were injected fakes and no external network was contacted.
+The existing chat-native CLI/skill View-only preflight remains available as
+the file-based developer path. No real credential was used during v1.6 release
+testing; provider calls used injected fakes and no external network was
+contacted.
 
 ## The first experience
 
@@ -274,7 +286,7 @@ The skill retains the exact plan and digest internally. Users do not copy
 hashes or paths during the normal flow. Hashes and normalized technical
 metadata remain available on request.
 
-## What v1.5 adds
+## Guard core carried forward from v1.5
 
 - **Credential-free default:** a complete dry run with labeled local fixtures,
   local Delta simulation, exact-payload checks, receipt, and no network.
@@ -324,7 +336,7 @@ and managed install no longer contain the separate Mastra/Brex partner demo.
 
 ## Supported action surface
 
-| Dimension | Public v1.5 |
+| Dimension | v1.6 protected-trade core |
 | --- | --- |
 | Venue | Coinbase Advanced Trade custodial account |
 | Product | Runtime-verified, online, enabled `SPOT` pair |
@@ -386,15 +398,15 @@ credential is needed for the default flow. The installer finds Node.js 22+ in
 the shell or Codex Desktop runtime cache.
 
 1. Download the pinned
-   [v1.5.3 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip)
+   [v1.6.0 archive](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.6.0/delta-coinbase-guard-v1.6.0.zip)
    and
-   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.5.3/delta-coinbase-guard-v1.5.3.zip.sha256).
+   [checksum](https://github.com/mylesoneil-repyhlabs/coinbase-preview-harness/releases/download/v1.6.0/delta-coinbase-guard-v1.6.0.zip.sha256).
 2. Verify and install:
 
 ```sh
-shasum -a 256 -c delta-coinbase-guard-v1.5.3.zip.sha256
-unzip delta-coinbase-guard-v1.5.3.zip
-cd delta-coinbase-guard-v1.5.3
+shasum -a 256 -c delta-coinbase-guard-v1.6.0.zip.sha256
+unzip delta-coinbase-guard-v1.6.0.zip
+cd delta-coinbase-guard-v1.6.0
 ./install
 ```
 
@@ -617,7 +629,7 @@ credentials, orders, or release artifacts.
 
 ## Security and production boundary
 
-Public v1.5 cannot place an order:
+Public v1.6 cannot place an order:
 
 1. the public View-only adapter has an explicit route/method allowlist and no
    Create method;
@@ -644,11 +656,12 @@ Create call, or trade.
 See [security policy](SECURITY.md) and
 [engineering handoff](docs/ENGINEERING-HANDOFF.md).
 
-## Upgrade from v1.4
+## Upgrade from v1.5.x
 
-The v3 policy schema remains, but v1.5 adds versioned funding, execution
-record, preflight, receipt, and history contracts. Old plans, confirmations,
-receipts, and Preview evidence must not be reused.
+The v3 policy and v1.5 preflight/receipt schemas remain, while v1.6 adds the
+session-only Advisor, conditional, education, and capability contracts. Old
+plans, confirmations, receipts, Preview evidence, browser sessions, and saved
+Advisor IDs must not be reused across the upgrade.
 
 1. Run `./install --upgrade`.
 2. Re-run the original request.
@@ -675,9 +688,10 @@ supersession, no-secret history/log output, locked Create, managed install,
 restricted `PATH`, source deletion, upgrades, truthful permission-failure
 provenance, View-only retry contact, and Coinbase-only release contents.
 
-See [the sprint log](docs/SPRINT-LOG.md) for the PM requirement, engineering
-decision, QA/persona finding, shipped fix, validation, and user impact for each
-release.
+See the [Advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) for the v1.6 product
+loop and the [earlier release sprint log](docs/SPRINT-LOG.md) for v1.5.x. They
+record the PM requirement, engineering decision, QA/persona finding, shipped
+fix, validation, and user impact for each release.
 
 ## Repository map
 

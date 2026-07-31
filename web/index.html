@@ -54,11 +54,12 @@
         <button
           class="nav-tab"
           type="button"
-          data-view-target="plans"
-          aria-controls="view-plans"
+          data-view-target="connection"
+          data-view-only-capability
+          aria-controls="view-connection"
           data-action-control="guard"
         >
-          Plans
+          Connection
         </button>
         <button
           class="nav-tab"
@@ -68,16 +69,6 @@
           data-action-control="guard"
         >
           Activity
-        </button>
-        <button
-          class="nav-tab"
-          type="button"
-          data-view-target="connection"
-          data-view-only-capability
-          aria-controls="view-connection"
-          data-action-control="guard"
-        >
-          Connection
         </button>
       </nav>
 
@@ -93,103 +84,28 @@
               <header class="conversation-heading">
                 <div>
                   <p class="eyebrow">PRIVATE PLANNING SESSION</p>
-                  <h1 id="advisor-heading">Say what you want. See exactly what is protected.</h1>
+                  <h1 id="advisor-heading">Tell me the trade. See exactly what Delta protects.</h1>
                   <p class="lede">
                     Prepare a Coinbase spot trade in plain English. Delta turns
-                    it into a mandate you can inspect before any future live
-                    confirmation could be considered.
+                    it into a mandate you can inspect before one protected
+                    evaluation check.
                   </p>
                 </div>
-                <span id="advisor-mode-badge" class="mode-badge">
-                  Dry-run simulation
-                </span>
               </header>
 
-              <div class="quick-starts" aria-label="Ways to start">
+              <div class="quick-starts" aria-label="Start a protected trade">
                 <button
-                  class="quick-start"
+                  class="quick-start quick-start--primary"
                   type="button"
                   data-start="trade"
                   data-action-control="guard"
                 >
                   <span class="quick-start__icon" aria-hidden="true">↗</span>
                   <span>
-                    <strong>Try a protected ETH dry run</strong>
-                    <small>Fill a complete example for your review</small>
+                    <strong>Try a protected trade</strong>
+                    <small>Load a complete ETH dry run for review</small>
                   </span>
                 </button>
-                <button
-                  class="quick-start"
-                  type="button"
-                  data-start="condition"
-                  data-conditional-capability
-                  data-action-control="guard"
-                >
-                  <span class="quick-start__icon" aria-hidden="true">⌁</span>
-                  <span>
-                    <span class="quick-start__title">
-                      <strong>Plan a future condition</strong>
-                      <small class="feature-status feature-status--preview">Preview</small>
-                    </span>
-                    <small>No monitoring or autonomous trade</small>
-                  </span>
-                </button>
-                <button
-                  class="quick-start"
-                  type="button"
-                  data-start="research"
-                  data-education-capability
-                  data-action-control="guard"
-                >
-                  <span class="quick-start__icon" aria-hidden="true">◎</span>
-                  <span>
-                    <span class="quick-start__title">
-                      <strong>Explore a token</strong>
-                      <small class="feature-status feature-status--preview">Educational</small>
-                    </span>
-                    <small>Educational research, never advice</small>
-                  </span>
-                </button>
-                <button
-                  class="quick-start"
-                  type="button"
-                  data-start="portfolio"
-                  data-education-capability
-                  data-action-control="guard"
-                >
-                  <span class="quick-start__icon" aria-hidden="true">◫</span>
-                  <span>
-                    <span class="quick-start__title">
-                      <strong>Build an allocation plan</strong>
-                      <small class="feature-status feature-status--preview">Editable</small>
-                    </span>
-                    <small>Editable planning, never auto-buy</small>
-                  </span>
-                </button>
-              </div>
-
-              <div
-                id="conversation"
-                class="conversation"
-                aria-label="Conversation"
-                aria-live="polite"
-                aria-relevant="additions"
-              >
-                <article class="message message--advisor">
-                  <div class="message__avatar" aria-hidden="true">δ</div>
-                  <div class="message__body">
-                    <p class="message__speaker">Delta advisor</p>
-                    <p>
-                      Start with the dry run below or describe another supported
-                      spot BUY or SELL. I’ll ask only for material limits that
-                      are missing, then stop for your authorization.
-                    </p>
-                    <p class="message__boundary">
-                      No credential needed · Coinbase is not contacted · no
-                      order can be sent
-                    </p>
-                  </div>
-                </article>
               </div>
 
               <form id="advisor-form" class="composer">
@@ -237,23 +153,88 @@
                 <p class="composer__note">
                   This sends only your planning request to the local Guard.
                   Simulation is the default; no Coinbase credential is used.
+                  <span class="composer__shortcut">⌘/Ctrl + Enter to prepare.</span>
                 </p>
               </form>
+
+              <details class="explore-more explore-more--secondary">
+                <summary>Explore condition checks and educational planning</summary>
+                <div class="explore-more__grid">
+                  <button
+                    class="quick-start"
+                    type="button"
+                    data-start="condition"
+                    data-conditional-capability
+                    data-action-control="guard"
+                  >
+                    <span class="quick-start__icon" aria-hidden="true">⌁</span>
+                    <span>
+                      <span class="quick-start__title">
+                        <strong>Plan a future condition</strong>
+                        <small class="feature-status feature-status--preview">Preview</small>
+                      </span>
+                      <small>No monitoring or autonomous trade</small>
+                    </span>
+                  </button>
+                  <button
+                    class="quick-start"
+                    type="button"
+                    data-start="research"
+                    data-education-capability
+                    data-action-control="guard"
+                  >
+                    <span class="quick-start__icon" aria-hidden="true">◎</span>
+                    <span>
+                      <span class="quick-start__title">
+                        <strong>Compare BTC, ETH, or SOL</strong>
+                        <small class="feature-status feature-status--preview">Educational</small>
+                      </span>
+                      <small>Educational research, never advice</small>
+                    </span>
+                  </button>
+                  <button
+                    class="quick-start"
+                    type="button"
+                    data-start="portfolio"
+                    data-education-capability
+                    data-action-control="guard"
+                  >
+                    <span class="quick-start__icon" aria-hidden="true">◫</span>
+                    <span>
+                      <span class="quick-start__title">
+                        <strong>Build an allocation plan</strong>
+                        <small class="feature-status feature-status--preview">Editable</small>
+                      </span>
+                      <small>Editable planning, never auto-buy</small>
+                    </span>
+                  </button>
+                </div>
+              </details>
+
+              <div
+                id="conversation"
+                class="conversation"
+                aria-label="Conversation"
+              >
+                <article class="message message--advisor">
+                  <div class="message__avatar" aria-hidden="true">δ</div>
+                  <div class="message__body">
+                    <p class="message__speaker">Delta advisor</p>
+                    <p>
+                      Describe one supported spot BUY or SELL. I’ll ask only
+                      for material limits that are missing, then stop for your
+                      confirmation.
+                    </p>
+                    <p class="message__boundary">
+                      No credential needed · Coinbase is not contacted · no
+                      order can be sent
+                    </p>
+                  </div>
+                </article>
+              </div>
             </section>
 
             <aside class="guard-rail" aria-label="Delta protection">
-              <section class="rail-card rail-card--boundary">
-                <p class="eyebrow">CURRENT BOUNDARY</p>
-                <div class="boundary-lock" aria-hidden="true">
-                  <span class="lock-icon lock-icon--large"></span>
-                </div>
-                <h2>No order can be sent</h2>
-                <p>
-                  This local experience can prepare, simulate, and explain. It
-                  has no Coinbase Create route and cannot move money.
-                </p>
-              </section>
-
               <section class="rail-card">
                 <div class="rail-card__heading">
                   <div>
@@ -284,11 +265,11 @@
                       <small>PASS, BLOCK, or REVIEW</small>
                     </div>
                   </li>
-                  <li class="guard-step" data-guard-step="confirmation">
+                  <li class="guard-step guard-step--future" data-guard-step="remaining">
                     <span>4</span>
                     <div>
-                      <strong>Future preview</strong>
-                      <small>Locked design only · orders off</small>
+                      <strong>What remains</strong>
+                      <small>Future controls · orders off</small>
                     </div>
                   </li>
                 </ol>
@@ -360,7 +341,7 @@
               aria-pressed="true"
               data-action-control="guard"
             >
-              Condition simulator
+              Conditional checks
             </button>
             <button
               class="plan-workspace-button"
@@ -388,7 +369,7 @@
             class="feature-card feature-card--premium conditional-composer"
           >
             <div class="feature-card__topline">
-              <span class="premium-badge">Premium plan simulator</span>
+              <span class="premium-badge">Conditional check planner</span>
               <span class="truth-badge">Non-executable template</span>
             </div>
             <div class="mandate-ribbon">
@@ -416,7 +397,7 @@
                     </select>
                   </label>
                   <label>
-                    <span>Maximum amount</span>
+                    <span id="conditional-size-label">Maximum spend (USDC)</span>
                     <input
                       id="conditional-size"
                       name="size_value"
@@ -840,7 +821,7 @@
               JavaScript memory, and one same-origin loopback request. The
               fields are cleared before that request is sent. After Coinbase
               verifies it, only the local server process retains the key
-              reference for this private session.
+              material for this private session.
             </p>
           </header>
 
@@ -895,9 +876,11 @@
                   <label for="coinbase-private-key">EC private key</label>
                   <textarea
                     id="coinbase-private-key"
+                    class="secret-field"
                     name="privateKey"
                     rows="5"
                     required
+                    aria-describedby="coinbase-private-key-note"
                     autocomplete="new-password"
                     autocapitalize="none"
                     spellcheck="false"
@@ -905,10 +888,12 @@
                     data-lpignore="true"
                     placeholder="Paste the Coinbase CDP EC private key"
                   ></textarea>
-                  <small>
-                    Sent only to this loopback server for a permission test;
-                    cleared from these fields immediately and never written to
-                    browser storage or Guard history.
+                  <small id="coinbase-private-key-note">
+                    Masked on screen. The full key briefly exists in this form,
+                    page memory, and the loopback request, then in server-process
+                    memory for this session. It is cleared from these fields
+                    immediately and never written to browser storage or Guard
+                    history.
                   </small>
                 </div>
                 <button
@@ -967,7 +952,7 @@
               ></div>
               <p class="fine-print">
                 This is not OAuth. Closing the local server, disconnecting, or
-                session expiry erases the in-memory reference. No order can be
+                session expiry erases the in-memory credential material. No order can be
                 sent.
               </p>
             </section>
@@ -1028,6 +1013,6 @@
       </footer>
     </div>
 
-    <div id="announcer" class="sr-only" aria-live="assertive"></div>
+    <div id="announcer" class="sr-only" aria-live="polite"></div>
   </body>
 </html>

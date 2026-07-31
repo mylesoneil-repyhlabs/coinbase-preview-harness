@@ -63,6 +63,123 @@ jobs:
       - name: Validate checked-in Mastra partner artifacts
         run: node scripts/validate-mastra-partner-assets.mjs
 
+  release-bundle:
+    name: Deterministic release bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run release-candidate tests
+        run: pnpm test
+
+      - name: Validate release metadata, skill, and links
+        run: |
+          pnpm check:release
+          pnpm check:skill
+          pnpm check:links
+
+      - name: Prepare restricted-PATH runtime
+        shell: bash
+        run: |
+          cold_home="$RUNNER_TEMP/delta-release-cold-home"
+          cached_node="$cold_home/.cache/codex-runtimes/ci/dependencies/node/bin/node"
+          mkdir -p "$(dirname "$cached_node")" "$RUNNER_TEMP/release"
+          cp "$(node -p 'process.execPath')" "$cached_node"
+          chmod 0755 "$cached_node"
+          echo "COLD_RELEASE_HOME=$cold_home" >> "$GITHUB_ENV"
+          echo "COLD_RELEASE_NODE=$cached_node" >> "$GITHUB_ENV"
+
+      - name: Build under restricted PATH
+        shell: bash
+        run: |
+          env -i \
+            HOME="$COLD_RELEASE_HOME" \
+            PATH="/usr/bin:/bin" \
+            ./scripts/build-release-bundle.sh \
+            HEAD \
+            "$RUNNER_TEMP/release"
+
+      - name: Independently cold-validate archive
+        shell: bash
+        run: |
+          env -i \
+            HOME="$COLD_RELEASE_HOME" \
+            PATH="/usr/bin:/bin" \
+            ./scripts/validate-release-bundle.sh \
+            "$RUNNER_TEMP/release/delta-coinbase-guard-v1.6.0.zip"
+
+      - name: Verify checksums and manifest
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/release"
+          sha256sum -c delta-coinbase-guard-v1.6.0.zip.sha256
+          sha256sum -c delta-coinbase-guard-v1.zip.sha256
+          "$COLD_RELEASE_NODE" -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(
+              fs.readFileSync(
+                "delta-coinbase-guard-v1.6.0.manifest.json",
+                "utf8",
+              ),
+            );
+            if (manifest.version !== "1.6.0") {
+              throw new Error("manifest version mismatch");
+            }
+            if (manifest.commit !== process.argv[1]) {
+              throw new Error("manifest commit mismatch");
+            }
+            if (manifest.create_enabled !== false) {
+              throw new Error("Create must remain disabled");
+            }
+            for (const key of [
+              "deterministic_archive_verified",
+              "secret_content_scan_verified",
+              "cold_install_verified",
+              "advisor_cold_launch_verified",
+              "advisor_static_assets_verified",
+              "advisor_create_routes_absent",
+            ]) {
+              if (manifest[key] !== true) {
+                throw new Error(`${key} is not verified`);
+              }
+            }
+          ' "$GITHUB_SHA"
+
+      - name: Upload archive, checksums, and manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: delta-coinbase-guard-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release/delta-coinbase-guard-v1.6.0.zip
+            ${{ runner.temp }}/release/delta-coinbase-guard-v1.6.0.zip.sha256
+            ${{ runner.temp }}/release/delta-coinbase-guard-v1.6.0.manifest.json
+            ${{ runner.temp }}/release/delta-coinbase-guard-v1.zip
+            ${{ runner.temp }}/release/delta-coinbase-guard-v1.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   mastra-reference:
     name: Mastra 1.53 reference
     runs-on: ubuntu-latest

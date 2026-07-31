@@ -9,12 +9,26 @@ const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const [html, app, styles, advisorViewModel] = await Promise.all([
+const [
+  html,
+  app,
+  styles,
+  advisorViewModel,
+  advisorScreenshotScript,
+] = await Promise.all([
   readFile(path.join(ROOT, "web", "index.html"), "utf8"),
   readFile(path.join(ROOT, "web", "app.js"), "utf8"),
   readFile(path.join(ROOT, "web", "styles.css"), "utf8"),
   readFile(
     path.join(ROOT, "src", "advisor", "view-model.js"),
+    "utf8",
+  ),
+  readFile(
+    path.join(
+      ROOT,
+      "scripts",
+      "generate-workflow-screenshots.mjs",
+    ),
     "utf8",
   ),
 ]);
@@ -39,8 +53,22 @@ test("the composer starts empty and the explicit quick-start compiles safely", (
   const starter = defaultIntentFromHtml();
   const quickStart = sampleIntentFromApp();
   assert.equal(starter, "");
-  assert.match(html, /Try a protected ETH dry run/i);
+  assert.match(html, /Try a protected trade/i);
+  assert.match(html, /Load a complete ETH dry run for review/i);
   assert.match(html, /data-start=["']trade["']/i);
+  assert.equal(
+    (html.match(/quick-start--primary/g) ?? []).length,
+    1,
+  );
+  assert.match(
+    html,
+    /<details class=["']explore-more explore-more--secondary["']>[\s\S]*?data-start=["']condition["'][\s\S]*?data-start=["']research["'][\s\S]*?data-start=["']portfolio["'][\s\S]*?<\/details>/i,
+  );
+  assert.ok(
+    html.indexOf('id="advisor-form"') <
+      html.indexOf("explore-more--secondary"),
+    "the primary composer must appear before secondary exploration",
+  );
 
   const compilation = compileDeterministicIntent(quickStart);
   assert.equal(compilation.status, "READY_FOR_CONFIRMATION");
@@ -54,6 +82,25 @@ test("the composer starts empty and the explicit quick-start compiles safely", (
   assert.equal(compilation.policy.limits.max_commission.value, "15");
   assert.equal(compilation.policy.limits.settlement.value, "3015");
   assert.equal(compilation.policy.usage.max_executions, 1);
+});
+
+test("visual generator captures the real credential-free Advisor", () => {
+  assert.match(
+    advisorScreenshotScript,
+    /listenAdvisorServer\(\{\s*port:\s*0\s*\}\)/,
+  );
+  assert.match(
+    advisorScreenshotScript,
+    /docs["'],\s*["']images["'],\s*["']advisor-v1\.6/,
+  );
+  assert.match(
+    advisorScreenshotScript,
+    /Credential-free Dry run only\. No Coinbase credential or network call was used\./,
+  );
+  assert.doesNotMatch(
+    advisorScreenshotScript,
+    /createExecutionPlan|simulateExecution|exactly 5 USDC|output["'],\s*["']playwright/,
+  );
 });
 
 test("static frontend contains no browser persistence, unsafe HTML sinks, or remote assets", () => {
@@ -165,11 +212,21 @@ test("markup has keyboard and screen-reader foundations for the complete flow", 
     html,
     /<textarea\b(?=[^>]*\bid=["']intent-input["'])(?=[^>]*\bname=["']intent["'])(?=[^>]*\brequired\b)[^>]*>/i,
   );
+  const conversationTag = html.match(
+    /<div\b(?=[^>]*\bid=["']conversation["'])[^>]*>/i,
+  )?.[0];
+  assert.ok(conversationTag);
+  assert.doesNotMatch(conversationTag, /\baria-live=/i);
+  assert.match(html, /id=["']announcer["'][^>]*aria-live=["']polite["']/i);
+  assert.match(app, /attributes:\s*\{\s*role:\s*["']alert["']\s*\}/);
   assert.match(
-    html,
-    /id=["']conversation["'][^>]*aria-live=["']polite["']/i,
+    app,
+    /className:\s*["']comparison__scroll["'][\s\S]*?role:\s*["']region["'][\s\S]*?tabindex:\s*["']0["'][\s\S]*?Observed and allowed values; scroll horizontally on narrow screens/,
   );
-  assert.match(html, /id=["']announcer["'][^>]*aria-live=["']assertive["']/i);
+  assert.match(
+    app,
+    /element\(["']table["'],\s*\{[\s\S]*?className:\s*["']comparison__table["']/,
+  );
 
   for (const match of html.matchAll(/<button\b([^>]*)>/gi)) {
     assert.match(
@@ -190,7 +247,6 @@ test("markup has keyboard and screen-reader foundations for the complete flow", 
 test("default copy makes the current and future safety boundaries unmistakable", () => {
   assert.match(html, /No order can be sent/i);
   assert.match(html, /Coinbase is not contacted/i);
-  assert.match(html, /has no Coinbase Create route/i);
   assert.match(html, /Simulation is the default/i);
   assert.match(html, /Plan a future condition/i);
   assert.match(html, />Preview</i);
@@ -206,7 +262,9 @@ test("default copy makes the current and future safety boundaries unmistakable",
   assert.match(html, /not an execution or price guarantee/i);
   assert.match(html, /Create, order submission, transfers/i);
   assert.match(html, /Not a Coinbase product, integration, or\s+endorsement/i);
-  assert.match(app, /This authorizes evaluation only\s*·\s*not an order/i);
+  assert.match(app, /This confirms evaluation only\s*·\s*not an order/i);
+  assert.match(app, /Confirm this protected check/i);
+  assert.doesNotMatch(html, /rail-card--boundary|advisor-mode-badge/i);
   assert.match(app, /Orders off · no live confirmation available/i);
   assert.match(app, /Advice off · Orders off/);
   assert.match(app, /No trade authorized/);
@@ -252,7 +310,7 @@ test("locked live-readiness is projection-only, non-actionable, and mobile-safe"
   );
   assert.match(
     previewSource,
-    /Future one-order scope/,
+    /One-order controls/,
   );
   assert.match(
     previewSource,
@@ -293,21 +351,17 @@ test("locked live-readiness is projection-only, non-actionable, and mobile-safe"
       resultSource.indexOf("Technical receipt details"),
   );
   assert.match(
-    resultSource,
-    /Future preview · locked/,
-  );
-  assert.match(
     app,
     /VIEW-ONLY PREVIEW EXPIRED[\s\S]*?Preview expired · locked[\s\S]*?Start a fresh protected check/,
   );
   assert.match(
     resultSource,
-    /setGuardStep\(liveReadiness \? "confirmation" : "decision"\)/,
+    /setGuardStep\("decision"\)/,
   );
-  assert.match(
-    resultSource,
-    /dom\.guardState\.textContent\s*=\s*liveReadiness\s*\?/,
-  );
+  assert.doesNotMatch(resultSource, /setGuardStep\(["']confirmation["']\)/);
+  assert.doesNotMatch(html, /data-guard-step=["']confirmation["']/);
+  assert.match(html, /data-guard-step=["']remaining["']/);
+  assert.match(previewSource, /What remains before any future live order/i);
   assert.doesNotMatch(resultSource, /Live order unavailable/);
 
   assert.match(styles, /\.live-readiness-preview\s*\{/);
@@ -552,8 +606,20 @@ test("credential onboarding is session-only, explicit, and clears both inputs be
   assert.match(keyInput, /\bspellcheck=["']false["']/i);
   assert.match(privateKeyInput, /\bautocomplete=["']new-password["']/i);
   assert.match(privateKeyInput, /\bspellcheck=["']false["']/i);
-  assert.match(html, /cleared from these fields immediately/i);
-  assert.match(html, /never written to\s+browser storage or Guard history/i);
+  assert.match(privateKeyInput, /\bclass=["'][^"']*secret-field/i);
+  assert.match(html, /cleared from these fields\s+immediately/i);
+  assert.match(
+    html,
+    /full key briefly exists in this form,\s*page memory, and the loopback request/i,
+  );
+  assert.match(
+    html,
+    /never written to\s+browser storage or Guard\s+history/i,
+  );
+  assert.match(
+    styles,
+    /\.secret-field\s*\{[\s\S]*?-webkit-text-security:\s*disc/,
+  );
   assert.match(html, /Disconnect and erase session key/i);
   assert.match(html, /15-minute idle\s*·\s*60-minute maximum/i);
 
@@ -869,7 +935,18 @@ test("mobile contract preserves the safety strip and compact composer", () => {
     styles,
     /\.composer textarea:focus,[\s\S]*?height:\s*126px/,
   );
-  assert.match(styles, /\.comparison\s*\{[\s\S]*?overflow-x:\s*auto/);
+  assert.match(
+    styles,
+    /\.conversation\s*\{[\s\S]*?overflow-x:\s*hidden/,
+  );
+  assert.match(
+    styles,
+    /\.comparison__scroll\s*\{[\s\S]*?overflow-x:\s*auto/,
+  );
+  assert.match(
+    styles,
+    /@media\s*\(max-width:\s*580px\)[\s\S]*?\.artifact__header\s*\{[\s\S]*?display:\s*grid/,
+  );
   assert.match(
     styles,
     /\.mandate-ribbon,[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,

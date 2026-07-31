@@ -89,7 +89,7 @@ independently signed by Coinbase in this harness.
 
 ## Execution
 
-Public v1.5 cannot invoke Coinbase Create. The preflight may serialize
+Public v1.6 cannot invoke Coinbase Create. The preflight may serialize
 prospective Create bytes only to bind what would have been eligible. It never
 transmits them.
 

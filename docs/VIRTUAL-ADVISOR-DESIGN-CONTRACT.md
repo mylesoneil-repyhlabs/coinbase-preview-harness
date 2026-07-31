@@ -6,12 +6,9 @@ The advisor should feel like a private consultation room: calm, precise, and
 immediately useful. It must not resemble a generic dashboard, market terminal,
 fake bank account, or co-branded Coinbase product.
 
-The first screen is one natural-language composer with four starts:
-
-- prepare a spot trade;
-- plan a future condition;
-- explore a token;
-- build an allocation plan.
+The first screen is one concise natural-language composer and one primary
+**Try a protected trade** start. A native **Explore** disclosure contains the
+conditional check planner, BTC/ETH/SOL comparison, and allocation canvas.
 
 Dry run is the implicit default. No credential wall appears before value.
 
@@ -27,15 +24,15 @@ Orders: Off
 
 The advisor conversation dominates. A contextual Delta rail shows the current
 state, policy boundary, exact proposal, decision, freshness, and no-order
-status. Primary destinations are limited to Advisor, Plans, Activity, and
-Connection.
+status. Primary destinations are limited to Advisor, Connection, and Activity;
+condition and education planning open through the first-screen disclosure.
 
 The user journey is:
 
 ```text
 human instruction
   -> editable Mandate captured
-  -> Authorize for one check
+  -> Confirm this protected check
   -> exact Proposal
   -> PASS / BLOCK / REVIEW
   -> impact + provenance + recovery
@@ -158,18 +155,18 @@ handoff, by `DRAFT CREATED · NOT AUTHORIZED · ORDERS OFF`. There is no
 portfolio-wide authorization, batch/rebalance path, implicit first-leg
 selection, or automatic advisor mutation.
 
-## Locked future-confirmation explanation
+## Locked what-remains explanation
 
 Only a fresh, complete View-only `PASS` with a verified, unexpired local
-receipt may render **What a future live confirmation would protect**. The card
-appears immediately after `No order submitted`, before technical receipt
-details, and is driven only by the server DTO plus the enabled
-`live_readiness_preview` capability. The browser never derives it from a
-client-observed `PASS`.
+receipt may render a neutral **What remains** disclosure. Decision remains the
+terminal state. The disclosure appears after `No order submitted`, before
+technical receipt details, and is driven only by the server DTO plus the
+enabled `live_readiness_preview` capability. The browser never derives it
+from a client-observed `PASS`.
 
 The information hierarchy is:
 
-1. `DESIGN PREVIEW · LOCKED` and `ORDERS OFF`;
+1. `WHAT REMAINS · LOCKED` and `ORDERS OFF`;
 2. “This point-in-time View-only PASS is not authorization, eligibility, or
    readiness to trade”;
 3. exact action and limit, estimated economics, and Preview check/expiry;
@@ -180,7 +177,8 @@ The information hierarchy is:
 The card has no button, link, input, positive `tabindex`, Trade-key field,
 raw identifier, or Create bytes. It stacks its facts and checklist at mobile
 width. A dry run, `BLOCK`, `REVIEW`, expired result, incomplete binding, or
-tampered result never advances to this visual state. The server also requires
+tampered result never renders the disclosure or advances beyond Decision. The
+server also requires
 a valid sealed-record digest, exact supplied-versus-bound execution digest,
 and receipt-bound View-only permission facts; none of those permission facts
 or credential identifiers enter the card.
@@ -207,7 +205,7 @@ mandate. Motion is subtle, interruptible, and removed under
 ## Responsive and accessible
 
 - Desktop: approximately 60% conversation, 40% Delta context.
-- Mobile: single column with sticky mode/boundary and confirmation action.
+- Mobile: single column with sticky mode/boundary and one-check action.
 - Minimum 44-pixel targets and visible keyboard focus.
 - WCAG AA contrast, semantic headings, labels, and landmarks.
 - Color is always paired with icon and text.

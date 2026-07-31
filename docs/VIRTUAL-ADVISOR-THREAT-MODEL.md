@@ -35,7 +35,7 @@ refer only to server-owned opaque plan IDs and exact revisions.
   artifact may contain a credential.
 - Credentials are retained only in server-process memory until disconnect,
   idle expiry, absolute expiry, failed validation, or process exit.
-- A scheduled expiry clears the reference even if the browser makes no further
+- A scheduled expiry clears the credential material even if the browser makes no further
   request. Clock rollback fails closed and clears the connection.
 - Strings cannot be guaranteed to be zeroized; the product claims
   non-persistence, not cryptographic erasure.
@@ -125,8 +125,9 @@ kill-switch epoch
 expiry and maximum uses
 ```
 
-That challenge does not exist in this release. Sprint 5 implements only a
-read-only locked explanation. The server emits it for a fresh
+That challenge does not exist in this release. v1.6 implements only a neutral,
+read-only locked **What remains** explanation. Decision stays terminal. The
+server emits the explanation for a fresh
 `PREVIEW_PROBE_PASS` only after verifying the local receipt, canonical action,
 complete authenticated View-only sources, policy/proposal/Preview/evidence
 and prospective-Create-digest bindings, matching credential/portfolio scope,

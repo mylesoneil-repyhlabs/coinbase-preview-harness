@@ -1,4 +1,4 @@
-# Coinbase Guard v1.5 assurance and claim ledger
+# Coinbase Guard v1.6 assurance and claim ledger
 
 This is the truth boundary for demos, recordings, engineering reviews, and
 partner conversations. It separates reproducible public behavior from
@@ -6,7 +6,7 @@ credential-dependent preflight, private Delta, and live execution.
 
 ## Reproducible short version
 
-v1.5 accepts one Coinbase Advanced custodial spot BUY or SELL, identifies known
+v1.6 accepts one Coinbase Advanced custodial spot BUY or SELL, identifies known
 action facts, asks for missing material constraints, compiles a closed v3
 policy and canonical v2 action, and pauses for explicit user authorization.
 
@@ -30,9 +30,16 @@ for permissions, complete accounts, the exact product, BBO, and one exact
 Preview. A successful result is a **View-only preflight pass**, not a
 production Delta decision or execution grant. It stops before Create.
 
+The local Delta Guard Advisor adds an actual browser interface over the same
+deterministic Guard. Its primary path is a credential-free protected check.
+Optional progressive surfaces provide a one-check conditional simulation and
+neutral educational allocation planning. None is a live broker, background
+monitor, individualized recommendation, final-order confirmation, or
+execution path.
+
 ## Claim ledger
 
-| Claim | Public v1.5 status |
+| Claim | Public v1.6 status |
 | --- | --- |
 | Managed Codex install works after the download is deleted | Implemented and cold-install tested |
 | A user can begin without credentials | Implemented; this is the default |
@@ -53,6 +60,14 @@ production Delta decision or execution grant. It stops before Create.
 | Receipt independently authenticates Coinbase as fact source | False |
 | Retry and replay are model-controlled | False; deterministic nonce/history code owns them |
 | A real order can be submitted | Deliberately unavailable |
+| The Advisor is an interactive local product | Implemented; dependency-free loopback UI and server |
+| Browser/session authority depends on a cookie | False; page-memory capability header only |
+| Credential material never enters browser memory | False; it exists briefly in the local form, JavaScript, and request |
+| Credential material is stored in the browser | Prohibited; no browser storage, URL, history, analytics, or log |
+| Conditional plans watch or trade later | False; saved template plus one explicitly authorized simulation check |
+| Educational planning recommends what to buy | False; neutral editable planning with distinct provenance |
+| An education plan authorizes a portfolio trade | False; one explicit leg and side create only a new editable draft |
+| A View-only PASS advances to final confirmation | False; Decision is terminal and any What remains disclosure is read-only |
 
 ## Decision meanings
 
@@ -127,7 +142,7 @@ logic is pair-aware and supports conditional or unconditional spot BUY/SELL.
 
 ## Unsupported claims
 
-Do not say or imply that v1.5:
+Do not say or imply that v1.6:
 
 - placed, submitted, attempted, filled, or guaranteed a Coinbase order;
 - integrated with or invoked private Delta;
@@ -139,6 +154,18 @@ Do not say or imply that v1.5:
   percentages, leverage, derivatives, onchain execution, multi-action plans,
   or generic portfolio exposure; or
 - lets the agent authorize, evidence, decide, retry, or execute its own action.
+
+Also do not say or imply that the Advisor:
+
+- stores or cryptographically erases a key;
+- uses OAuth;
+- monitors a saved condition or can trade unattended;
+- offers individualized financial advice, suitability, rankings, or expected
+  returns;
+- authorizes a portfolio, batch, or rebalance;
+- provides a final live-order confirmation, grant, kill switch, durable
+  executor, or Create service; or
+- advances beyond the terminal Delta decision into an executable state.
 
 The separate checked-in 5-USDC one-order profile is future live-test
 blast-radius control only. It is not the economic policy, a credential

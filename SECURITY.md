@@ -23,15 +23,16 @@ allow a reasonable remediation window before public disclosure.
 
 ## Supported version
 
-Only the latest commit on the default branch is supported. This is a v1.5
-integration preview, not a production custody or trading service.
+Only the latest v1.6 patch release on the default branch is supported. This is
+a local protected-trade planning and preflight product, not a production
+custody or trading service.
 
 ## Operator safety
 
 - Keep Coinbase credentials outside the repository and pass credential paths
   only at runtime. The default flow needs no credential. For optional real
   reads and Preview, use a dedicated portfolio and a View-only key with Trade,
-  Transfer, and Receive disabled. The composite v1.5 preflight does not persist
+  Transfer, and Receive disabled. The composite Guard preflight does not persist
   its attestation or key. A future Trade key belongs only in an isolated
   executor.
 - Do not commit anything under `credentials/` or `runtime/`. Generated
@@ -64,13 +65,13 @@ If credentials may have been exposed, revoke them in Coinbase immediately,
 create a new least-privileged key, and review account and portfolio activity
 before continuing.
 
-## Advisor v1.6 development boundary
+## Advisor v1.6 boundary
 
 The advisor adds a loopback web interface, not a browser-side trading client.
 The implemented credential-capable server binds to `127.0.0.1`; credential
 material necessarily exists transiently in the connection form, page
 JavaScript, and one same-origin loopback request. The fields are cleared before
-dispatch. Once received, the accepted key reference remains only in
+dispatch. Once received, the accepted key material remains only in
 server-process memory and is cleared on disconnect, expiry, failure, or
 process exit. It must never enter browser storage, browser history, URLs, logs,
 Guard history, screenshots, analytics, or release assets.
@@ -82,21 +83,23 @@ authority; missing, expired, cross-server, and cross-port capabilities fail
 closed. Reloading the page discards the browser-held capability.
 
 A hosted/static advisor is credential-free. Remote credential handling
-requires a separate reviewed service and threat model. A visible confirmation
+requires a separate reviewed service and threat model. A visible one-check
 control does not add a Coinbase Create route: public Create, live orders,
 durable grants, and unattended execution remain unavailable.
 
 ### Locked live-readiness boundary
 
-`features.live_readiness_preview` enables only a server-derived explanation
-for a fresh, complete, locally receipt-verified View-only `PASS`. It does not
+`features.live_readiness_preview` enables only a server-derived, neutral
+**What remains** explanation for a fresh, complete, locally receipt-verified
+View-only `PASS`. It does not
 enable post-PASS final confirmation, an authenticated execution principal, a
 production Delta verifier, a Trade credential, a durable one-use grant or
 journal, a kill switch, exact-byte Create transport, reconciliation, or first-
 order approval.
 
-The projection is omitted on dry run, `BLOCK`, `REVIEW`, expiry, partial or
-future-dated evidence, binding/source/scope mismatch, tampering, or any sign
+Decision remains terminal. The projection is omitted on dry run, `BLOCK`,
+`REVIEW`, expiry, partial or future-dated evidence, binding/source/scope
+mismatch, tampering, or any sign
 that an adapter, gate, or order field changed. Its browser DTO exposes only a
 safe action/economics/time summary and missing-prerequisite labels. It excludes
 raw Coinbase bodies and IDs, Create bytes, fingerprints, challenges, and

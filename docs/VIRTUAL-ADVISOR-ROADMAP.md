@@ -62,15 +62,13 @@ The interface always shows the current state:
 3. `Authorized`
 4. `Proposed`
 5. `Previewed`
-6. `Delta evaluated`
-7. `Final confirmation`
-8. `Submitted / reconciled`
+6. `Decision`
 
-v1.6 can reach `Delta evaluated` in dry-run simulation or View-only preflight.
-Sprint 5 can explain, in a locked live-readiness preview, what a future
-post-PASS confirmation must protect. It does not create that confirmation
-challenge, unlock Create, or make the product “ready to trade.” The final state
-therefore remains visibly locked.
+`Decision` is terminal in v1.6. Dry-run simulation or View-only preflight can
+end there as `PASS`, `BLOCK`, or `REVIEW`. A neutral locked disclosure may
+explain what remains before any future live order could be considered, but it
+is not another state and cannot become current. Final review, durable grant,
+submission, and reconciliation are absent future systems.
 
 Any policy, proposal, Preview fingerprint, prospective Create payload,
 freshness, receipt, session, or expiry change invalidates the later state.
@@ -82,13 +80,13 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 0 | Roadmap, design contract, threat model, feature flags, test plan | Current v1.5.3 boundary audited; no hosting project invented |
 | 1 | Actual local advisor UI and valuable credential-free dry run | Loopback launch; mandate authorization; PASS/BLOCK/REVIEW; responsive visual review |
 | 2 | Session-only View-only connection and real preflight wiring | No persistence or secret leakage; exact permissions; graceful provider failures |
-| 3 | Premium conditional saved-plan composer and one-check simulator | Non-executable revisioned template; fresh 30–600s simulation authorization; no watcher, timer, scheduler, or live authorization |
+| 3 | Conditional check planner and one-check simulator | Non-executable revisioned template; fresh 30–600s simulation authorization; no watcher, timer, scheduler, or live authorization |
 | 4 | Educational market snapshot and editable allocation planning | User-selected inputs and exact provenance; one fresh editable leg handoff; no suitability, batch approval, or automatic trade |
 | 5 | Locked live-readiness preview | Explain exact future post-PASS protection and missing prerequisites; no challenge, focusable confirm, Trade field, Create route, or executor import |
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
-| 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
+| 7 | Polish, onboarding, real Advisor capture, deployment guide, deterministic release | README truthful; repository-only credential-free capture; archive/install/CI/public checksum green |
 
-Current development checkpoint: Sprints 0–6 are implemented. Sprint 3 is a
+Current release checkpoint: Sprints 0–7 are implemented. Sprint 3 is a
 non-executable conditional template and one-check simulation only. Sprint 4
 is neutral educational planning with a fresh editable one-leg handoff; it
 does not create Guard evidence or authorize a trade. Sprint 5 is a locked
@@ -96,7 +94,13 @@ server-derived explanation shown only for a fresh, complete, locally
 receipt-verified View-only PASS. Sprint 6 replaces ambient cookie authority,
 enforces operator feature stops at the server, bounds session resource use,
 packages the real Advisor, and preserves the no-execution dependency closure.
-Sprint 7 remains behind its polish and public-release gates.
+Sprint 7 consolidates the first-run hierarchy, keeps Decision terminal,
+hardens responsive result layout, coordinates v1.6.0 metadata and release
+documentation, and adds a CI-owned deterministic archive/cold-install job.
+Local release-candidate evidence is recorded in the sprint log. The
+exact-commit archive/cold-install, CI, and public download/checksum readback
+remain release gates; the generated manifest and GitHub release are the
+authoritative final evidence.
 
 ## Feature modes
 
@@ -188,13 +192,13 @@ Portfolio-wide approval, batch trades, and rebalancing remain absent.
 The only enabled readiness capability is `live_readiness_preview=true`. Final
 confirmation readiness, a durable executor, live execution, and Create remain
 false. Only a fresh, complete, exact View-only `PREVIEW_PROBE_PASS` with a
-verified, unexpired local receipt may show **What a future live confirmation
-would protect**: the exact action, price bound, estimated economics, Preview
-time and expiry, future one-order concept, and a nine-item missing-prerequisite
-checklist. Dry run, `BLOCK`, `REVIEW`, stale evidence, partial bindings,
-tampering, source mismatch, credential/portfolio drift, or any execution field
-change omits the projection. “Orders off” remains prominent; no enabled or
-focusable confirmation/order action exists.
+verified, unexpired local receipt may show a neutral **What remains**
+disclosure: the exact action, price bound, estimated economics, Preview time
+and expiry, future one-order concept, and a nine-item missing-prerequisite
+checklist. `Decision` remains terminal. Dry run, `BLOCK`, `REVIEW`, stale
+evidence, partial bindings, tampering, source mismatch, credential/portfolio
+drift, or any execution field change omits the projection. “Orders off”
+remains prominent; no enabled or focusable confirmation/order action exists.
 
 The projection is a safe allowlisted view over a digest-sealed record. It also
 requires exact equality between the supplied and bound execution digests plus
@@ -247,6 +251,27 @@ advisor`, fetches the HTML/JavaScript/CSS/status with security headers and no
 external assets or cookies, and proves every execution/readiness mutation
 route remains `404`.
 
+### Sprint 7 implementation contract
+
+The first viewport has one primary path: a concise composer and
+**Try a protected trade**. The complete generated example remains optional;
+condition and education tools live behind a native progressive
+**Explore** disclosure. The compact persistent safety bar carries mode,
+Coinbase connection, and Orders-off state without repeating a large boundary
+card.
+
+The mandate card leads with Action, Maximum or exact amount, Trigger, and
+Expiry, then protections and funding. Its action is **Confirm this protected
+check**, never an order confirmation. Result layout constrains every artifact
+and comparison within the conversation at 320 pixels; wide comparison content
+uses its own named scroll region rather than clipping the whole result.
+
+`Decision` stays the terminal rail state after every outcome. The locked
+future disclosure is **What remains**, never a current confirmation step.
+Release metadata, skill heading, README, security policy, demo, release notes,
+managed-install allowlist, deterministic bundle, and CI artifact job all use
+v1.6.0 before the tag is created.
+
 ## Test plan
 
 Every sprint keeps the existing Node suite green and adds focused regression
@@ -263,10 +288,12 @@ tests. The final matrix covers:
 - session isolation, disconnect, idle and absolute expiry, restart, replay,
   mutation, concurrency, and double confirmation;
 - keyboard operation, visible focus, reduced motion, WCAG AA contrast,
-  320-pixel layouts, 200% zoom, and status announcements;
+  320-pixel and narrower reflow, and status announcements. A real 200% browser
+  zoom remains an explicit manual acceptance check where the controller can
+  set and verify zoom;
 - cold launch, first useful dry run under 60 seconds, progress within two
   seconds, bounded waits, restricted `PATH`, managed install, source deletion,
-  deterministic archive, and public checksum.
+  deterministic archive, and post-publication checksum readback.
 
 ## Deployment contract
 

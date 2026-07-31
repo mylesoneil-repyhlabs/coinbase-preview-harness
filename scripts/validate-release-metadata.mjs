@@ -23,8 +23,8 @@ assert(
 );
 const [major, minor] = packageJson.version.split(".");
 assert(
-  major === "1" && minor === "5",
-  "this release line must be delta-coinbase-guard v1.5.x",
+  major === "1" && minor === "6",
+  "this release line must be delta-coinbase-guard v1.6.x",
 );
 assert(
   packageJson.name === "delta-coinbase-guard",
@@ -54,6 +54,12 @@ assert(
   ),
   "Coinbase release package scripts must not expose partner-demo surfaces",
 );
+assert(
+  /local-first protected Coinbase spot-trade copilot/i.test(
+    packageJson.description ?? "",
+  ) && /no order route/i.test(packageJson.description ?? ""),
+  "package description must state the protected-copilot and no-order boundary",
+);
 
 const nvmrc = (await readFile(path.join(ROOT, ".nvmrc"), "utf8")).trim();
 assert(nvmrc === "22", ".nvmrc must match the Node 22 release floor");
@@ -67,6 +73,46 @@ assert(
 const skill = await readFile(
   path.join(ROOT, "skills/delta-coinbase-guard/SKILL.md"),
   "utf8",
+);
+const capabilities = await json("config/advisor-capabilities.json");
+assert(
+  capabilities.product_version === packageJson.version,
+  "Advisor capability version must match package version",
+);
+assert(
+  capabilities.modes?.dry_run?.enabled === true &&
+    capabilities.modes?.dry_run?.credentials_required === false &&
+    capabilities.modes?.view_only_preflight?.enabled === true &&
+    capabilities.modes?.view_only_preflight?.credentials_required === true,
+  "Advisor must expose credential-free dry run and optional View-only preflight",
+);
+assert(
+  capabilities.features?.advisor === true &&
+    capabilities.features?.conditional_plan_simulation === true &&
+    capabilities.features?.educational_research === true &&
+    capabilities.features?.portfolio_planning === true &&
+    capabilities.features?.live_readiness_preview === true,
+  "Advisor v1.6 capability contract is incomplete",
+);
+for (const disabledFeature of [
+  "post_pass_final_confirmation_readiness",
+  "saved_plan_monitoring",
+  "durable_executor",
+  "live_execution",
+  "autonomous_execution",
+  "coinbase_create",
+]) {
+  assert(
+    capabilities.features?.[disabledFeature] === false,
+    `Advisor release must keep ${disabledFeature} disabled`,
+  );
+}
+assert(
+  capabilities.release_boundaries?.coinbase_create_enabled === false &&
+    capabilities.release_boundaries?.production_delta_integrated === false &&
+    capabilities.release_boundaries?.personalized_financial_advice === false &&
+    capabilities.release_boundaries?.unattended_execution === false,
+  "Advisor release boundary flags must remain locked",
 );
 const cli = await readFile(path.join(ROOT, "src/cli.js"), "utf8");
 const cliArgs = await readFile(path.join(ROOT, "src/cli-args.js"), "utf8");
@@ -129,14 +175,35 @@ assert(
   readme.includes("`dry_run`") &&
     readme.includes("`view_only_preflight`") &&
     readme.includes("Create remains unavailable"),
-  "README must describe both v1.5 modes and the locked Create boundary",
+  "README must describe both Guard modes and the locked Create boundary",
 );
 assert(
   readme.includes("production Delta signature") &&
     readme.includes("Independent authentication"),
   "README must state local receipt proof limitations",
 );
-await access(path.join(ROOT, "docs/SPRINT-LOG.md"));
+assert(
+  readme.includes(`Download v${packageJson.version}`) &&
+    readme.includes(`delta-coinbase-guard-v${packageJson.version}.zip`) &&
+    readme.includes("protected execution copilot") &&
+    readme.includes("Conditional check planner") &&
+    readme.includes("PLAN VALID FOR EDITING") &&
+    readme.includes("Orders remain off"),
+  "README must describe the shipped Advisor v1.6 surface and release assets",
+);
+
+for (const requiredDocument of [
+  "SECURITY.md",
+  "docs/SPRINT-LOG.md",
+  "docs/ADVISOR-SPRINT-LOG.md",
+  "docs/ADVISOR-DEMO-v1.6.md",
+  "docs/RELEASE-NOTES-v1.6.0.md",
+  "docs/VIRTUAL-ADVISOR-DESIGN-CONTRACT.md",
+  "docs/VIRTUAL-ADVISOR-ROADMAP.md",
+  "docs/VIRTUAL-ADVISOR-THREAT-MODEL.md",
+]) {
+  await access(path.join(ROOT, requiredDocument));
+}
 
 const liveSafety = await json("config/execution-safety-profile.json");
 assert(

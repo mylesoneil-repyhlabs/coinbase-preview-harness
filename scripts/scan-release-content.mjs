@@ -52,6 +52,20 @@ function escapeRegExp(value) {
 }
 
 function scanText(relativePath, text) {
+  const embeddedImageScheme = ["data", "image"].join(":");
+  const embeddedSvgImageElement = new RegExp(
+    `${"<"}${"image"}\\b`,
+    "i",
+  );
+  if (
+    text.toLowerCase().includes(`${embeddedImageScheme}/`) ||
+    embeddedSvgImageElement.test(text)
+  ) {
+    fail(
+      `${relativePath} contains an embedded image; release visuals must remain inspectable vector text.`,
+    );
+  }
+
   const privateKeyPattern = new RegExp(
     `${escapeRegExp("-----BEGIN ")}(?:EC |OPENSSH |RSA )?${escapeRegExp(
       "PRIVATE KEY-----",

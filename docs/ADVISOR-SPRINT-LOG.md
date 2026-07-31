@@ -890,3 +890,159 @@ experience. It adds no Coinbase Create, Trade credential, final-confirmation
 challenge, execution grant, durable executor, order, money movement, or
 production Delta integration. Sprint 7 still owns final UX consolidation,
 version metadata, public archive/checksum, CI evidence, and release.
+
+## Sprint 7 — first-run consolidation and v1.6.0 release
+
+### Product Manager requirements
+
+Make one protected trade the unmistakable first experience. The composer and
+primary **Try a protected trade** action must appear before optional tools.
+Condition and education planning remain useful but move behind progressive
+disclosure. Preserve one calm safety bar, keep `Decision` terminal, and ship
+v1.6.0 only when the README, package, archive, CI, and public boundary all say
+the same thing.
+
+Release acceptance remains the original north star: simple onboarding,
+surprisingly calm UX, and strong Delta protection without visible security
+ceremony. This does not relax the no-credential default, no-Create boundary,
+or truth requirements.
+
+### Engineering-lead architecture
+
+The release keeps the dependency-free browser and loopback Node server. No new
+route, credential scope, provider method, state transition, or execution
+dependency is added.
+
+The product rail ends at `Decision`. A fresh, complete, receipt-verified
+View-only `PASS` may render only a read-only **What remains** disclosure. That
+projection is not a state transition, final review, challenge, grant,
+eligibility, or order action. The existing `execution_confirmation.v2`
+remains preflight-readiness evidence only.
+
+Release metadata becomes a deterministic contract: package, capability
+profile, skill heading, README, security policy, Advisor documents, managed
+install, release archive, and CI must all identify v1.6.0 while keeping every
+execution-related capability false.
+
+### Senior full-stack implementation
+
+The first screen has one concise composer and one primary protected-trade
+entry. The complete ETH fixture remains an explicit example; condition checks,
+BTC/ETH/SOL comparison, and allocation planning live behind a native
+**Explore** disclosure. Connection is promoted ahead of Activity in the
+compact navigation.
+
+The mandate becomes scan-first: Action, Maximum or exact amount, Trigger,
+Expiry, then protections and funding. Its action is **Confirm this protected
+check**. The result keeps `No order submitted` above technical detail, uses a
+semantic Observed-versus-Allowed comparison, and never promotes the locked
+future disclosure to a current confirmation step.
+
+Responsive contracts add `min-width: 0` and bounded widths at every
+conversation/artifact/comparison nesting boundary. Any intentionally wide
+comparison owns its own named scroll region rather than clipping the PASS
+artifact or widening the page.
+
+### Backend and data
+
+No backend capability is expanded. Existing deterministic policy,
+canonicalization, precision, evidence, receipt, replay, expiry, session, and
+redaction code remains authoritative. The browser continues to send only
+narrow typed inputs and opaque session-owned identifiers.
+
+Credential copy now states the exact lifecycle: material exists briefly in
+the local form, page JavaScript, and one same-origin request, then only in
+server-process memory after receipt. This is non-persistence, not zeroization.
+
+The release scanner rejects embedded image payloads in otherwise text-only
+artifacts so an encoded screenshot or SVG image cannot conceal a secret
+canary. Checked-in vector guides remain inspectable text.
+
+### DevOps and release review
+
+The package, release validator, README links, skill heading, security policy,
+release notes, Advisor demo, managed-install allowlist, and deterministic
+archive are coordinated at v1.6.0. The versioned archive must include
+`web/index.html`, `web/app.js`, `web/styles.css`, all README-linked Advisor
+documents, and the direct Advisor entrypoint.
+
+CI adds a dedicated release-bundle job on Node 22. It runs the complete test
+suite plus release metadata, skill, and link checks; builds the exact committed
+HEAD twice; verifies deterministic equality and the content allowlist; performs
+the restricted-`PATH`, source-deleted cold install and Advisor launch; probes
+the locked routes; and uploads the archive, stable alias, checksums, and
+manifest as workflow artifacts.
+
+No tag or GitHub release may be created from a dirty tree or before those
+checks pass against the exact release commit.
+
+### Designer and frontend critique
+
+Synthetic internal review—not customer proof—found two release-blocking
+hierarchy defects: the dynamic PASS artifact could clip inside an
+overflow-hidden 320-pixel conversation, and the composer could begin below the
+first viewport. It also found that a future-readiness visual still read like a
+confirmation step.
+
+The release candidate responds by putting the composer and one primary action
+first, moving optional tools behind **Explore**, bounding nested result widths,
+and labeling the neutral final disclosure **What remains** while leaving
+Decision terminal. Secondary copy changes **Premium plan simulator** to
+**Conditional check planner** and **Explore a token** to an accurate
+BTC/ETH/SOL comparison.
+
+### QA
+
+Local release-candidate evidence on 2026-07-30:
+
+- focused Advisor capability, loopback authority, UI/layout/accessibility, and
+  release-content checks: **65/65 passed**, including **19/19** Advisor UI
+  checks;
+- complete repository suite: **642/642 passed** on Node 22;
+- release metadata, installable skill, local documentation links, JavaScript
+  and shell syntax, CI YAML parsing, and diff-integrity checks passed;
+- a real 320×900 dry-run PASS kept the document at **320 client /
+  320 scroll pixels**, the conversation at **308 / 308**, and the PASS
+  artifact at **275 / 275**. Only the named Observed-versus-Allowed region
+  intentionally scrolled horizontally. The primary action and composer both
+  ended inside the first 900-pixel viewport;
+- genuine Chrome keyboard activation completed Try example → Prepare mandate
+  → Edit intent → Confirm this protected check → locked PASS. Focus remained
+  visible, `Decision` was the terminal current state, and no order control
+  existed;
+- the real loopback Advisor produced a credential-free, dry-run-first desktop
+  screenshot. It was inspected for secrets, kept as a repository presentation
+  asset, and intentionally excluded from the text-only managed archive; and
+- an independent read-only security/UX recheck found no remaining P0 or P1 in
+  the Advisor product boundary.
+
+The exact committed archive file/byte count and SHA-256 are generated from the
+immutable release commit and recorded in
+`delta-coinbase-guard-v1.6.0.manifest.json`; they are deliberately not copied
+into this tracked file because doing so would change the archive being
+described. Tagging is gated on the restricted-`PATH`, source-deletion cold
+launch, static-asset and absent-route probes, green exact-SHA CI, and a public
+download/checksum readback. The generated manifest and GitHub release are the
+authoritative final evidence for those post-commit checks.
+
+The browser controller’s inability to prove a real 200% zoom setting remains a
+recorded harness limitation unless a supported equivalent provides that
+evidence. DOM focus semantics, genuine supported keyboard actions, 320-pixel
+layout, and the controller’s narrower supported viewport are required; no
+unsupported browser-control workaround should be claimed as a zoom pass.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: one obvious protected-trade start makes the
+product feel like an advisor rather than a feature menu. The shorter mandate
+and plain one-check wording make Delta protection feel like the natural review
+moment. Moving simulations and education behind Explore preserves capability
+without making the first minute look like a generic trading dashboard.
+
+### Shipped impact
+
+Sprint 7 turns the hardened local Advisor into one coherent v1.6.0 product and
+release journey, subject to the immutable-commit archive, CI, and public
+readback gates above. It does not add Coinbase Create, a Trade credential,
+final-order confirmation, production Delta, durable grant, executor,
+autonomous monitoring, order, or money movement.

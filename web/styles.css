@@ -76,6 +76,7 @@ button:focus-visible,
 textarea:focus-visible,
 input:focus-visible,
 select:focus-visible,
+summary:focus-visible,
 [href]:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
@@ -400,7 +401,6 @@ h3 {
   line-height: 1.62;
 }
 
-.mode-badge,
 .subtle-badge,
 .premium-badge,
 .truth-badge,
@@ -416,11 +416,6 @@ h3 {
   font-weight: 850;
   letter-spacing: 0.04em;
   white-space: nowrap;
-}
-
-.mode-badge {
-  color: var(--blue);
-  background: var(--blue-soft);
 }
 
 .subtle-badge {
@@ -440,11 +435,68 @@ h3 {
 
 .quick-starts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 18px clamp(18px, 3vw, 32px);
   border-bottom: 1px solid var(--line);
   background: var(--surface-soft);
+}
+
+.quick-start--primary {
+  min-height: 64px;
+  border-color: rgb(49 94 233 / 28%);
+  background:
+    linear-gradient(110deg, white, rgb(237 242 255 / 72%));
+}
+
+.quick-start--primary strong {
+  font-size: 15px;
+}
+
+.explore-more {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 62%);
+}
+
+.explore-more--secondary {
+  margin: 0 clamp(18px, 3vw, 32px) 18px;
+}
+
+.explore-more summary {
+  min-height: 44px;
+  padding: 11px 14px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.composer__shortcut {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.secret-field {
+  -webkit-text-security: disc;
+}
+
+.error-card__action {
+  margin-top: 12px;
+}
+
+.explore-more[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.explore-more__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
 }
 
 .quick-start {
@@ -537,10 +589,12 @@ h3 {
 
 .conversation {
   display: grid;
+  min-width: 0;
   min-height: 250px;
   max-height: min(610px, 64vh);
   gap: 16px;
   padding: clamp(20px, 3vw, 34px);
+  overflow-x: hidden;
   overflow-y: auto;
   background:
     linear-gradient(rgb(255 253 248 / 94%), rgb(255 253 248 / 94%)),
@@ -555,6 +609,7 @@ h3 {
 
 .message {
   display: flex;
+  min-width: 0;
   max-width: 92%;
   gap: 12px;
   animation: message-in 220ms ease both;
@@ -597,6 +652,8 @@ h3 {
 }
 
 .message__body {
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 4px 16px 16px;
@@ -634,6 +691,8 @@ h3 {
 
 .artifact {
   width: min(100%, 720px);
+  min-width: 0;
+  max-width: 100%;
   padding: 20px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--blue);
@@ -814,7 +873,13 @@ h3 {
 }
 
 .artifact__header {
+  min-width: 0;
   margin-bottom: 16px;
+}
+
+.artifact__header > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .artifact__header p {
@@ -848,9 +913,44 @@ h3 {
 
 .artifact-grid {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
+}
+
+.mandate-summary {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.mandate-summary > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.mandate-summary dt {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mandate-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .artifact-grid > div,
@@ -992,8 +1092,12 @@ h3 {
 }
 
 .comparison {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 14px;
   padding: 14px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--surface-soft);
@@ -1005,19 +1109,21 @@ h3 {
   letter-spacing: -0.015em;
 }
 
-.comparison__header,
-.comparison__row {
-  display: grid;
-  grid-template-columns:
-    minmax(110px, 0.8fr)
-    minmax(110px, 1fr)
-    minmax(110px, 1fr);
-  gap: 10px;
-  align-items: start;
+.comparison__scroll {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
-.comparison__header {
-  padding: 0 8px 6px;
+.comparison__table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.comparison__table thead {
   color: var(--muted);
   font-size: 10px;
   font-weight: 850;
@@ -1025,13 +1131,20 @@ h3 {
   text-transform: uppercase;
 }
 
-.comparison__row {
+.comparison__table th,
+.comparison__table td {
+  min-width: 0;
   padding: 9px 8px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.comparison__table tbody tr {
   border-top: 1px solid var(--line);
   font-size: 12px;
 }
 
-.comparison__row strong {
+.comparison__table tbody th {
   color: var(--ink);
 }
 
@@ -2654,14 +2767,14 @@ h3 {
     gap: 16px;
   }
 
-  .mode-badge {
-    justify-self: start;
-  }
-
   .quick-starts,
   .plans-layout,
   .connection-layout,
   .guard-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .explore-more__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2747,13 +2860,18 @@ h3 {
   }
 
   .primary-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
     padding: 4px;
+    overflow: visible;
   }
 
   .nav-tab {
-    min-width: 86px;
+    min-width: 0;
     min-height: 44px;
-    padding-inline: 12px;
+    padding-inline: 5px;
+    font-size: 11px;
   }
 
   .conversation-panel,
@@ -2897,6 +3015,7 @@ h3 {
   }
 
   .artifact-grid,
+  .mandate-summary,
   .plan-facts,
   .retention-list,
   .showcase-attempts,
@@ -2947,13 +3066,14 @@ h3 {
     gap: 2px;
   }
 
-  .comparison {
-    overflow-x: auto;
+  .artifact__header {
+    display: grid;
   }
 
-  .comparison__header,
-  .comparison__row {
-    min-width: 420px;
+  .artifact__header .artifact-badge,
+  .artifact__header .outcome-badge {
+    justify-self: start;
+    white-space: normal;
   }
 
   .view-heading {

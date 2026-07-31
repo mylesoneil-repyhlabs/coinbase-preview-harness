@@ -1,4 +1,4 @@
-# Delta Coinbase Guard v1.5 — engineering handoff
+# Delta Coinbase Guard v1.6 — engineering handoff
 
 This is the start-here contract for replacing checked-in Coinbase and Delta
 simulation components with trusted production services without rebuilding the
@@ -9,7 +9,7 @@ implementation. Concrete policy syntax, service paths, signer types, verifier
 identity, and proof program must be validated against that codebase before
 Coinbase Create can be enabled.
 
-Public v1.5 cannot call Create. Its credential-free `dry_run` uses fixtures and
+Public v1.6 cannot call Create. Its credential-free `dry_run` uses fixtures and
 the simulated Delta adapter; its optional `view_only_preflight` uses real
 allowlisted reads/Preview but stops before Delta. Neither result is a
 production execution grant.
@@ -36,7 +36,7 @@ when a trusted controller has:
 Every other state stops. No prompt, agent output, credential, local simulator,
 or self-asserted `ALLOW` may relax that predicate.
 
-## What v1.5 implements
+## Guard core carried from v1.5
 
 - closed `digital-asset-spot-order.v3` compilation with deterministic
   validation and grounding;
@@ -74,11 +74,42 @@ on-chain execution, multi-action strategies, and generic portfolio exposure
 constraints.
 
 The fixed partner showcase has a portfolio-exposure fixture. That is not part
-of the generic v1.5 compiler or policy.
+of the generic Guard compiler or policy.
 
 Plans, confirmations, Preview evidence, and receipts from older releases must
-be regenerated so v1.5 mode, evidence, receipt, and replay bindings are
+be regenerated so current mode, evidence, receipt, and replay bindings are
 explicit.
+
+## Advisor v1.6 composition
+
+The local Advisor is a presentation and session layer over the deterministic
+Guard:
+
+- `./run advisor` dispatches directly to `src/advisor-server.js` so the
+  Advisor dependency graph does not import the execution-capable CLI, Coinbase
+  Create adapter, Trade credential loader, or live pipeline.
+- One same-origin bootstrap returns a high-entropy capability held in page
+  memory. Stateful routes require it in a custom header. Cookies are neither
+  issued nor trusted.
+- Optional View-only key material exists briefly in the local form,
+  JavaScript, and one loopback request, then only in bounded server-process
+  memory. It is not persisted.
+- Browser DTOs are allowlisted and redacted. Policy, arithmetic, evidence,
+  provenance, decisions, receipts, replay, and capability status remain
+  server-owned.
+- A conditional plan is a session-only non-executable template plus one
+  atomically consumed simulation authorization. It does not schedule, poll,
+  monitor, repeat, or trade.
+- An educational plan is not Guard evidence. A handoff requires one explicit
+  leg and `BUY` or `SELL`, then creates only an editable unauthorized draft.
+- A fresh complete View-only `PASS` may receive a read-only **What remains**
+  projection. Decision is terminal; the projection does not create a final
+  challenge, grant, eligibility, Trade field, or order action.
+
+Server feature flags are operator stops before body parsing, session
+resolution, provider construction, and network access. Conditional and
+educational revisions are count-bounded; session idle/absolute expiry,
+disconnect, cancel, revoke, and server exit destroy their authority.
 
 ## Public Coinbase basis
 
