@@ -24,7 +24,7 @@ local-first **protected execution copilot**. The eight-sprint
 [threat model](docs/VIRTUAL-ADVISOR-THREAT-MODEL.md), and
 [advisor sprint log](docs/ADVISOR-SPRINT-LOG.md) are now checked in.
 
-Sprints 1 and 2 now include an actual dependency-free local frontend,
+Sprints 1 through 3 now include an actual dependency-free local frontend,
 same-origin loopback service, and optional session-only Coinbase View
 connection. It is not a screenshot or a fake banking dashboard. A user can
 state one spot BUY or SELL, inspect the closed mandate, explicitly choose a
@@ -32,6 +32,27 @@ credential-free dry run or connected View-only preflight, authorize one check,
 and see the separate proposal, plain-English `PASS`, `BLOCK`, or `REVIEW`,
 impact, checked facts, locally verified receipt, recovery action, and
 `NO ORDER SUBMITTED` boundary.
+
+The **Plans** surface now adds a premium conditional simulator for one-shot
+spot BUY or SELL plans. A session-only saved revision is a non-executable
+template: nothing watches the market. The user chooses a labeled fixture or
+one fresh connected View-only BBO check, grants a short-lived one-check
+simulation authorization, and sees `CONDITION NOT MET`, `BLOCK`, `PASS`, or
+`REVIEW` with a verified local receipt and proof timeline. A `PASS` means only
+**would trigger in this one simulation**; execution remains locked.
+
+For a condition-met proposal, the advisor shows the exact order type, size,
+limit price, fee cap, observed best ask/bid, raw BBO-derived slippage
+ceiling/floor, and effective authorized limit. The effective BUY maximum is
+the lower of the absolute trigger and BBO slippage ceiling; the effective SELL
+minimum is the higher of the absolute trigger and BBO slippage floor. The
+agent cannot make its own slippage assertion authoritative.
+
+Each simulation grant is consumed atomically before evidence is read. Replay,
+double-submit, edit, expiry, revoke, payload mutation, or receipt tampering
+fails closed. Revoke and the visible long-wait cancellation action abort an
+in-flight check server-side and discard late results; if the result completed
+first, the exact completed result is shown instead of claiming cancellation.
 
 The deliberate fixture story shows an agent proposal outside the mandate,
 Delta blocking it, one bounded revision, and the revised exact proposal
@@ -58,6 +79,21 @@ The first page needs no credential. Leave the composer empty and choose
 **Try a protected ETH dry run** to fill a complete, editable example, or write
 your own spot request. Nothing is authorized until the exact mandate card is
 reviewed and its one-check control is selected.
+
+### Try the one-check conditional simulator
+
+Open **Plans**, review the editable **Action / If / Limits / Until** ribbon,
+and choose **Save & simulate**. This seals a session-only, non-executable
+template. Select either a clearly labeled fixture or a connected View-only
+source, authorize one check for 30–600 seconds, and run it once. The result
+shows `CONDITION NOT MET`, `BLOCK`, `PASS`, or `REVIEW`, the exact proposal
+when one was prepared, a locally verified receipt, and
+`LOCKED · NO ORDER SUBMITTED`.
+
+A conditional View-only check rechecks the key permission and reads only the
+exact product plus one current BBO. It does **not** read balances or call
+Coinbase Preview. The direct protected-trade preflight described below is the
+separate flow that can use balances, product facts, BBO, and Preview.
 
 ### Optional View-only connection in the advisor
 
@@ -93,8 +129,10 @@ Current advisor-development capability status comes from
 - private redacted session activity and existing CLI Guard history: enabled;
 - browser credential storage, Coinbase Create, order submission, production
   Delta, and money movement: unavailable;
-- saved conditional plans, research, portfolio planning, and post-PASS live
-  readiness: not yet enabled at the Sprint 2 milestone.
+- non-executable conditional-plan revisions and explicitly authorized
+  one-check simulations: enabled;
+- saved monitoring, timers, unattended execution, research, portfolio
+  planning, and post-PASS live readiness: not enabled.
 
 The public release remains v1.5.3 until all eight advisor sprints, release
 archive checks, and CI gates are complete. The existing v1.5 CLI/skill

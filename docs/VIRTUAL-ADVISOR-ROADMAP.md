@@ -88,6 +88,10 @@ freshness, receipt, session, or expiry change invalidates the later state.
 | 6 | Abuse, accessibility, responsive, performance, and recovery hardening | Adversarial suite and browser walkthrough clean |
 | 7 | Polish, onboarding, screenshots, deployment guide, deterministic release | README truthful; archive/install/CI/public checksum green |
 
+Current development checkpoint: Sprints 0–3 are implemented. Sprint 3 is a
+non-executable conditional template and one-check simulation only; Sprints
+4–7 remain behind disabled capability flags until their own gates pass.
+
 ## Feature modes
 
 `config/advisor-capabilities.json` is the user-visible and testable capability
@@ -113,13 +117,33 @@ A saved template is non-executable. A later check requires a new, 30–600
 second simulation authorization and chooses either fixture or one fresh
 View-only source; it never falls back between them.
 
-The state model is `DRAFT → READY_FOR_SIM_AUTH →
-AUTHORIZED_FOR_SIMULATION → CHECKING`, followed by
+The editable browser form is the conceptual `DRAFT`; the first sealed
+server/session state is `READY_FOR_SIM_AUTH`. It then progresses to
+`AUTHORIZED_FOR_SIMULATION → CHECKING`, followed by
 `CONDITION_NOT_MET`, `WOULD_TRIGGER_SIMULATION`, `BLOCKED`, or `REVIEW`.
 `REVOKED`, `EXPIRED`, and `SUPERSEDED` are terminal, with precedence in that
 order. Edits create a new revision. Revoke tombstones the revision and aborts
 in-flight work. No “active,” “watching,” “triggered,” or “submitted” state,
 timer, poller, recurrence, trailing condition, or multi-action plan exists.
+The browser exposes only fixed 1-hour, 24-hour, or 7-day durations and derives
+the absolute expiry in its resolved read-only local timezone.
+
+For every prepared proposal, deterministic code derives two independent price
+constraints from the saved mandate and fresh BBO. BUY uses
+`min(absolute trigger, best ask plus allowed bps)`; SELL uses
+`max(absolute trigger, best bid minus allowed bps)`. The proposal, receipt,
+and proof bind the observed reference, raw BBO-derived bound, and effective
+authorized limit. The UI renders all three rather than trusting an
+agent-declared slippage value. At 10,000 bps, the raw SELL floor remains a
+positive minimum decimal unit and the effective floor still takes the maximum
+with the absolute trigger.
+
+The server owns one-use consumption and cancellation. It consumes a matching
+authorization before evidence fetch, tombstones cancellation to `REVIEW`,
+aborts the in-flight provider signal, and rejects late results. If completion
+wins the race, cancellation returns the already verified result so the UI
+cannot falsely say it was cancelled. Expiry is a sticky terminal state even
+if the wall clock later moves backward.
 
 ### Sprint 4 implementation contract
 

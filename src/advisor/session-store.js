@@ -22,6 +22,7 @@ function createSession(token, now) {
     created_at: now,
     last_seen_at: now,
     plans: new Map(),
+    conditionalPlans: new Map(),
     activity: [],
     disposers: new Set(),
   };
@@ -38,6 +39,12 @@ function disposeSession(session, reason) {
   }
   session.disposers?.clear();
   session.plans?.clear();
+  for (const entry of session.conditionalPlans?.values?.() ?? []) {
+    for (const record of entry?.revisions?.values?.() ?? []) {
+      record?.inFlight?.controller?.abort?.(reason);
+    }
+  }
+  session.conditionalPlans?.clear();
   if (Array.isArray(session.activity)) session.activity.length = 0;
 }
 

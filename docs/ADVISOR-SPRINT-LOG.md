@@ -290,3 +290,136 @@ Sprint 5 is only a locked live-readiness preview. It must not reuse
 `execution_confirmation.v2`, expose a Trade field or confirm control, import
 an executor, or claim “ready to trade.” A future final challenge and
 fail-closed durable execution design remain outside this release.
+
+## Sprint 3 — non-executable conditional-plan simulator
+
+### Product Manager requirements
+
+Deliver the premium future-condition story without implying an autonomous
+broker: one saved SPOT BUY/SELL absolute BBO condition, one explicit fixture
+or fresh View-only check, one short simulation authorization, a compelling
+BLOCK and PASS, and a receipt/evidence trail that always ends at orders off.
+The template itself must never watch, schedule, poll, recur, or authorize a
+future live trade.
+
+### Engineering-lead architecture
+
+Added a deterministic conditional-plan core and a separate server-owned
+session state machine. The pure core owns typed schemas, canonical binding,
+decimal arithmetic, condition and price evaluation, proposal construction,
+receipt creation, and verification. The session layer owns revision,
+authorization, atomic one-use consumption, cancellation, revoke, expiry, and
+late-result precedence. The browser receives only the safe plan/result view
+and cannot supply a decision, receipt, evidence fact, or execution state.
+
+The effective price constraint combines two independent user protections.
+BUY uses the lower of the absolute trigger and fresh best-ask slippage
+ceiling; SELL uses the higher of the absolute trigger and fresh best-bid
+slippage floor. Reference price, raw BBO-derived bound, effective authorized
+limit, exact proposal, evidence, authorization, and receipt are bound.
+
+### Senior full-stack implementation
+
+Built the real **Plans** journey: editable Action / If / Limits / Until
+mandate ribbon; browser-local read-only timezone; 1-hour, 24-hour, or 7-day
+duration; explicit labeled fixture versus connected View-only source;
+**Save & simulate**; one-check authorization; condition-not-met, BLOCK, PASS,
+and REVIEW results; irreversible revision revoke; and a proof timeline ending
+at `LOCKED · no order submitted`.
+
+The exact-proposal card makes the price decision inspectable. It shows order
+type, size, limit price, fee cap, observed best ask/bid, raw slippage
+ceiling/floor, and the effective bound after the absolute trigger. Provenance
+is exclusive: generated fixture, Coinbase observed at time, or Coinbase
+unavailable/unable to verify.
+
+### Backend and data
+
+Plans and their revisions are process/session-only. Edits supersede the prior
+digest and abort its work. A simulation authorization lasts 30–600 seconds,
+binds one plan revision and source, and is consumed synchronously before any
+evidence fetch. View-only rechecks the session credential and reads only exact
+product plus one BBO; failure returns a three-field unavailable object and
+`REVIEW`, never fixture fallback.
+
+Cancellation is a same-origin server mutation, not a browser illusion. It can
+tombstone an authorized-but-not-started grant or abort `CHECKING`; repeated
+cancellation is idempotent and records one activity item. If verified
+completion wins first, the endpoint returns that exact result for truthful UI
+recovery. `REVOKED`, `EXPIRED`, and `SUPERSEDED` remain terminal; `EXPIRED`
+stays sticky across wall-clock rollback.
+
+### DevOps and release review
+
+Conditional routes are explicit and bounded. There is no conditional Create,
+execute, generic proxy, watcher, scheduler, WebSocket, background task, or
+execution-adapter import. The capability contract was changed only after the
+focused and repository-wide gates passed. README, roadmap, design contract,
+threat model, and this log were updated before the checkpoint push.
+
+Sprint 4 educational-planning source and tests were kept untracked and outside
+this isolated Sprint 3 commit.
+
+### Designer and frontend critique
+
+Synthetic internal critique found three material trust problems and all were
+fixed: a trigger far from BBO could make a self-declared slippage value look
+safe; failed View-only facts could be described as observed; and an editable
+timezone label did not control `datetime-local` semantics. The shipped UI
+derives the exact price bound from BBO, makes the source state exclusive, and
+uses duration plus the read-only resolved browser timezone with explicit local
+time/zone copy.
+
+The first narrow-layout check found a 389-pixel overflow at a 320-pixel
+viewport from non-wrapping premium/status badges. The top line now wraps,
+containers use `min-width: 0`, badges wrap at 360 pixels, and exact-proposal
+grids collapse to one column.
+
+### QA
+
+The Sprint 3 focused parallel gate passed **57/57**. It covers BUY and SELL
+with either trigger or BBO slippage as the tighter constraint; 10,000-bps SELL
+floor safety; 18-decimal BBO precision; semantic and cryptographic tampering;
+old-receipt replay; missing/stale/crossed/source-mismatched evidence; revision,
+revoke, expiry, rollback, one-use, concurrent double-submit, invalid scenario
+ordering, no-session allocation, delayed-provider cancellation, completion
+before cancellation, idempotent cancellation activity, exclusive provenance,
+duration/timezone copy, exact proposal labels, and route/import denial.
+
+The complete working-tree suite passed **587/587**. That run included the
+separate untracked Sprint 4 educational-core tests; those files are explicitly
+excluded from this checkpoint.
+
+Real in-app browser interaction completed BUY `BLOCK → fresh authorization →
+PASS` and SELL `PASS`. Both exact-proposal cards showed side-correct ask/ceiling
+or bid/floor calculations, receipt verification, and execution lock. Two
+additional automation attempts failed in the browser-control sandbox because
+its evaluation context exposes neither `window.fetch` nor
+`document.createElement`; they did not produce an application/API failure.
+Cancellation ordering is therefore evidenced by the deterministic
+delayed-provider server tests plus static UI recovery contract, not a
+fabricated browser race.
+
+The post-fix 320-pixel metric could not be rerun in that sandbox, and terminal
+Playwright was unavailable because `npx` is not installed. The overflow defect
+was fixed and statically regressed; this limitation is recorded rather than
+silently treating the failed harness calls as a visual pass.
+
+### Target-user qualitative feedback
+
+Synthetic composite feedback only: the Action / If / Limits / Until ribbon
+makes the plan understandable without schema knowledge, while the exact
+three-price explanation answers the skeptical question “what price did the
+guard actually permit?” Clear fixture/View-only provenance and the persistent
+“nothing is watching” line prevent the premium surface from feeling like a
+false autonomous-trading promise.
+
+### Shipped impact
+
+The development branch now supports a polished, revisioned conditional SPOT
+BUY/SELL template and one explicitly authorized simulation check. It can
+demonstrate condition-not-met, meaningful BLOCK, exact PASS, or unable-to-
+verify REVIEW with a locally verified receipt and server-owned replay/cancel
+protection. Saved monitoring, unattended execution, Coinbase Create, Trade
+credentials, production Delta, research, portfolio planning, and live-order
+readiness remain disabled.

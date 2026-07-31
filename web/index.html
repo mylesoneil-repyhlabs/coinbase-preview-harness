@@ -223,14 +223,15 @@
                   <span>
                     Conflicting actions are paused. This request will stop
                     automatically if the local Guard cannot finish; then you can
-                    retry. No order can be sent.
+                    retry. Stopping browser wait alone does not cancel server
+                    work. No order can be sent.
                   </span>
                   <button
                     class="button button--ghost long-running-status__cancel"
                     type="button"
                     data-cancel-pending
                   >
-                    Cancel this check
+                    Stop waiting
                   </button>
                 </div>
                 <p class="composer__note">
@@ -338,100 +339,162 @@
           hidden
         >
           <header class="view-heading">
-            <p class="eyebrow">CONDITIONAL PLAN PREVIEW</p>
-            <h1 id="plans-heading">Design the boundary now. Keep execution separate.</h1>
+            <p class="eyebrow">ONE-CHECK CONDITIONAL SIMULATION</p>
+            <h1 id="plans-heading">Save the boundary. Rehearse one exact observation.</h1>
             <p>
-              Future conditional trading is a premium planning and simulation
-              surface until a trusted durable executor exists.
+              Compose a non-executable BUY or SELL plan, authorize one fresh
+              check, and inspect what Delta would allow.
+              Nothing is watching the market between checks.
             </p>
           </header>
 
-          <div class="plans-layout">
-            <section class="feature-card feature-card--premium">
-              <div class="feature-card__topline">
-                <span class="premium-badge">Premium preview</span>
-                <span class="truth-badge">Not monitoring</span>
-              </div>
-              <h2>ETH entry plan</h2>
-              <p>
-                Buy up to 3,000 USDC of ETH only when a fresh best ask is at or
-                below 3,000 USDC, within explicit fee and slippage limits.
-              </p>
-              <dl class="plan-facts">
-                <div>
-                  <dt>Trigger</dt>
-                  <dd>Best ask ≤ 3,000 USDC</dd>
-                </div>
-                <div>
-                  <dt>Maximum allocation</dt>
-                  <dd>3,000 USDC</dd>
-                </div>
-                <div>
-                  <dt>Maximum fee</dt>
-                  <dd>15 USDC</dd>
-                </div>
-                <div>
-                  <dt>Validity</dt>
-                  <dd>One use · user-defined expiry</dd>
-                </div>
-              </dl>
-              <div class="notice notice--amber">
-                This is an illustrative plan. Nothing is watching the market,
-                scheduling work, or trading in the background.
-              </div>
-            </section>
+          <div class="conditional-boundary" role="note">
+            <span aria-hidden="true">◇</span>
+            <strong>Simulation only</strong>
+            <span>Nothing is watching</span>
+            <span>Orders off</span>
+          </div>
 
-            <section class="feature-card">
-              <p class="eyebrow">TRUTHFUL LIFECYCLE</p>
-              <h2>What would have to happen</h2>
-              <ol class="plan-timeline">
-                <li class="is-complete">
-                  <span></span>
-                  <div>
-                    <strong>Draft</strong>
-                    <small>User defines the condition and limits</small>
-                  </div>
-                </li>
-                <li>
-                  <span></span>
-                  <div>
-                    <strong>Authorize for simulation</strong>
-                    <small>The exact policy is captured</small>
-                  </div>
-                </li>
-                <li>
-                  <span></span>
-                  <div>
-                    <strong>Simulate a trigger</strong>
-                    <small>Fixtures show what would happen</small>
-                  </div>
-                </li>
-                <li>
-                  <span></span>
-                  <div>
-                    <strong>Fresh Delta check</strong>
-                    <small>An exact proposal must PASS</small>
-                  </div>
-                </li>
-                <li class="is-locked">
-                  <span></span>
-                  <div>
-                    <strong>Final user review</strong>
-                    <small>Order submission remains unavailable</small>
-                  </div>
-                </li>
-              </ol>
+          <form
+            id="conditional-form"
+            class="feature-card feature-card--premium conditional-composer"
+          >
+            <div class="feature-card__topline">
+              <span class="premium-badge">Premium plan simulator</span>
+              <span class="truth-badge">Non-executable template</span>
+            </div>
+            <div class="mandate-ribbon">
+              <fieldset class="mandate-ribbon__section">
+                <legend>Action</legend>
+                <div class="compact-fields compact-fields--action">
+                  <label>
+                    <span>Pair</span>
+                    <input
+                      id="conditional-product"
+                      name="product_id"
+                      value="ETH-USDC"
+                      pattern="[A-Z0-9]+-[A-Z0-9]+"
+                      required
+                      autocomplete="off"
+                      autocapitalize="characters"
+                      spellcheck="false"
+                    >
+                  </label>
+                  <label>
+                    <span>Side</span>
+                    <select id="conditional-side" name="side">
+                      <option value="BUY">Buy</option>
+                      <option value="SELL">Sell</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Maximum amount</span>
+                    <input
+                      id="conditional-size"
+                      name="size_value"
+                      value="3000"
+                      inputmode="decimal"
+                      required
+                    >
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="mandate-ribbon__section">
+                <legend>If</legend>
+                <label>
+                  <span id="conditional-condition-label">
+                    Fresh best ask is at or below
+                  </span>
+                  <input
+                    id="conditional-threshold"
+                    name="threshold_value"
+                    value="3000"
+                    inputmode="decimal"
+                    required
+                  >
+                </label>
+              </fieldset>
+
+              <fieldset class="mandate-ribbon__section">
+                <legend>Limits</legend>
+                <div class="compact-fields">
+                  <label>
+                    <span>Maximum slippage (bps)</span>
+                    <input
+                      id="conditional-slippage"
+                      name="max_slippage_bps"
+                      type="number"
+                      value="35"
+                      min="0"
+                      max="10000"
+                      step="1"
+                      required
+                    >
+                  </label>
+                  <label>
+                    <span>Maximum fee</span>
+                    <input
+                      id="conditional-fee"
+                      name="max_fee_value"
+                      value="15"
+                      inputmode="decimal"
+                      required
+                    >
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="mandate-ribbon__section">
+                <legend>Until</legend>
+                <div class="compact-fields">
+                  <label>
+                    <span>Browser timezone (fixed)</span>
+                    <input
+                      id="conditional-timezone"
+                      name="timezone"
+                      value="America/New_York"
+                      required
+                      readonly
+                      autocomplete="off"
+                    >
+                  </label>
+                  <label>
+                    <span>Plan expires after</span>
+                    <select
+                      id="conditional-expiry"
+                      name="expires_at"
+                      required
+                    >
+                      <option value="3600">1 hour</option>
+                      <option value="86400" selected>24 hours</option>
+                      <option value="604800">7 days</option>
+                    </select>
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+            <div class="conditional-composer__footer">
+              <p>
+                Saving creates or supersedes a session-only revision. It does
+                not authorize a check, start a watcher, or submit an order.
+              </p>
               <button
-                id="plans-showcase-button"
-                class="button button--secondary"
-                type="button"
+                id="conditional-save-button"
+                class="button button--primary"
+                type="submit"
                 data-action-control="guard"
               >
-                Simulate the protected decision path
+                Save &amp; simulate
               </button>
-            </section>
-          </div>
-          <div id="plan-demo-output" class="demo-output" aria-live="polite"></div>
+            </div>
+          </form>
+
+          <div
+            id="conditional-output"
+            class="demo-output conditional-output"
+            aria-live="polite"
+          ></div>
         </section>
 
         <section

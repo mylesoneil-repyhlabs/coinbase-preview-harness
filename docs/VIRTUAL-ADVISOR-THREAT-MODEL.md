@@ -63,6 +63,17 @@ permission attestation, Preview, receipt, or execution state as authoritative.
 - The advisor imports a dedicated View-only transport exposing only accounts,
   exact product, BBO, and `POST /orders/preview`. A dependency-closure test
   excludes the Coinbase execution adapter and any Create/order method.
+- Conditional-plan grants are server-owned and atomically consumed before an
+  evidence request. Cancel, revoke, edit, and disconnect abort provider work;
+  expiry is checked before result acceptance and discards a late result. None
+  can restore eligibility or overwrite a terminal state. Cancellation before
+  `CHECKING` tombstones the matching `AUTHORIZED_FOR_SIMULATION` grant, and
+  cancellation after verified completion returns that completed result rather
+  than rewriting history.
+- Conditional proposal verification recomputes the side-correct BBO slippage
+  bound and its intersection with the absolute trigger. Reference price, raw
+  bound, effective limit, proposal, evidence, authorization, and receipt are
+  bound; rehashed semantic tampering still fails verification.
 
 ## Execution controls
 
@@ -122,6 +133,8 @@ Future execution requires all of:
 | Stale/missing/mismatched evidence | Endpoint freshness and exact binding | `REVIEW`, never `PASS` |
 | Policy/proposal/payload mutation | Canonical digest recomputation | `BLOCK` or `REVIEW`; later state invalidated |
 | Nonce replay or concurrent duplicate | Existing nonce claims and history | One current result or fail closed |
+| Conditional double-submit or cancel race | Atomic one-use consume; server cancel tombstone; late-result discard | One result, or `REVIEW`; never a second check |
+| Clock rollback after plan expiry | Sticky server-owned `EXPIRED` tombstone | Cannot revise, authorize, or restart |
 | Forged PASS or confirmation | No final-confirmation route; future challenge requires pinned production proof | Remains `LOCKED` |
 | Double final confirmation | No final-confirmation route; future durable challenge must consume atomically | Remains `LOCKED` |
 | Kill-switch race or uncertain send | No send path; future executor requires epoch checks, durable journal, reconciliation | No order |
@@ -137,9 +150,10 @@ credential lease remains current. The separate CLI Guard history may persist
 by default; it is owner-only, count-bounded, inspectable, and explicitly
 deletable.
 
-Saved conditional and portfolio plans are local non-executable planning
-objects. Persistence is opt-in and stores no credential, account ID, provider
-body, authorization receipt, or execution eligibility.
+Advisor conditional plans are session-only non-executable planning objects in
+the current implementation. They are destroyed with the session or process
+and store no credential, account ID, provider body, or execution eligibility.
+Future portfolio persistence remains unimplemented.
 
 ## Deployment
 

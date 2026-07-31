@@ -18,7 +18,7 @@
   },
   "features": {
     "advisor": true,
-    "conditional_plan_simulation": false,
+    "conditional_plan_simulation": true,
     "educational_research": false,
     "portfolio_planning": false,
     "post_pass_final_confirmation_readiness": false,

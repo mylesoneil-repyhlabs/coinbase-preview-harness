@@ -78,19 +78,36 @@ zeroized, even though no storage API or persistence is used.
 
 ## Conditional plans
 
-Truthful states are `Draft`, `Authorized for simulation`, `Would trigger`,
-`Expired`, and `Revoked`. Never use `Active`, `Watching`, or `Monitoring`
-without a trusted durable executor.
+Truthful states are `Ready for simulation authorization`,
+`Authorized for simulation`, `Checking once`, `Condition not met`,
+`Would trigger simulation`, `Blocked`, `Review`, `Expired`, `Superseded`, and
+`Revoked`. Never use `Active`, `Watching`, `Triggered`, `Submitted`, or
+`Monitoring` without a trusted durable executor.
 
-Each plan shows source, trigger, timezone, amount, cost limits, expiry,
-one-shot scope, and revoke. Its timeline ends:
+The saved plan shows trigger, amount, cost limits, absolute expiry, one-shot
+scope, revoke, and the resolved read-only browser timezone. Its absolute
+expiry is derived from a fixed 1-hour, 24-hour, or 7-day duration; there is no
+editable zone or ambiguous `datetime-local` input. A later authorization
+separately shows the selected source and its 30–600-second one-use expiry.
+Provenance is exactly one of **Generated fixture**, **Coinbase observed at
+time**, or **Coinbase unavailable · unable to verify**.
+
+When a proposal exists, the exact-proposal card shows order type, size, limit,
+maximum fee, observed BBO reference, raw slippage ceiling/floor, and the
+effective price bound after applying the absolute trigger. Its timeline ends:
 
 ```text
-condition observed
-  -> fresh guard check
-  -> exact final user review
-  -> order unavailable
+one fresh observation
+  -> exact simulated proposal
+  -> local Delta simulation + verified receipt
+  -> execution locked / no order submitted
 ```
+
+The long-wait action cancels the one-check attempt on the local server; it does
+not merely hide a browser request. A confirmed cancellation consumes the
+grant and discards late results. If the result completed first, the completed
+result is shown with that explanation. A separate generic **Stop waiting**
+action must say that local work may still finish.
 
 ## Research and portfolio planning
 

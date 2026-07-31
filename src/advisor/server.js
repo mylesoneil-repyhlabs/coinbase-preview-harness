@@ -13,6 +13,7 @@ import {
 } from "../coinbase-view-only-rest.js";
 import { readHistory } from "../dry-run-history.js";
 import { GuardDecisionError } from "../guard-errors.js";
+import { normalizeCoinbaseMarketData } from "../market.js";
 import { createExecutionPlan } from "../plan.js";
 import { runGuardPreflight } from "../preflight.js";
 import { productionExecutionStatus } from "../integration/production-composition.js";
@@ -20,6 +21,23 @@ import {
   advisorStatusCapabilities,
   loadAdvisorCapabilities,
 } from "./capabilities.js";
+import {
+  conditionalFixtureEvidence,
+  createConditionalPlan,
+  simulateConditionalPlan,
+} from "./conditional-plan.js";
+import {
+  ConditionalSessionError,
+  authorizeConditionalSessionPlan,
+  beginConditionalSessionAttempt,
+  cancelConditionalSessionAttempt,
+  conditionalPlanView,
+  failConditionalSessionAttempt,
+  finishConditionalSessionAttempt,
+  rememberConditionalPlan,
+  reviseConditionalSessionPlan,
+  revokeConditionalSessionPlan,
+} from "./conditional-session.js";
 import {
   AdvisorSessionStore,
   appendActivity,
@@ -51,6 +69,12 @@ const ADVISOR_POST_ROUTES = new Set([
   "/api/advisor/authorize",
   "/api/connection/connect",
   "/api/connection/disconnect",
+  "/api/conditional/plan",
+  "/api/conditional/revise",
+  "/api/conditional/authorize",
+  "/api/conditional/cancel",
+  "/api/conditional/simulate",
+  "/api/conditional/revoke",
   "/api/demo/showcase",
   "/api/demo/review",
 ]);
@@ -186,6 +210,49 @@ function connectionHttpError(error) {
     code,
     "The local View-only connection stopped safely. Nothing was stored and no order was submitted.",
   );
+}
+
+function conditionalHttpError(error) {
+  if (error instanceof HttpError) return error;
+  const code =
+    error instanceof ConditionalSessionError &&
+    typeof error.code === "string"
+      ? error.code
+      : "CONDITIONAL_PLAN_INVALID";
+  const notFound = [
+    "CONDITIONAL_PLAN_NOT_FOUND",
+    "CONDITIONAL_REVISION_NOT_FOUND",
+  ].includes(code);
+  const conflict =
+    code.includes("CONSUMED") ||
+    code.includes("CONFLICT") ||
+    code.includes("SUPERSEDED") ||
+    code.includes("REVOKED") ||
+    code.includes("EXPIRED") ||
+    code.includes("NOT_AUTHORIZABLE") ||
+    code.includes("MISMATCH");
+  return new HttpError(
+    notFound ? 404 : conflict ? 409 : 422,
+    code,
+    error instanceof Error
+      ? error.message
+      : "The saved-plan check stopped safely. No order was submitted.",
+  );
+}
+
+function requireConditionalIdentity(input) {
+  if (
+    typeof input.plan_id !== "string" ||
+    !/^[a-f0-9-]{36}$/.test(input.plan_id) ||
+    !Number.isInteger(input.revision) ||
+    input.revision < 1
+  ) {
+    throw new HttpError(
+      400,
+      "CONDITIONAL_ID_INVALID",
+      "Choose the current saved-plan revision.",
+    );
+  }
 }
 
 function verifiedCredentialEnvelope({
@@ -384,8 +451,14 @@ function activityEntry(kind, status, {
     occurred_at: now().toISOString(),
     kind,
     status,
-    product_id: plan?.policy?.product_id ?? null,
-    side: plan?.policy?.side ?? null,
+    product_id:
+      plan?.policy?.product_id ??
+      plan?.template?.product_id ??
+      null,
+    side:
+      plan?.policy?.side ??
+      plan?.template?.side ??
+      null,
     decision,
     receipt_digest: receiptDigest,
   };
@@ -719,18 +792,31 @@ export function createAdvisorRequestHandler({
           "This mandate is not available in the current local session.",
         );
       }
+      if (
+        pathname.startsWith("/api/conditional/") &&
+        pathname !== "/api/conditional/plan" &&
+        existingSession == null
+      ) {
+        throw new HttpError(
+          404,
+          "CONDITIONAL_PLAN_NOT_FOUND",
+          "This saved plan is not available in the current local session.",
+        );
+      }
 
       let session = existingSession;
       if (session != null) {
         session = sessionStore.open(suppliedToken).session;
       } else if (
         pathname === "/api/advisor/plan" ||
+        pathname === "/api/conditional/plan" ||
         pathname === "/api/connection/connect"
       ) {
         session = sessionStore.open(null).session;
       } else {
         session = {
           plans: new Map(),
+          conditionalPlans: new Map(),
           activity: [],
         };
       }
@@ -821,6 +907,471 @@ export function createAdvisorRequestHandler({
           response,
           200,
           connectionResponse(connection),
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/plan"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          [
+            "product_id",
+            "side",
+            "size_value",
+            "threshold_value",
+            "max_slippage_bps",
+            "max_fee_value",
+            "timezone",
+            "expires_at",
+          ],
+          "Conditional plan request",
+        );
+        let plan;
+        try {
+          plan = createConditionalPlan(input, { now });
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        const saved = rememberConditionalPlan(session, plan);
+        appendActivity(
+          session,
+          activityEntry(
+            "CONDITIONAL_PLAN",
+            saved.session_state,
+            { now, plan },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: saved },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/revise"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          ["plan_id", "revision", "patch"],
+          "Conditional plan revision request",
+        );
+        requireConditionalIdentity(input);
+        const patch = strictFields(
+          input.patch,
+          [
+            "product_id",
+            "side",
+            "size_value",
+            "threshold_value",
+            "max_slippage_bps",
+            "max_fee_value",
+            "timezone",
+            "expires_at",
+          ],
+          "Conditional plan revision",
+        );
+        let revised;
+        try {
+          revised = reviseConditionalSessionPlan(session, {
+            planId: input.plan_id,
+            revision: input.revision,
+            patch,
+            now,
+          });
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "CONDITIONAL_PLAN_REVISION",
+            revised.current.session_state,
+            { now, plan: revised.current.plan },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: revised.current },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/authorize"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          [
+            "plan_id",
+            "revision",
+            "source",
+            "ttl_seconds",
+          ],
+          "Conditional simulation authorization request",
+        );
+        requireConditionalIdentity(input);
+        let authorized;
+        try {
+          authorized = authorizeConditionalSessionPlan(
+            session,
+            {
+              planId: input.plan_id,
+              revision: input.revision,
+              source: input.source,
+              ttlSeconds: input.ttl_seconds,
+              now,
+            },
+          );
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "CONDITIONAL_SIMULATION_AUTHORIZATION",
+            authorized.session_state,
+            { now, plan: authorized.plan },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: authorized },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/revoke"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          ["plan_id", "revision"],
+          "Conditional plan revoke request",
+        );
+        requireConditionalIdentity(input);
+        let revoked;
+        try {
+          revoked = revokeConditionalSessionPlan(session, {
+            planId: input.plan_id,
+            revision: input.revision,
+            now,
+          });
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "CONDITIONAL_PLAN",
+            "REVOKED",
+            { now, plan: revoked.plan },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: revoked },
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/cancel"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          [
+            "plan_id",
+            "revision",
+            "authorization_id",
+          ],
+          "Conditional simulation cancellation request",
+        );
+        requireConditionalIdentity(input);
+        if (
+          typeof input.authorization_id !== "string" ||
+          !input.authorization_id
+        ) {
+          throw new HttpError(
+            400,
+            "CONDITIONAL_AUTHORIZATION_INVALID",
+            "Identify the current one-check authorization before cancelling it.",
+          );
+        }
+        let cancellation;
+        try {
+          cancellation = cancelConditionalSessionAttempt(
+            session,
+            {
+              planId: input.plan_id,
+              revision: input.revision,
+              authorizationId: input.authorization_id,
+              now,
+            },
+          );
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        if (
+          cancellation.cancelled &&
+          cancellation.already_cancelled !== true
+        ) {
+          appendActivity(
+            session,
+            activityEntry(
+              "CONDITIONAL_SIMULATION_CANCELLED",
+              "REVIEW",
+              {
+                now,
+                plan: cancellation.saved_plan.plan,
+                decision: "REVIEW",
+              },
+            ),
+          );
+        }
+        safeJson(
+          response,
+          200,
+          cancellation,
+          cookieHeader,
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/conditional/simulate"
+      ) {
+        const input = strictFields(
+          await readJson(request),
+          [
+            "plan_id",
+            "revision",
+            "authorization_id",
+            "scenario",
+          ],
+          "Conditional simulation request",
+        );
+        requireConditionalIdentity(input);
+        if (
+          typeof input.authorization_id !== "string" ||
+          !input.authorization_id
+        ) {
+          throw new HttpError(
+            400,
+            "CONDITIONAL_AUTHORIZATION_INVALID",
+            "Authorize this saved-plan revision for one fresh simulation check.",
+          );
+        }
+        if (
+          input.scenario != null &&
+          !["not_met", "block", "pass"].includes(
+            input.scenario,
+          )
+        ) {
+          throw new HttpError(
+            400,
+            "CONDITIONAL_SCENARIO_INVALID",
+            "Choose one labeled fixture scenario.",
+          );
+        }
+        let pendingPlan;
+        try {
+          pendingPlan = conditionalPlanView(
+            session,
+            input.plan_id,
+            input.revision,
+          );
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+        if (
+          pendingPlan.authorization?.authorization_id !==
+          input.authorization_id
+        ) {
+          throw new HttpError(
+            409,
+            "CONDITIONAL_AUTHORIZATION_MISMATCH",
+            "Authorize the current saved-plan revision for one fresh check.",
+          );
+        }
+        if (
+          pendingPlan.authorization.source === "view_only" &&
+          input.scenario != null &&
+          input.scenario !== "pass"
+        ) {
+          throw new HttpError(
+            400,
+            "CONDITIONAL_VIEW_ONLY_SCENARIO_INVALID",
+            "A View-only check uses the observed BBO; fixture scenario controls do not apply.",
+          );
+        }
+
+        let attempt;
+        try {
+          attempt = beginConditionalSessionAttempt(session, {
+            planId: input.plan_id,
+            revision: input.revision,
+            authorizationId: input.authorization_id,
+            now,
+          });
+        } catch (error) {
+          throw conditionalHttpError(error);
+        }
+
+        let result;
+        let completed;
+        try {
+          const selectedScenario =
+            attempt.authorization.source === "fixture"
+              ? input.scenario ?? "pass"
+              : "pass";
+          let evidence;
+          if (attempt.authorization.source === "fixture") {
+            evidence = conditionalFixtureEvidence(
+              attempt.plan,
+              selectedScenario,
+              { now },
+            );
+          } else {
+            try {
+              const provider = credentialProviderFor(session, {
+                create: false,
+              });
+              if (
+                provider == null ||
+                provider.status().connected !== true
+              ) {
+                throw new Error(
+                  "View-only connection unavailable",
+                );
+              }
+              evidence =
+                await provider.withVerifiedCredential(
+                  async ({
+                    credentials,
+                    signal,
+                    assertCurrent,
+                  }) => {
+                    const adapter = createViewOnlyAdapter(
+                      credentials,
+                      {
+                        timeoutMs: 5_000,
+                        signal: AbortSignal.any([
+                          signal,
+                          attempt.signal,
+                        ]),
+                      },
+                    );
+                    const [product, bestBidAsk] =
+                      await Promise.all([
+                        adapter.getProduct(
+                          attempt.plan.template.product_id,
+                        ),
+                        adapter.getBestBidAsk(
+                          attempt.plan.template.product_id,
+                        ),
+                      ]);
+                    assertCurrent();
+                    const market =
+                      normalizeCoinbaseMarketData(
+                        product,
+                        bestBidAsk,
+                        attempt.plan.template.product_id,
+                      );
+                    return Object.freeze({
+                      source: "view_only",
+                      product_id: market.product_id,
+                      best_bid: market.best_bid,
+                      best_ask: market.best_ask,
+                      observed_at: market.observed_at,
+                    });
+                  },
+                );
+            } catch {
+              evidence = Object.freeze({
+                source: "view_only",
+                product_id:
+                  attempt.plan.template.product_id,
+                unavailable: true,
+              });
+            }
+          }
+
+          result = simulateConditionalPlan({
+            plan: attempt.plan,
+            authorization: attempt.authorization,
+            evidence,
+            scenario: selectedScenario,
+            now,
+            currentRevision: input.revision,
+          });
+          completed = finishConditionalSessionAttempt(
+            session,
+            {
+              planId: input.plan_id,
+              revision: input.revision,
+              attemptId: attempt.attempt_id,
+              result,
+              now,
+            },
+          );
+        } catch (error) {
+          try {
+            failConditionalSessionAttempt(session, {
+              planId: input.plan_id,
+              revision: input.revision,
+              attemptId: attempt.attempt_id,
+            });
+          } catch {
+            // A newer terminal state owns the revision; never revive it.
+          }
+          if (
+            error instanceof ConditionalSessionError ||
+            error instanceof HttpError
+          ) {
+            throw conditionalHttpError(error);
+          }
+          throw new HttpError(
+            500,
+            "CONDITIONAL_SIMULATION_STOPPED_SAFE",
+            "The one-check simulation stopped safely. Authorize a fresh check; nothing is watching and no order was submitted.",
+          );
+        }
+        appendActivity(
+          session,
+          activityEntry(
+            "CONDITIONAL_SIMULATION",
+            completed.session_state,
+            {
+              now,
+              plan: completed.plan,
+              decision: result.decision,
+              receiptDigest:
+                result.receipt?.receipt_digest ?? null,
+            },
+          ),
+        );
+        safeJson(
+          response,
+          200,
+          { saved_plan: completed, result },
           cookieHeader,
         );
         return;

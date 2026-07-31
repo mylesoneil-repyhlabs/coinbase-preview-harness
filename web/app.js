@@ -14,7 +14,9 @@ const state = {
   pendingRegion: null,
   pendingStatusNode: null,
   pendingAbortController: null,
+  pendingCancellation: null,
   authorizeButtons: new Map(),
+  conditionalPlan: null,
 };
 
 const actionControlState = new WeakMap();
@@ -34,9 +36,31 @@ const dom = {
   intentInput: document.querySelector("#intent-input"),
   prepareButton: document.querySelector("#prepare-button"),
   showcaseButton: document.querySelector("#showcase-button"),
-  plansShowcaseButton: document.querySelector("#plans-showcase-button"),
   reviewButton: document.querySelector("#review-button"),
-  planDemoOutput: document.querySelector("#plan-demo-output"),
+  conditionalForm: document.querySelector("#conditional-form"),
+  conditionalProduct: document.querySelector("#conditional-product"),
+  conditionalSide: document.querySelector("#conditional-side"),
+  conditionalSize: document.querySelector("#conditional-size"),
+  conditionalThreshold: document.querySelector("#conditional-threshold"),
+  conditionalConditionLabel: document.querySelector(
+    "#conditional-condition-label",
+  ),
+  conditionalSlippage: document.querySelector(
+    "#conditional-slippage",
+  ),
+  conditionalFee: document.querySelector("#conditional-fee"),
+  conditionalTimezone: document.querySelector(
+    "#conditional-timezone",
+  ),
+  conditionalExpiry: document.querySelector(
+    "#conditional-expiry",
+  ),
+  conditionalSaveButton: document.querySelector(
+    "#conditional-save-button",
+  ),
+  conditionalOutput: document.querySelector(
+    "#conditional-output",
+  ),
   activityList: document.querySelector("#activity-list"),
   refreshActivityButton: document.querySelector("#refresh-activity-button"),
   guardState: document.querySelector("#guard-state"),
@@ -80,7 +104,8 @@ function element(tagName, options = {}) {
   if (
     state.pending &&
     tagName === "button" &&
-    node.dataset.actionControl === "guard"
+    node.dataset.actionControl === "guard" &&
+    node.dataset.safetyAction !== "true"
   ) {
     node.disabled = true;
     node.setAttribute("aria-disabled", "true");
@@ -186,9 +211,25 @@ async function requestJson(path, { method = "GET", body } = {}) {
     });
   } catch (error) {
     if (error?.name === "AbortError") {
-      if (controller.signal.reason === "USER_CANCELLED") {
+      if (controller.signal.reason === "SERVER_CANCELLED") {
         throw new Error(
-          "You cancelled the local check. Nothing was submitted; you can try again.",
+          "The server confirmed that the one-check simulation was cancelled and any late result will be discarded.",
+        );
+      }
+      if (
+        controller.signal.reason ===
+        "COMPLETED_BEFORE_CANCEL"
+      ) {
+        throw new Error(
+          "The server completed the check before cancellation. Its exact result is already shown.",
+        );
+      }
+      if (
+        controller.signal.reason ===
+        "USER_STOPPED_WAITING"
+      ) {
+        throw new Error(
+          "You stopped waiting in this browser. The local action may still finish; check Activity or reconnect to its status before retrying. No order can be sent.",
         );
       }
       throw new Error(
@@ -229,10 +270,121 @@ async function requestJson(path, { method = "GET", body } = {}) {
   return payload;
 }
 
+async function requestSafetyJson(path, body) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort("TIMEOUT"),
+    8_000,
+  );
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "error",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Delta-Advisor": "1",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        safeProviderMessage(
+          payload,
+          "The safety action stopped without changing the saved plan.",
+        ),
+      );
+    }
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        "The local safety action did not answer in time. Its state is unconfirmed; stop the local server to end all in-memory checks.",
+      );
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function cancelPendingOperation(cancel) {
+  const context = state.pendingCancellation;
+  if (
+    context?.kind !== "conditional_simulation"
+  ) {
+    state.pendingAbortController?.abort(
+      "USER_STOPPED_WAITING",
+    );
+    cancel.disabled = true;
+    cancel.textContent = "Stopped waiting";
+    announce(
+      "Stopped waiting in this browser. Local work may still finish; check Activity or connection status before retrying.",
+    );
+    return;
+  }
+
+  cancel.disabled = true;
+  cancel.textContent = "Cancelling on server…";
+  context.requested = true;
+  try {
+    const response = await requestSafetyJson(
+      "/api/conditional/cancel",
+      {
+        plan_id: context.plan_id,
+        revision: context.revision,
+        authorization_id: context.authorization_id,
+      },
+    );
+    if (response.cancelled === true) {
+      context.confirmed = true;
+      state.pendingAbortController?.abort(
+        "SERVER_CANCELLED",
+      );
+      renderConditionalCancelled(response.saved_plan);
+      return;
+    }
+    const completed = response.saved_plan?.result;
+    if (completed) {
+      context.completedBeforeCancellation = true;
+      context.resolved = true;
+      state.pendingAbortController?.abort(
+        "COMPLETED_BEFORE_CANCEL",
+      );
+      renderConditionalResult(
+        response.saved_plan,
+        completed,
+        { completedBeforeCancellation: true },
+      );
+      announce(
+        "The check completed before cancellation reached the server. Its exact result is shown; no order was submitted.",
+      );
+      return;
+    }
+    cancel.textContent = "Cancellation not applied";
+    announce(
+      "The server could not confirm cancellation. Keep waiting or inspect Activity before retrying; no order can be sent.",
+    );
+  } catch (error) {
+    cancel.disabled = false;
+    cancel.textContent = "Retry server cancellation";
+    announce(
+      error instanceof Error
+        ? error.message
+        : "Server cancellation was not confirmed. No order can be sent.",
+    );
+  }
+}
+
 function setActionControlsDisabled(disabled) {
   for (const control of document.querySelectorAll(
     '[data-action-control="guard"]',
   )) {
+    if (control.dataset.safetyAction === "true") continue;
     if (disabled) {
       if (!actionControlState.has(control)) {
         actionControlState.set(control, control.disabled);
@@ -265,20 +417,42 @@ function showLongRunningStatus() {
   if (region.contains(dom.longRunningStatus)) {
     dom.longRunningStatus.hidden = false;
     state.pendingStatusNode = dom.longRunningStatus;
-    return;
-  }
-
-  const status = dom.longRunningStatus.cloneNode(true);
-  status.removeAttribute("id");
-  status.hidden = false;
-  status.dataset.transientPendingStatus = "true";
-  const heading = region.querySelector(".view-heading");
-  if (heading) {
-    heading.after(status);
   } else {
-    region.prepend(status);
+    const status = dom.longRunningStatus.cloneNode(true);
+    status.removeAttribute("id");
+    status.hidden = false;
+    status.dataset.transientPendingStatus = "true";
+    const heading = region.querySelector(".view-heading");
+    if (heading) {
+      heading.after(status);
+    } else {
+      region.prepend(status);
+    }
+    state.pendingStatusNode = status;
   }
-  state.pendingStatusNode = status;
+  const cancel = state.pendingStatusNode.querySelector(
+    "[data-cancel-pending]",
+  );
+  const description =
+    state.pendingStatusNode.querySelector("span");
+  if (
+    state.pendingCancellation?.kind ===
+    "conditional_simulation"
+  ) {
+    if (cancel) {
+      cancel.textContent = "Cancel one-check simulation";
+    }
+    if (description) {
+      description.textContent =
+        "Conflicting actions are paused. Cancel asks the local server to abort this one-check attempt and discard any late result. No order can be sent.";
+    }
+  } else {
+    if (cancel) cancel.textContent = "Stop waiting";
+    if (description) {
+      description.textContent =
+        "Conflicting actions are paused. Stop waiting only closes the browser request; local work may still finish. No order can be sent.";
+    }
+  }
 }
 
 function hideLongRunningStatus() {
@@ -455,6 +629,29 @@ function applyConnectionStatus(payload, { announceChange = false } = {}) {
   dom.connectionStatus.textContent = connected
     ? "Coinbase: View only"
     : "Coinbase: off";
+  for (const input of document.querySelectorAll(
+    '[data-conditional-view-source="true"]',
+  )) {
+    input.disabled = !connected;
+    const description =
+      input.closest("label")?.querySelector("small");
+    if (description) {
+      description.textContent = connected
+        ? "Rechecks permission, product, and one fresh BBO. No fixture fallback."
+        : "Connect a View-only key first. Dry fixtures remain available.";
+    }
+    if (!connected && input.checked) {
+      const fixture = input
+        .closest("fieldset")
+        ?.querySelector('input[value="fixture"]');
+      if (fixture) {
+        fixture.checked = true;
+        fixture.dispatchEvent(
+          new Event("change", { bubbles: true }),
+        );
+      }
+    }
+  }
 
   if (connected) {
     const permissions = connection.permissions ?? {};
@@ -1562,6 +1759,960 @@ async function runReviewDemo(button) {
   });
 }
 
+function conditionalInput() {
+  const expirySeconds = Number(
+    dom.conditionalExpiry.value,
+  );
+  if (
+    ![3_600, 86_400, 604_800].includes(expirySeconds)
+  ) {
+    throw new Error(
+      "Choose a supported plan duration: 1 hour, 24 hours, or 7 days.",
+    );
+  }
+  const expiry = new Date(
+    Date.now() + expirySeconds * 1_000,
+  );
+  if (!Number.isFinite(expiry.getTime())) {
+    throw new Error("Choose a valid future plan expiry.");
+  }
+  const timezone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!timezone) {
+    throw new Error(
+      "Your browser timezone could not be resolved safely.",
+    );
+  }
+  dom.conditionalTimezone.value = timezone;
+  return {
+    product_id: dom.conditionalProduct.value
+      .trim()
+      .toUpperCase(),
+    side: dom.conditionalSide.value,
+    size_value: dom.conditionalSize.value.trim(),
+    threshold_value:
+      dom.conditionalThreshold.value.trim(),
+    max_slippage_bps: Number(
+      dom.conditionalSlippage.value,
+    ),
+    max_fee_value: dom.conditionalFee.value.trim(),
+    timezone,
+    expires_at: expiry.toISOString(),
+  };
+}
+
+function updateConditionalSideCopy() {
+  const buy = dom.conditionalSide.value === "BUY";
+  dom.conditionalConditionLabel.textContent = buy
+    ? "Fresh best ask is at or below"
+    : "Fresh best bid is at or above";
+}
+
+function setConditionalDefaults() {
+  dom.conditionalExpiry.value = "86400";
+  const zone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (zone) dom.conditionalTimezone.value = zone;
+  updateConditionalSideCopy();
+}
+
+function conditionalFact(
+  label,
+  value,
+  className = "",
+) {
+  const wrapper = element("div", {
+    className: `conditional-fact ${className}`.trim(),
+  });
+  wrapper.append(
+    element("span", { text: label }),
+    element("strong", { text: value }),
+  );
+  return wrapper;
+}
+
+function conditionalMandateRibbon(plan) {
+  const template = plan.template;
+  const ribbon = element("div", {
+    className: "conditional-summary-ribbon",
+    attributes: {
+      "aria-label": "Saved conditional mandate",
+    },
+  });
+  ribbon.append(
+    conditionalFact(
+      "Action",
+      `${titleCase(template.side)} up to ${plainNumber(template.size.value)} ${template.size.asset} on ${template.product_id}`,
+    ),
+    conditionalFact(
+      "If",
+      `${template.condition.reference === "BEST_ASK" ? "Fresh best ask" : "Fresh best bid"} ${template.condition.operator === "LTE" ? "≤" : "≥"} ${plainNumber(template.condition.value)} ${template.condition.asset}`,
+    ),
+    conditionalFact(
+      "Limits",
+      `${template.limits.max_slippage_bps} bps slippage · ${plainNumber(template.limits.max_fee.value)} ${template.limits.max_fee.asset} fee`,
+    ),
+    conditionalFact(
+      "Until",
+      `${new Date(template.expires_at).toLocaleString(undefined, {
+        timeZone: template.timezone,
+        timeZoneName: "short",
+      })} local time · ${template.timezone}`,
+    ),
+  );
+  return ribbon;
+}
+
+function conditionalHeader(saved, subtitle) {
+  const header = element("div", {
+    className: "artifact__header",
+  });
+  const group = element("div");
+  group.append(
+    element("p", {
+      className: "eyebrow",
+      text: `SAVED PLAN · REVISION ${saved.plan.revision}`,
+    }),
+    element("h2", {
+      text: "Your condition is now an enforceable simulation boundary.",
+    }),
+    element("p", { text: subtitle }),
+  );
+  header.append(
+    group,
+    element("span", {
+      className: "artifact-badge",
+      text: saved.session_state.replaceAll("_", " "),
+    }),
+  );
+  return header;
+}
+
+function conditionalRevokeButton(saved) {
+  const button = element("button", {
+    className: "button button--secondary button--danger",
+    text: "Revoke this revision",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+      "data-safety-action": "true",
+    },
+  });
+  button.addEventListener("click", () => {
+    void revokeConditional(saved, button);
+  });
+  return button;
+}
+
+function scenarioPicker(idSuffix, { disabled = false } = {}) {
+  const fieldset = element("fieldset", {
+    className: "scenario-picker",
+  });
+  fieldset.append(
+    element("legend", {
+      text: "Fixture rehearsal",
+    }),
+  );
+  const scenarios = [
+    [
+      "not_met",
+      "Condition not met",
+      "One BBO observation stops before a proposal.",
+    ],
+    [
+      "block",
+      "Agent exceeds limit",
+      "A proposal outside the saved maximum is blocked.",
+    ],
+    [
+      "pass",
+      "Exact proposal fits",
+      "A bound local receipt verifies; execution stays locked.",
+    ],
+  ];
+  for (const [value, title, copy] of scenarios) {
+    const label = element("label", {
+      className: "scenario-choice",
+    });
+    const input = element("input", {
+      attributes: {
+        type: "radio",
+        name: `conditional-scenario-${idSuffix}`,
+        value,
+        ...(value === "block" ? { checked: "" } : {}),
+        ...(disabled ? { disabled: "" } : {}),
+      },
+    });
+    const text = element("span");
+    text.append(
+      element("strong", { text: title }),
+      element("small", { text: copy }),
+    );
+    label.append(input, text);
+    fieldset.append(label);
+  }
+  return fieldset;
+}
+
+function selectedScenario(container) {
+  return (
+    container.querySelector(
+      'input[type="radio"][name^="conditional-scenario-"]:checked',
+    )?.value ?? "pass"
+  );
+}
+
+function renderConditionalReady(saved) {
+  state.conditionalPlan = saved;
+  dom.conditionalOutput.replaceChildren();
+  const artifact = element("section", {
+    className: "artifact conditional-artifact",
+  });
+  artifact.append(
+    conditionalHeader(
+      saved,
+      "The template is saved in this local session, but it cannot watch, trade, or authorize a future check by itself.",
+    ),
+    conditionalMandateRibbon(saved.plan),
+    element("div", {
+      className: "no-order-banner",
+      text: "SIMULATION ONLY · NOTHING IS WATCHING · NO ORDER SUBMITTED",
+    }),
+  );
+
+  const controls = element("div", {
+    className: "conditional-check-controls",
+  });
+  const source = element("fieldset", {
+    className: "source-picker",
+  });
+  source.append(
+    element("legend", {
+      text: "Choose the source for one fresh check",
+    }),
+  );
+  const fixtureLabel = element("label", {
+    className: "source-choice",
+  });
+  const fixtureInput = element("input", {
+    attributes: {
+      type: "radio",
+      name: `conditional-source-${saved.plan.plan_id}-${saved.plan.revision}`,
+      value: "fixture",
+      checked: "",
+    },
+  });
+  const fixtureCopy = element("span");
+  fixtureCopy.append(
+    element("strong", { text: "Labeled fixture" }),
+    element("small", {
+      text: "No credential or network. Rehearse condition-not-met, BLOCK, or PASS.",
+    }),
+  );
+  fixtureLabel.append(fixtureInput, fixtureCopy);
+
+  const viewLabel = element("label", {
+    className: "source-choice",
+  });
+  const viewInput = element("input", {
+    attributes: {
+      type: "radio",
+      name: `conditional-source-${saved.plan.plan_id}-${saved.plan.revision}`,
+      value: "view_only",
+      ...(state.connection?.connected === true
+        ? {}
+        : { disabled: "" }),
+    },
+  });
+  viewInput.dataset.conditionalViewSource = "true";
+  const viewCopy = element("span");
+  viewCopy.append(
+    element("strong", { text: "One View-only check" }),
+    element("small", {
+      text:
+        state.connection?.connected === true
+          ? "Rechecks permission, product, and one fresh BBO. No fixture fallback."
+          : "Connect a View-only key first. Dry fixtures remain available.",
+    }),
+  );
+  viewLabel.append(viewInput, viewCopy);
+  source.append(fixtureLabel, viewLabel);
+
+  const scenario = scenarioPicker(
+    `${saved.plan.plan_id}-${saved.plan.revision}`,
+  );
+  const syncScenario = () => {
+    const viewSelected = viewInput.checked;
+    scenario.hidden = viewSelected;
+    for (const input of scenario.querySelectorAll("input")) {
+      input.disabled = viewSelected;
+    }
+  };
+  fixtureInput.addEventListener("change", syncScenario);
+  viewInput.addEventListener("change", syncScenario);
+
+  const actions = element("div", {
+    className: "conditional-actions",
+  });
+  const authorize = element("button", {
+    className: "button button--primary",
+    text: "Authorize one simulation check",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  authorize.addEventListener("click", () => {
+    const selectedSource =
+      source.querySelector('input[type="radio"]:checked')
+        ?.value ?? "fixture";
+    void authorizeConditional(
+      saved,
+      selectedSource,
+      selectedSource === "view_only"
+        ? "pass"
+        : selectedScenario(scenario),
+      authorize,
+    );
+  });
+  actions.append(authorize, conditionalRevokeButton(saved));
+  controls.append(source, scenario, actions);
+  artifact.append(controls);
+  dom.conditionalOutput.append(artifact);
+  reveal(artifact, { focus: true });
+  announce(
+    "Conditional mandate saved. Choose one evidence source, then authorize one simulation check. Nothing is watching.",
+  );
+}
+
+function renderConditionalAuthorized(saved, scenario) {
+  state.conditionalPlan = saved;
+  dom.conditionalOutput.replaceChildren();
+  const artifact = element("section", {
+    className: "artifact conditional-artifact",
+  });
+  artifact.append(
+    conditionalHeader(
+      saved,
+      "One short-lived simulation authorization is ready. The server will consume it before reading any evidence.",
+    ),
+    conditionalMandateRibbon(saved.plan),
+    element("div", {
+      className: "authorization-callout",
+      text: `${saved.authorization.source === "view_only" ? "View-only source" : "Labeled fixture"} · one use · expires ${new Date(saved.authorization.expires_at).toLocaleTimeString()} · not a future or live authorization`,
+    }),
+  );
+  const actions = element("div", {
+    className: "conditional-actions",
+  });
+  const simulate = element("button", {
+    className: "button button--primary",
+    text:
+      saved.authorization.source === "view_only"
+        ? "Run one fresh View-only check"
+        : "Run this fixture rehearsal",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  simulate.addEventListener("click", () => {
+    void simulateConditional(saved, scenario, simulate);
+  });
+  actions.append(simulate, conditionalRevokeButton(saved));
+  artifact.append(
+    actions,
+    element("div", {
+      className: "no-order-banner",
+      text: "AUTHORIZED FOR SIMULATION ONLY · NO WATCHER · ORDERS OFF",
+    }),
+  );
+  dom.conditionalOutput.append(artifact);
+  reveal(artifact, { focus: true });
+  announce(
+    "One-check simulation authorization ready. It is not a live authorization and no order can be sent.",
+  );
+}
+
+function timelineLabel(item, result) {
+  const priceBoundary =
+    result.proposal?.side === "SELL"
+      ? "price floor"
+      : "price ceiling";
+  const labels = {
+    PLAN: `Saved plan revision ${result.plan_revision}`,
+    SIMULATION_AUTHORIZATION: `One-check authorization · ${result.evidence?.source ?? "selected source"}`,
+    EVIDENCE: `Evidence · ${result.evidence?.observed_at ? new Date(result.evidence.observed_at).toLocaleTimeString() : "unable to verify"}`,
+    ABSOLUTE_TRIGGER: "Absolute BBO condition checked",
+    OBSERVED_SLIPPAGE_BOUND: result.proposal
+      ? `Effective ${priceBoundary} · ${plainNumber(result.proposal.slippage_reference_price)} → ${plainNumber(result.proposal.observed_slippage_bound)} → ${plainNumber(result.proposal.authorized_limit_price)}`
+      : "No price bound prepared",
+    EXACT_PROPOSAL: result.proposal
+      ? "Exact simulated proposal prepared"
+      : "No proposal prepared",
+    LOCAL_DELTA_SIMULATION: `Local Delta simulation · ${result.decision}`,
+    VERIFIED_RECEIPT:
+      result.receipt?.verified === true
+        ? "Receipt verified locally"
+        : "Receipt unavailable",
+    EXECUTION: "LOCKED · no order submitted",
+  };
+  return labels[item.step] ?? titleCase(item.step);
+}
+
+function conditionalProposalCard(saved, result) {
+  if (!result.proposal) return null;
+  const proposal = result.proposal;
+  const template = saved.plan.template;
+  const sell = proposal.side === "SELL";
+  const quoteAsset = template.condition.asset;
+  const priceBoundary = sell ? "floor" : "ceiling";
+  const reference = sell ? "best bid" : "best ask";
+  const effectiveLabel = sell
+    ? "Effective minimum price"
+    : "Effective maximum price";
+  const card = element("section", {
+    className: "exact-proposal-card",
+    attributes: {
+      "aria-label": "Exact simulated proposal",
+    },
+  });
+  card.append(
+    element("div", {
+      className: "exact-proposal-card__header",
+    }),
+  );
+  card.firstElementChild.append(
+    element("div", {
+      className: "eyebrow",
+      text: "EXACT SIMULATED PROPOSAL",
+    }),
+    element("h3", {
+      text: `${titleCase(proposal.side)} ${proposal.product_id}`,
+    }),
+    element("p", {
+      text: "This exact price decision—not an agent’s claimed slippage—is what the local guard evaluated.",
+    }),
+  );
+
+  const economics = element("div", {
+    className: "exact-proposal-card__economics",
+  });
+  economics.append(
+    conditionalFact(
+      "Order type",
+      proposal.order_type.replaceAll("_", " "),
+    ),
+    conditionalFact(
+      "Size",
+      `${plainNumber(proposal.size.value)} ${proposal.size.asset}`,
+    ),
+    conditionalFact(
+      "Limit price",
+      `${plainNumber(proposal.limit_price)} ${quoteAsset}`,
+    ),
+    conditionalFact(
+      "Maximum fee",
+      `${plainNumber(proposal.estimated_fee.value)} ${proposal.estimated_fee.asset}`,
+    ),
+  );
+  card.append(economics);
+
+  const priceChain = element("div", {
+    className: "price-bound-chain",
+    attributes: {
+      "aria-label": `${titleCase(proposal.side)} price constraint calculation`,
+    },
+  });
+  priceChain.append(
+    conditionalFact(
+      `Observed ${reference}`,
+      `${plainNumber(proposal.slippage_reference_price)} ${quoteAsset}`,
+    ),
+    conditionalFact(
+      `Raw slippage ${priceBoundary}`,
+      `${plainNumber(proposal.observed_slippage_bound)} ${quoteAsset} · ${proposal.max_slippage_bps} bps`,
+    ),
+    conditionalFact(
+      effectiveLabel,
+      `${plainNumber(proposal.authorized_limit_price)} ${quoteAsset} · tighter of the absolute condition and slippage ${priceBoundary}`,
+      "is-effective",
+    ),
+  );
+  card.append(priceChain);
+  return card;
+}
+
+function renderConditionalResult(
+  saved,
+  result,
+  { completedBeforeCancellation = false } = {},
+) {
+  state.conditionalPlan = saved;
+  dom.conditionalOutput.replaceChildren();
+  const artifact = element("section", {
+    className: "artifact conditional-artifact",
+  });
+  const stateCopy = {
+    CONDITION_NOT_MET:
+      "Condition not met · the check stopped before a proposal",
+    BLOCKED: "BLOCK · the proposal is outside the saved mandate",
+    WOULD_TRIGGER_SIMULATION:
+      "PASS · this exact simulated proposal fits the mandate",
+    REVIEW:
+      "REVIEW · the selected source could not be verified",
+  }[result.state] ?? titleCase(result.state);
+  artifact.append(
+    conditionalHeader(saved, stateCopy),
+    conditionalMandateRibbon(saved.plan),
+    element("p", {
+      className: "decision-reason",
+      text: result.reason,
+    }),
+    element("div", {
+      className: "no-order-banner",
+      text: "NO ORDER SUBMITTED · EXECUTION LOCKED",
+    }),
+  );
+  if (completedBeforeCancellation) {
+    artifact.append(
+      element("p", {
+        className: "notice notice--amber",
+        text: "Check completed before cancellation reached the server. This is the completed exact result; no order was submitted.",
+        attributes: { role: "status" },
+      }),
+    );
+  }
+
+  const evidence = element("div", {
+    className: "conditional-evidence",
+  });
+  const evidenceView = conditionalEvidencePresentation(
+    result.evidence,
+  );
+  evidence.append(
+    conditionalFact(
+      "Source",
+      evidenceView.source,
+    ),
+    conditionalFact(
+      "Observed",
+      evidenceView.observed,
+    ),
+    conditionalFact(
+      "BBO",
+      evidenceView.bbo,
+    ),
+    conditionalFact(
+      "Proposal",
+      result.proposal
+        ? `${titleCase(result.proposal.side)} ${plainNumber(result.proposal.size.value)} ${result.proposal.size.asset}`
+        : "Not prepared",
+    ),
+  );
+  artifact.append(evidence);
+  const proposalCard = conditionalProposalCard(
+    saved,
+    result,
+  );
+  if (proposalCard) artifact.append(proposalCard);
+
+  const timeline = element("ol", {
+    className: "plan-timeline proof-timeline",
+    attributes: {
+      "aria-label": "Conditional simulation proof timeline",
+    },
+  });
+  for (const item of result.timeline ?? []) {
+    const row = element("li", {
+      className:
+        item.step === "EXECUTION"
+          ? "is-locked"
+          : "is-complete",
+    });
+    const copy = element("div");
+    copy.append(
+      element("strong", {
+        text: timelineLabel(item, result),
+      }),
+      element("small", {
+        text:
+          item.step === "EXECUTION"
+            ? "No Create route exists in this advisor."
+            : item.step === "OBSERVED_SLIPPAGE_BOUND"
+              ? "Observed reference → raw slippage bound → effective bound after the absolute condition."
+            : "Bound to this one checked revision.",
+      }),
+    );
+    row.append(element("span"), copy);
+    timeline.append(row);
+  }
+  artifact.append(timeline);
+
+  const details = element("details", {
+    className: "details-panel",
+  });
+  details.append(
+    element("summary", {
+      text: "Technical proof details",
+    }),
+  );
+  const list = element("dl", {
+    className: "details-list",
+  });
+  for (const [label, value] of [
+    ["Plan digest", saved.plan.plan_digest],
+    ["Receipt digest", result.receipt?.receipt_digest],
+    ["Proof class", result.receipt?.proof_class],
+    ["Receipt verified", result.receipt?.verified],
+  ]) {
+    const row = element("div");
+    row.append(
+      element("dt", { text: label }),
+      element("dd", { text: value ?? "Unavailable" }),
+    );
+    list.append(row);
+  }
+  details.append(list);
+  artifact.append(details);
+
+  const actions = element("div", {
+    className: "conditional-actions",
+  });
+  const another = element("button", {
+    className: "button button--secondary",
+    text: "Prepare another one-check authorization",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  another.addEventListener("click", () => {
+    renderConditionalReady(saved);
+  });
+  actions.append(another, conditionalRevokeButton(saved));
+  artifact.append(actions);
+  dom.conditionalOutput.append(artifact);
+  reveal(artifact, { focus: true });
+  announce(`${stateCopy}. No order was submitted.`);
+}
+
+function conditionalEvidencePresentation(evidence) {
+  const unavailable =
+    evidence?.unavailable === true ||
+    !evidence?.observed_at ||
+    !evidence?.best_bid ||
+    !evidence?.best_ask;
+  if (evidence?.source === "view_only") {
+    if (unavailable) {
+      return Object.freeze({
+        source: "Coinbase unavailable · unable to verify",
+        observed: "Unable to verify",
+        bbo: "Unavailable",
+      });
+    }
+    return Object.freeze({
+      source: "Coinbase observed · View only",
+      observed: new Date(
+        evidence.observed_at,
+      ).toLocaleString(),
+      bbo: `${plainNumber(evidence.best_bid)} bid · ${plainNumber(evidence.best_ask)} ask`,
+    });
+  }
+  if (evidence?.source === "fixture") {
+    return Object.freeze({
+      source: unavailable
+        ? "Generated fixture · unable to verify"
+        : "Generated fixture · not Coinbase",
+      observed: unavailable
+        ? "Unable to verify"
+        : new Date(
+            evidence.observed_at,
+          ).toLocaleString(),
+      bbo: unavailable
+        ? "Unavailable"
+        : `${plainNumber(evidence.best_bid)} bid · ${plainNumber(evidence.best_ask)} ask`,
+    });
+  }
+  return Object.freeze({
+    source: "Evidence source unavailable · unable to verify",
+    observed: "Unable to verify",
+    bbo: "Unavailable",
+  });
+}
+
+function renderConditionalCancelled(saved) {
+  state.conditionalPlan = saved;
+  dom.conditionalOutput.replaceChildren();
+  const artifact = element("section", {
+    className: "artifact conditional-artifact",
+    attributes: { role: "status" },
+  });
+  artifact.append(
+    conditionalHeader(
+      saved,
+      "REVIEW · the local server cancelled this one-check attempt and will discard any late result.",
+    ),
+    conditionalMandateRibbon(saved.plan),
+    element("p", {
+      className: "decision-reason",
+      text: "The consumed simulation authorization cannot be reused. The saved template remains non-executable and can be checked only after a fresh authorization.",
+    }),
+    element("div", {
+      className: "no-order-banner",
+      text: "CANCELLED ON SERVER · LATE RESULT DISCARDED · ORDERS OFF",
+    }),
+  );
+  const actions = element("div", {
+    className: "conditional-actions",
+  });
+  const another = element("button", {
+    className: "button button--secondary",
+    text: "Prepare a fresh one-check authorization",
+    attributes: {
+      type: "button",
+      "data-action-control": "guard",
+    },
+  });
+  another.addEventListener("click", () => {
+    renderConditionalReady(saved);
+  });
+  actions.append(another, conditionalRevokeButton(saved));
+  artifact.append(actions);
+  dom.conditionalOutput.append(artifact);
+  reveal(artifact, { focus: true });
+  announce(
+    "The local server cancelled the one-check simulation and will discard any late result. No order was submitted.",
+  );
+}
+
+async function saveConditional(event) {
+  event.preventDefault();
+  if (state.pending) {
+    announce(
+      "A protected check is already running. The saved plan was not changed.",
+    );
+    return;
+  }
+  let input;
+  try {
+    input = conditionalInput();
+  } catch (error) {
+    addError(error.message, dom.conditionalOutput);
+    return;
+  }
+  await runPending(
+    dom.conditionalSaveButton,
+    "Saving boundary…",
+    async () => {
+      try {
+        const current = state.conditionalPlan;
+        const revisable =
+          current?.plan?.plan_id &&
+          !["REVOKED", "EXPIRED"].includes(
+            current.session_state,
+          );
+        const response = await requestJson(
+          revisable
+            ? "/api/conditional/revise"
+            : "/api/conditional/plan",
+          {
+            method: "POST",
+            body: revisable
+              ? {
+                  plan_id: current.plan.plan_id,
+                  revision: current.plan.revision,
+                  patch: input,
+                }
+              : input,
+          },
+        );
+        renderConditionalReady(response.saved_plan);
+      } catch (error) {
+        dom.conditionalOutput.replaceChildren();
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The conditional boundary could not be saved. Nothing is watching and no order was submitted.",
+          dom.conditionalOutput,
+        );
+      }
+    },
+  );
+}
+
+async function authorizeConditional(
+  saved,
+  source,
+  scenario,
+  button,
+) {
+  if (state.pending) return;
+  await runPending(
+    button,
+    "Authorizing one check…",
+    async () => {
+      try {
+        const response = await requestJson(
+          "/api/conditional/authorize",
+          {
+            method: "POST",
+            body: {
+              plan_id: saved.plan.plan_id,
+              revision: saved.plan.revision,
+              source,
+              ttl_seconds: 120,
+            },
+          },
+        );
+        renderConditionalAuthorized(
+          response.saved_plan,
+          scenario,
+        );
+      } catch (error) {
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The one-check simulation authorization stopped safely.",
+          dom.conditionalOutput,
+        );
+      }
+    },
+  );
+}
+
+async function simulateConditional(
+  saved,
+  scenario,
+  button,
+) {
+  if (state.pending) return;
+  await runPending(
+    button,
+    "Checking once…",
+    async () => {
+      const cancellation = {
+        kind: "conditional_simulation",
+        plan_id: saved.plan.plan_id,
+        revision: saved.plan.revision,
+        authorization_id:
+          saved.authorization.authorization_id,
+        confirmed: false,
+      };
+      state.pendingCancellation = cancellation;
+      try {
+        const response = await requestJson(
+          "/api/conditional/simulate",
+          {
+            method: "POST",
+            body: {
+              plan_id: saved.plan.plan_id,
+              revision: saved.plan.revision,
+              authorization_id:
+                saved.authorization.authorization_id,
+              scenario,
+            },
+          },
+        );
+        if (
+          cancellation.confirmed ||
+          cancellation.completedBeforeCancellation
+        ) {
+          return;
+        }
+        if (
+          state.conditionalPlan?.plan?.plan_id ===
+            saved.plan.plan_id &&
+          state.conditionalPlan?.session_state ===
+            "REVOKED"
+        ) {
+          announce(
+            "The revision was revoked. A late simulation result was discarded.",
+          );
+          return;
+        }
+        renderConditionalResult(
+          response.saved_plan,
+          response.result,
+        );
+      } catch (error) {
+        if (
+          cancellation.confirmed ||
+          cancellation.completedBeforeCancellation
+        ) {
+          return;
+        }
+        if (
+          state.conditionalPlan?.plan?.plan_id ===
+            saved.plan.plan_id &&
+          state.conditionalPlan?.session_state ===
+            "REVOKED"
+        ) {
+          announce(
+            "The revision remains revoked. No late result was shown.",
+          );
+          return;
+        }
+        addError(
+          error instanceof Error
+            ? error.message
+            : "The one-check simulation stopped safely. Nothing is watching and no order was submitted.",
+          dom.conditionalOutput,
+        );
+      } finally {
+        if (state.pendingCancellation === cancellation) {
+          state.pendingCancellation = null;
+        }
+      }
+    },
+  );
+}
+
+async function revokeConditional(saved, button) {
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = "Revoking…";
+  try {
+    const response = await requestSafetyJson(
+      "/api/conditional/revoke",
+      {
+        plan_id: saved.plan.plan_id,
+        revision: saved.plan.revision,
+      },
+    );
+    state.conditionalPlan = response.saved_plan;
+    const revoked = element("section", {
+      className: "artifact conditional-artifact",
+      attributes: { role: "status" },
+    });
+    revoked.append(
+      conditionalHeader(
+        response.saved_plan,
+        "This revision is tombstoned. Any in-flight or later result is invalid and cannot revive it.",
+      ),
+      conditionalMandateRibbon(response.saved_plan.plan),
+      element("div", {
+        className: "no-order-banner",
+        text: "REVOKED · NOTHING IS WATCHING · ORDERS OFF",
+      }),
+    );
+    dom.conditionalOutput.replaceChildren(revoked);
+    reveal(revoked, { focus: true });
+    announce(
+      "Conditional plan revision revoked. Any in-flight result is discarded.",
+    );
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Revoke this revision";
+    addError(
+      error instanceof Error
+        ? error.message
+        : "The revoke request stopped safely.",
+      dom.conditionalOutput,
+    );
+  }
+}
+
 function activityEntries(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.guard_history) && payload.guard_history.length) {
@@ -1725,7 +2876,10 @@ function handleQuickStart(event) {
     announce("Protected spot-trade example is ready to prepare.");
   } else if (start === "condition") {
     navigate("plans");
-    announce("Conditional plan preview. Nothing is monitoring or trading.");
+    dom.conditionalProduct.focus();
+    announce(
+      "Conditional plan composer ready. Nothing is monitoring or trading.",
+    );
   } else {
     explainFutureCapability(start);
   }
@@ -1898,11 +3052,8 @@ for (const tab of dom.navTabs) {
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) return;
   const cancel = event.target.closest("[data-cancel-pending]");
-  if (!cancel || !state.pendingAbortController) return;
-  state.pendingAbortController.abort("USER_CANCELLED");
-  cancel.disabled = true;
-  cancel.textContent = "Stopping safely…";
-  announce("Stopping the local check. No order can be sent.");
+  if (!cancel || !state.pending) return;
+  void cancelPendingOperation(cancel);
 });
 
 for (const quickStart of dom.quickStarts) {
@@ -1924,15 +3075,6 @@ dom.showcaseButton.addEventListener("click", () => {
   void runShowcase(dom.showcaseButton);
 });
 
-dom.plansShowcaseButton.addEventListener("click", () => {
-  if (state.pending) {
-    announce("A protected check is already running.");
-    return;
-  }
-  dom.planDemoOutput.replaceChildren();
-  void runShowcase(dom.plansShowcaseButton, dom.planDemoOutput);
-});
-
 dom.reviewButton.addEventListener("click", () => {
   void runReviewDemo(dom.reviewButton);
 });
@@ -1949,4 +3091,14 @@ dom.disconnectButton.addEventListener("click", () => {
   void disconnectViewOnly();
 });
 
+dom.conditionalForm.addEventListener("submit", (event) => {
+  void saveConditional(event);
+});
+
+dom.conditionalSide.addEventListener(
+  "change",
+  updateConditionalSideCopy,
+);
+
+setConditionalDefaults();
 void Promise.all([loadStatus(), loadConnection()]);

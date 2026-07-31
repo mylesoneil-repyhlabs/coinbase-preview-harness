@@ -134,7 +134,7 @@ test("loopback status is truthful, session-only, and protected by browser header
   assert.equal(status.session.absolute_expires_after_seconds, 3600);
   assert.equal(status.capabilities.credential_free_dry_run, true);
   assert.equal(status.capabilities.view_only_connection, true);
-  assert.equal(status.capabilities.conditional_plan_simulation, false);
+  assert.equal(status.capabilities.conditional_plan_simulation, true);
   assert.equal(status.capabilities.conditional_plan_monitoring, false);
   assert.equal(status.capabilities.production_delta, false);
   assert.equal(status.capabilities.live_create, false);

@@ -89,7 +89,7 @@ test("static frontend contains no browser persistence, unsafe HTML sinks, or rem
 
 test("browser code talks only to the narrow same-origin advisor API", () => {
   const routes = [
-    ...app.matchAll(/requestJson\(\s*["']([^"']+)["']/g),
+    ...app.matchAll(/["'](\/api\/[^"']+)["']/g),
   ].map((match) => match[1]);
   assert.deepEqual(
     [...new Set(routes)].sort(),
@@ -97,6 +97,12 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
       "/api/activity",
       "/api/advisor/authorize",
       "/api/advisor/plan",
+      "/api/conditional/authorize",
+      "/api/conditional/cancel",
+      "/api/conditional/plan",
+      "/api/conditional/revise",
+      "/api/conditional/revoke",
+      "/api/conditional/simulate",
       "/api/connection",
       "/api/connection/connect",
       "/api/connection/disconnect",
@@ -105,7 +111,7 @@ test("browser code talks only to the narrow same-origin advisor API", () => {
       "/api/status",
     ],
   );
-  assert.equal((app.match(/\bfetch\(/g) ?? []).length, 1);
+  assert.equal((app.match(/\bfetch\(/g) ?? []).length, 2);
   assert.match(app, /credentials:\s*["']same-origin["']/);
   assert.match(app, /cache:\s*["']no-store["']/);
   assert.match(app, /redirect:\s*["']error["']/);
@@ -338,7 +344,130 @@ test("pending guard runs before mandate mutation and locks conflicting controls"
   assert.match(app, /state\.pendingRegion\?\.setAttribute\("aria-busy"/);
   assert.match(app, /5_000/);
   assert.match(html, /data-cancel-pending/);
-  assert.match(app, /abort\("USER_CANCELLED"\)/);
+  assert.match(
+    app,
+    /void cancelPendingOperation\(cancel\)/,
+  );
+  assert.match(app, /["']\/api\/conditional\/cancel["']/);
+  assert.match(app, /USER_STOPPED_WAITING/);
+  assert.match(app, /SERVER_CANCELLED/);
+  assert.match(app, /COMPLETED_BEFORE_CANCEL/);
+  assert.doesNotMatch(app, /USER_CANCELLED/);
+  assert.match(
+    app,
+    /Stopping browser wait alone does not cancel server work|Stop waiting only closes the browser request/,
+  );
+});
+
+test("conditional plan UI keeps authorization, evidence, and execution boundaries separate", () => {
+  assert.match(html, /id=["']conditional-form["']/);
+  for (const label of ["Action", "If", "Limits", "Until"]) {
+    assert.match(
+      html,
+      new RegExp(`<legend>${label}</legend>`, "i"),
+    );
+  }
+  assert.match(html, /Save &amp; simulate/i);
+  assert.match(html, /Simulation only/i);
+  assert.match(html, /Nothing is watching/i);
+  assert.match(html, /Orders off/i);
+  assert.match(app, /Labeled fixture/);
+  assert.match(app, /One View-only check/);
+  assert.match(app, /No fixture fallback/);
+  assert.match(app, /Condition not met/);
+  assert.match(app, /Agent exceeds limit/);
+  assert.match(app, /Exact proposal fits/);
+  assert.match(app, /Authorize one simulation check/);
+  assert.match(app, /WOULD_TRIGGER_SIMULATION/);
+  assert.match(app, /Receipt verified locally/);
+  assert.match(app, /EXECUTION LOCKED/);
+  assert.match(app, /EXACT SIMULATED PROPOSAL/);
+  assert.match(app, /Observed \$\{reference\}/);
+  assert.match(app, /Raw slippage \$\{priceBoundary\}/);
+  assert.match(app, /Effective maximum price/);
+  assert.match(app, /Effective minimum price/);
+  assert.match(
+    app,
+    /tighter of the absolute condition and slippage/,
+  );
+  assert.match(app, /SERVER CANCELLED|CANCELLED ON SERVER/);
+  assert.match(
+    app,
+    /Check completed before cancellation reached the server/,
+  );
+  assert.match(app, /Revoke this revision/);
+  assert.match(app, /data-safety-action/);
+  assert.match(
+    app,
+    /control\.dataset\.safetyAction === "true"/,
+  );
+  assert.match(app, /requestSafetyJson/);
+  assert.doesNotMatch(
+    `${html}\n${app}`,
+    />\s*(?:Active|Watching|Triggered|Submitted)\s*</i,
+  );
+});
+
+test("conditional evidence provenance never labels an unavailable View-only check as observed", () => {
+  const renderStart = app.indexOf(
+    "function renderConditionalResult",
+  );
+  const renderEnd = app.indexOf(
+    "async function saveConditional",
+    renderStart,
+  );
+  const source = app.slice(renderStart, renderEnd);
+  assert.match(
+    source,
+    /evidence\?\.unavailable === true/,
+  );
+  assert.match(
+    source,
+    /Coinbase unavailable · unable to verify/,
+  );
+  assert.match(source, /Coinbase observed · View only/);
+  assert.match(source, /Generated fixture · not Coinbase/);
+  assert.ok(
+    source.indexOf("Coinbase unavailable · unable to verify") <
+      source.indexOf("Coinbase observed · View only"),
+  );
+  assert.match(
+    app,
+    /function conditionalEvidencePresentation\(evidence\)/,
+  );
+  assert.match(
+    app,
+    /Evidence source unavailable · unable to verify/,
+  );
+});
+
+test("conditional expiry is browser-local, duration-based, and DST-explicit", () => {
+  const timezone = html.match(
+    /<input\b(?=[^>]*\bid=["']conditional-timezone["'])[^>]*>/i,
+  )?.[0];
+  assert.ok(timezone);
+  assert.match(timezone, /\breadonly\b/i);
+  assert.doesNotMatch(html, /type=["']datetime-local["']/i);
+  for (const seconds of ["3600", "86400", "604800"]) {
+    assert.match(
+      html,
+      new RegExp(`<option value=["']${seconds}["']`),
+    );
+  }
+  assert.match(
+    app,
+    /\[3_600,\s*86_400,\s*604_800\]\.includes\(expirySeconds\)/,
+  );
+  assert.match(
+    app,
+    /Date\.now\(\) \+ expirySeconds \* 1_000/,
+  );
+  assert.match(
+    app,
+    /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/,
+  );
+  assert.match(app, /timeZoneName:\s*"short"/);
+  assert.match(app, /local time · \$\{template\.timezone\}/);
 });
 
 test("decision rendering fails closed without one exact verified outcome", () => {
@@ -372,4 +501,13 @@ test("mobile contract preserves the safety strip and compact composer", () => {
     /\.composer textarea:focus,[\s\S]*?height:\s*126px/,
   );
   assert.match(styles, /\.comparison\s*\{[\s\S]*?overflow-x:\s*auto/);
+  assert.match(
+    styles,
+    /\.mandate-ribbon,[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
+  assert.match(styles, /\.feature-card__topline\s*\{[\s\S]*?flex-wrap:\s*wrap/);
+  assert.match(
+    styles,
+    /\.premium-badge,[\s\S]*?white-space:\s*normal/,
+  );
 });
